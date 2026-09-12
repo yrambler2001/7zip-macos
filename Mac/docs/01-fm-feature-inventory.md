@@ -1,5 +1,7 @@
 # 7-Zip File Manager (7zFM) — Complete Feature Inventory for the macOS Port
 
+Verified against source by a second pass on 2026-09-12.
+
 Source snapshot: 7-Zip 26.03, branch `macos`, repository root `~/things/a.noindex/7zip`.
 All paths below are relative to `CPP/` unless stated otherwise. `file:line` references point at
 the Windows sources that define the behaviour; IDs are the resource / command IDs used by the
@@ -35,22 +37,22 @@ Conventions used in this document:
 
 | Item | Value | Source |
 |---|---|---|
-| Executable | `7zFM.exe` (GUI subsystem), links `7z.dll` codecs via `LoadGlobalCodecs()` | `FM.cpp:577 WinMain2`, `FM.mak` |
+| Executable | `7zFM.exe` (GUI subsystem). Codecs (`7z.dll`) are **not** loaded at startup: the `LoadGlobalCodecs()` call in `WinMain2` is commented out ("we will load Global_Codecs at first use instead", `FM.cpp:738-743`); `FreeGlobalCodecs()` runs after the message loop (`FM.cpp:776`). | `FM.cpp:577 WinMain2`, `FM.mak` |
 | Window class | `"7-Zip::FM"` (`kWindowClass`) | `FM.cpp` (WinMain2, RegisterClass) |
 | Window title (initial) | `"7-Zip"` | `FM.cpp` |
 | Window title (running) | current folder path of the focused panel; `"7-Zip"` when path empty; two-panel mode shows the focused panel's path | `App.cpp:963 CApp::RefreshTitle`, `App.cpp:974 RefreshTitlePanel` |
 | Single instance | none — every launch opens a new window | — |
-| Command line | `7zFM.exe [path] [-t<arcType>]`. `path` = folder/archive to open in panel 0; `-t` forces an archive type for opening (`arcFormat` passed to `CPanel::BindToPath`). Parsing at `FM.cpp:639-702` (uses `GetCommands` `FM.cpp:428`). | `FM.cpp:639-702` |
-| Startup actions | `LoadLangOneTime()` (§7), `SetMemoryLock()` for large pages (`FM.cpp:508`) if `ReadLockMemoryEnable()`, `Set_SymLink_Supported()` (`FM.cpp:527`), `Set_Wow64()` (`FM.cpp:461`), `OleInitialize`, `InitCommonControls`, `DeleteOldTempFiles()` (`PanelItemOpen.cpp:1815`, removes stale `7zE*`/`7zO*`/`7zS*` temp dirs older than the current session), read `CWindowInfo` (`ViewSettings.cpp:169`) to restore size/position/maximized/panels/splitter. | `FM.cpp:577-783` |
-| Accelerator table | `IDR_ACCELERATOR1` (72): `F1 → IDM_HELP_CONTENTS`, `Alt+F12 → IDM_FOLDERS_HISTORY`. All other shortcuts are handled by the panel key handler (§3.7) or as menu-item text only. | `FileManager/resource.rc` |
-| Icon | `IDI_ICON` (`FM.ico`) | `resource.rc` |
-| Shutdown | `WM_CLOSE`/`WM_DESTROY`: `g_App.Save()` (`App.cpp:382`), `SaveWindowInfo` (`FM.cpp:849`), `g_App.ReleaseApp()` (`App.cpp:405`), `FreeGlobalCodecs()`. `CExitEventLauncher` (`PanelItemOpen.cpp:1104`) signals watcher threads that still monitor externally-opened temp files; they get `kExitTimeout` to finish. | `FM.cpp:890 WndProc` |
+| Command line | `7zFM.exe [path] [-t<arcType>]`. The command line is split into the first token (`paramString` → `g_MainPath`) and the remainder (`tailString`); if the remainder starts with `-t` the rest of it is `g_ArcFormat` (`FM.cpp:639-661`). No other switches are parsed (the switch parser is commented out). In `WM_CREATE` (`FM.cpp:975-987`) a relative `g_MainPath` is made absolute; if it names an existing **file** it is opened as an archive (`needOpenArc = true`), and if that open fails a message box "Error" is shown and the window creation returns -1 (app exits, `FM.cpp:997-1012`). `g_ArcFormat` is passed down to `CPanel::Create → BindToPath` as `arcFormat`. | `FM.cpp:639-702`, `FM.cpp:972-1012` |
+| Startup actions | `NSystem::GetRamSize` (`FM.cpp:579`), `LoadLangOneTime()` (§7, `FM.cpp:615`), `InitCommonControls` (618), `g_IsSmallScreen = !IsDialogSizeOK(200, 200)` (630), `Set_Wow64()` (`FM.cpp:461`, called 626), `OleInitialize` (634, needed for drag and drop), command-line parse, `SetMemoryLock()` for large pages (`FM.cpp:508`, only if `ReadLockMemoryEnable()`), `Set_SymLink_Supported()` (`FM.cpp:527`), `g_App.ReloadLangItems()` (733), `InitInstance` (`FM.cpp:240`: reads `CWindowInfo` `ViewSettings.cpp:169` to restore size/position/maximized/panels/splitter, registers class, creates window). `DeleteOldTempFiles()` exists (`PanelItemOpen.cpp:1815`) but has **no caller** anywhere in `CPP/`; stale temp dirs are not cleaned at startup. | `FM.cpp:577-783` |
+| Accelerator table | `IDR_ACCELERATOR1` (72): `F1 → IDM_HELP_CONTENTS`, `Alt+F12 → IDM_FOLDERS_HISTORY` (`resource.rc:7-13`; `Ctrl+N → IDM_CREATE_FILE` and `F7 → IDM_CREATE_FOLDER` are commented out). All other shortcuts are handled by the panel key handler (§3.7) or as menu-item text only. | `FileManager/resource.rc` |
+| Icon | `IDI_ICON` (`FM.ico`, `resource.rc:164`), class menu `IDM_MENU` (71) | `resource.rc`, `FM.cpp:266-278` |
+| Shutdown | `WM_CLOSE` (`FM.cpp:1028-1047`), in order: `g_ExitEventLauncher.Exit(false)` (sets the exit event and waits **without timeout** for every still-running temp-file watcher thread, `PanelItemOpen.cpp:1104`), `RevokeDragDrop`, `g_App.Save()` (`App.cpp:382`: per panel saves path, list mode, flat-view flag + `AppState.Save()`), `g_App.ReleaseApp()` (`App.cpp:405`), `SaveWindowInfo` (`FM.cpp:849`), `g_ExitEventLauncher.Exit(true)` (100 ms per thread, then closes handles). `WM_DESTROY` → `PostQuitMessage`. `FreeGlobalCodecs()` after the message loop (`FM.cpp:776`). No `kExitTimeout` constant exists. | `FM.cpp:890 WndProc` |
 
 ### 1.2 Layout (top to bottom)
 
 `CApp::MoveSubWindows` (`FM.cpp:1176-1223`) lays out:
 
-1. **Toolbar ReBar** (`_rebar`, `App.cpp:144 CreateToolbar`, only when at least one toolbar is visible) — full width, height from `RB_GETBARHEIGHT`.
+1. **Toolbar** — a single `CToolBar` `_toolBar` (`App.cpp:144 CreateToolbar`, styles `TBSTYLE_FLAT|TBSTYLE_TOOLTIPS|TBSTYLE_WRAPABLE`), created only when at least one of the two logical toolbars is visible (`ReloadToolbars` `App.cpp:255`); there is **no ReBar** in the main window. Full width, height from `Window_GetRealHeight(_toolBar)` after `AutoSize()`.
 2. **Panel area** — one or two `CPanel` windows side by side. Splitter width `kSplitterWidth = 4`, minimum panel width `kPanelSizeMin = 120`. The splitter position is stored as a ratio (`g_Splitter` position with denominator `1 << 16`) so it survives resizes; dragging happens in `WM_LBUTTONDOWN`/`WM_MOUSEMOVE`/`WM_LBUTTONUP` of `WndProc` (`FM.cpp:890+`, cursor `IDC_SIZEWE`). `xSizes[2]` are handed to `CApp::Create`.
 3. Each panel owns its own status bar (there is no main-window status bar).
 
@@ -59,16 +61,16 @@ Each **panel** (`CPanel::OnCreate` `Panel.cpp:383-597`, `ChangeWindowSize` `Pane
 | Sub-window | Details | Source |
 |---|---|---|
 | Panel ReBar | hosts the header toolbar band and the address combo band | `Panel.cpp:383+` |
-| Header toolbar | single button `kParentFolderID = 100` ("Up one level", image `IDI_PARENT`/`VIEW_PARENTFOLDER` from the system `IDB_VIEW_SMALL_COLOR` bitmap); click → `OpenParentFolder()` | `Panel.cpp:383+`, `Panel.cpp:727 OnCommand` |
+| Header toolbar | single button `kParentFolderID = 100` ("Up one level", image `VIEW_PARENTFOLDER` from the system `IDB_VIEW_SMALL_COLOR` bitmap (`Panel.cpp:447-491`, no custom icon resource)); click → `OpenParentFolder()` | `Panel.cpp:383+`, `Panel.cpp:727 OnCommand` |
 | Address bar | `CComboBoxEx` (`_headerComboBox`) with edit control subclassed by `CMyComboBoxEdit` (`Panel.cpp:276`), image list of system icons; dropdown list built on `CBN_DROPDOWN` (§3.9) | `Panel.cpp:257, 276`, `PanelFolderChange.cpp:627` |
-| List view | `CMyListView` (`Panel.cpp:161`), styles `WS_CHILD|WS_VISIBLE|WS_TABSTOP|LVS_SHAREIMAGELISTS|LVS_SHOWSELALWAYS|LVS_EDITLABELS` plus one of `kStyles[] = {LVS_ICON, LVS_SMALLICON, LVS_LIST, LVS_REPORT}` selected by `_listViewMode` (default 3 = report). Extended styles: `LVS_EX_HEADERDRAGDROP`, plus `LVS_EX_FULLROWSELECT`/`LVS_EX_GRIDLINES`/`LVS_EX_ONECLICKACTIVATE|LVS_EX_TRACKSELECT`/`LVS_SINGLESEL` as set by `CApp::SetListSettings` (`App.cpp:73-115`) from settings ShowFullRow / ShowGrid / SingleClick / AlternativeSelection (§5). System small and large image lists attached (`SysIconUtils`). | `Panel.cpp:383+`, `Panel.cpp:871 SetListViewMode` |
+| List view | `CMyListView` (`Panel.cpp:161`), styles `WS_CHILD|WS_VISIBLE|LVS_SHAREIMAGELISTS|WS_CLIPCHILDREN|WS_CLIPSIBLINGS|WS_TABSTOP|LVS_EDITLABELS` (`LVS_SHOWSELALWAYS` is commented out) plus one of `kStyles[] = {LVS_ICON, LVS_SMALLICON, LVS_LIST, LVS_REPORT}` (`Panel.cpp:46`) selected by `_listViewMode` (default 3 = report); `LVS_SINGLESEL` when `_mySelectMode` (AlternativeSelection); `WS_EX_CLIENTEDGE`; child id `_baseID + 1` where `_baseID = 1000 + 100*panelIndex` (`App.cpp:135`). Extended styles: always `LVS_EX_HEADERDRAGDROP`, plus `LVS_EX_FULLROWSELECT`/`LVS_EX_GRIDLINES`/`LVS_EX_ONECLICKACTIVATE|LVS_EX_TRACKSELECT` as set by `CApp::SetListSettings` (`App.cpp:73-115`) from `CFmSettings` FullRow / ShowGrid / SingleClick (§5); the same function pushes ShowDots, ShowRealFileIcons, AlternativeSelection and ShowSystemMenu into the panels. System small and large image lists attached (`Shell_Get_SysImageList_smallIcons`). | `Panel.cpp:383-432`, `Panel.cpp:871 SetListViewMode` |
 | Status bar | `CStatusBar`, 4 parts with right edges `{220, 320, 420, -1}`; see §3.12 for content | `Panel.cpp:383+`, `PanelListNotify.cpp:759 Refresh_StatusBar` |
 
 Both panels get `SetTimer(kTimerID, kTimerElapse = 1000 ms)`; on `WM_TIMER` `CPanel::OnTimer` (`PanelItems.cpp:1458`) asks the folder `IFolderWasChanged::WasChanged()` and reloads if changed (only while `_processTimer` is true and auto-refresh is on; `CDisableTimerProcessing` suspends it during operations).
 
 ### 1.3 Toolbars
 
-`App.cpp:144-282`. Two toolbars live in one ReBar band each:
+`App.cpp:144-282`. Two *logical* toolbars (archive, standard) are rendered as button groups inside the single `_toolBar` control, archive buttons first (`ReloadToolbars` `App.cpp:255-273`); each is independently shown/hidden:
 
 | Toolbar | Buttons (command ID → label string ID → bitmap large/small) | Source |
 |---|---|---|
@@ -77,20 +79,20 @@ Both panels get `SetTimer(kTimerID, kTimerElapse = 1000 ms)`; on `WM_TIMER` `CPa
 
 Bitmaps: large = 48×36 (`IDB_*`), small = 24×24 (`IDB_*2`). Toolbar flags (persisted as `Toolbars` mask, §5.2):
 bit0 `ShowButtonsLables`, bit1 `LargeButtons`, bit2 `ShowStandardToolbar`, bit3 `ShowArchiveToolbar`;
-bit31 set means "never saved → defaults" = labels shown unless the screen is small (`IsSmallScreen`), small buttons, both toolbars visible (`App.cpp:284 CApp::Create` → `ReadToolbar`).
-Toolbar clicks: `kMenuCmdID_Toolbar_Add/Extract/Test` are routed by `OnMenuCommand` (`MyLoadMenu.cpp:805`) to `CPanel::AddToArchive / ExtractArchives / TestArchives`; the standard toolbar IDs are ordinary menu IDs. `CApp::ReloadToolbars` (`App.cpp:255`) rebuilds after Options/lang changes; `SaveToolbarChanges` (`App.cpp:276`) persists the mask.
+bit31 set means "never saved → defaults" = labels shown unless the screen is small (`g_IsSmallScreen`), small buttons, both toolbars visible (`App.h:250 ReadToolbar`, `kDefaultToolbarMask = bit31|8|4|1` `ViewSettings.cpp:219`).
+Toolbar clicks: `WM_COMMAND` in `FM.cpp:894-905` first checks `kMenuCmdID_Toolbar_Start (1070) <= id < kMenuCmdID_Toolbar_End` and calls `ExecuteCommand` (`FM.cpp:877`) → `g_App.AddToArchive / ExtractArchives / TestArchives` (which forward to the focused panel, `App.h:300+`) with the panel timers disabled; every other id goes to `OnMenuCommand` (`MyLoadMenu.cpp:805`). The standard toolbar IDs are ordinary menu IDs. Tooltips come from `TBN_GETINFOTIP` → `SetButtonText` (`App.cpp:216`). `CApp::ReloadToolbars` (`App.cpp:255`) rebuilds after Options/lang changes; `SaveToolbarChanges` (`App.cpp:276`) persists the mask, rebuilds and relayouts; `SwitchStandardToolbar/SwitchArchiveToolbar/SwitchButtonsLables/SwitchLargeButtons` (`App.h:279-298`) are the View-menu toggles.
 
 ### 1.4 Panels, focus, two-panel mode
 
 * `kNumDefaultPanels = 1`; `CApp::Create` (`App.cpp:284-358`) creates `NumPanels` panels (1 or 2) from `CWindowInfo` or default. Each panel's start path: command-line path for panel 0 if given, else `ReadPanelPath(i)` (`ViewSettings.cpp:265`), else empty (= Root folder). If the stored path cannot be bound the panel falls back to the root folder (`BindToPathAndRefresh` `PanelFolderChange.cpp:315`).
 * Per-panel list mode from `CListMode` (`ViewSettings.cpp:237`, packed byte per panel, default 3), flat-view flag from `ReadFlatView(panelIndex)` (`RegistryUtils.cpp:182`).
-* `CApp::SwitchOnOffOnePanel` (`App.cpp:360-380`): F9 / `IDM_VIEW_TWO_PANELS` toggles between 1 and 2 panels. When opening the second panel it is created with the current panel's path (`CreateOnePanel` `App.cpp:117`); when closing, the non-focused panel is released.
-* Focus: `CApp::SetFocusedPanel` (`PanelDrag.cpp:2990`), `GetFocusedPanelIndex` (`App.cpp:914`), `CPanelCallbackImp::PanelWasFocused` (`App.cpp:63`) refreshes the title. `Tab` switches panels (`CPanelCallbackImp::OnTab` `App.cpp:42`, only in two-panel mode). `Alt+F1`/`Alt+F2` focus the address bar of panel 0/1 (`SetFocusToPath` `App.cpp:49`).
+* `CApp::SwitchOnOffOnePanel` (`App.cpp:360-380`): F9 / `IDM_VIEW_TWO_PANELS` toggles between 1 and 2 panels. When opening the second panel it is created (if not created yet) with an **empty** path, so `CreateOnePanel` (`App.cpp:117-142`) falls back to the stored `ReadPanelPath(index)` or the root folder; it is then enabled and shown. When closing, the non-focused panel is only disabled and hidden (`Enable(false)`, `Show(SW_HIDE)`), not destroyed — reopening reuses it (`PanelCreated` check).
+* Focus: `CApp::SetFocusedPanel` (`PanelDrag.cpp:2990`), `GetFocusedPanelIndex` (inline `App.h:116`, returns `LastFocusedPanel`), `CPanelCallbackImp::PanelWasFocused` (`App.cpp:63`) refreshes the title. `Tab` switches panels (`CPanelCallbackImp::OnTab` `App.cpp:42`, only in two-panel mode). `Alt+F1`/`Alt+F2` focus the address bar of panel 0/1 (`SetFocusToPath` `App.cpp:49`).
 * Custom messages posted to the panel window: `kShiftSelectMessage` (`WM_USER+1`, group selection after Shift+arrow), `kReLoadMessage` (`+2`, reload after rename), `kSetFocusToListView` (`+3`), `kOpenItemChanged` (`+4`, watcher thread reports edited temp file), `kRefresh_StatusBar` (`+5`) — dispatched in `CPanel::OnMessage` (`Panel.cpp:120-159`).
 
 ### 1.5 Window persistence
 
-`CWindowInfo` (`ViewSettings.cpp:141 Save`, `169 Read`): rectangle (`left,top,right,bottom`), `maximized`, `numPanels`, `currentPanel`, `splitterPos`. Saved on close (`FM.cpp:849 SaveWindowInfo`) and restored on start; if the stored rectangle is off-screen it is ignored (`FM.cpp:577+`, `IsWindowVisible`-style check via `GetWindowPlacement`). Details of the stored bytes in §5.2.
+`CWindowInfo` (`ViewSettings.cpp:141 Save`, `169 Read`): rectangle (`left,top,right,bottom`), `maximized`, `numPanels`, `currentPanel`, `splitterPos`. Saved on close (`FM.cpp:849 SaveWindowInfo`, uses `GetWindowPlacement().rcNormalPosition` + `IsZoomed`) and restored on start (`InitInstance` `FM.cpp:294-330`: `x,y,xSize,ySize` default to `CW_USEDEFAULT`; `numPanels` clamped to 1..2, `currentPanel` to 0..1; splitter set from `splitterPos` or to the middle when no panel info was stored, `FM.cpp:955-961`). There is **no** off-screen sanity check of the stored rectangle. `CApp::Save` (`App.cpp:382-403`) additionally stores per panel: path (`SavePanelPath`; when inside an archive, the FS path of the outermost archive's parent `_parentFolders[0].ParentFolderPath`), list mode (`CListMode`), flat-view flag (`SaveFlatView`), and `AppState.Save()` (folder history). Details of the stored bytes in §5.2.
 
 ---
 
@@ -104,9 +106,11 @@ The "&" mnemonics and "\t" accelerator texts are part of the menu strings (and o
 
 Rebuilt for the current panel by `CFileMenu::Load` (`MyLoadMenu.cpp:588-734`) each time it opens (`CPanel::CreateFileMenu` `PanelMenu.cpp:787, 921`); the same builder produces the "File" part of the list-view context menu (`§2.8`). Enabled/hidden rules (evaluated in `Load`):
 
-* `isFsFolder = IsFSFolder()`, `isArc = IsArcFolder()`, `isHash = IsHashFolder()`, `readOnly = IsThereReadOnlyFolder()` (`PanelMenu.cpp:868`: any folder in the chain reports `kpidReadOnly`).
-* `numItems` = number of operated items, `isFsFile` = exactly one operated item that is a regular FS file (used for Split/Combine/VerCtrl/Link).
-* `allAreFiles`, `isAltStreamsSupported` (folder implements `IFolderAltStreams` and the item supports it).
+* Inputs are filled by `CPanel::CreateFileMenu` (`PanelMenu.cpp:921-988`): `isFsFolder = Is_IO_FS_Folder()`, `isHashFolder = IsHashFolder()`, `readOnly = IsThereReadOnlyFolder()` (`PanelMenu.cpp:868`: any folder in the chain reports `kpidReadOnly`), `numItems` = number of operated items, `allAreFiles` = no operated item is a directory, `FilePath` = full path of the single operated item, `programMenu` (true for the menu bar, false for the context menu).
+* `isOneFsFile = isFsFolder && numItems == 1 && allAreFiles` (used for Split/Combine and as precondition for the Ver* items).
+* `isAltStreamsSupported`: if the folder implements `IFolderAltStreams` → `AreAltStreamsSupported(index)` for the single operated item (or `-1` for none; false when >1 items); otherwise `IsFSFolder()` when nothing is operated, else `IsFolder_with_FsItems()`.
+* Diff path (`ReadRegDiff`) doubles as "super mode" marker: it hides `IDM_DIFF` when empty and gates the Ver* items.
+* Small screens (`!IsDialogSizeOK(40, 200)`): disabled items and separators are dropped from the menu instead of shown grayed.
 
 | Order | Text (resource) | ID | Accelerator | Enabled / visible condition | Handler |
 |---|---|---|---|---|---|
@@ -123,12 +127,12 @@ Rebuilt for the current panel by `CFileMenu::Load` (`MyLoadMenu.cpp:588-734`) ea
 | 10 | `&Move To...\tF6` | `IDM_MOVE_TO 547` | F6 | disabled if `readOnly` or hash folder | `CApp::OnCopy(true,false)` |
 | 11 | `&Delete\tDel` | `IDM_DELETE 548` | Del (Shift+Del = permanent) | disabled if `readOnly` | `DeleteItems(!IsKeyDown(VK_SHIFT))` `PanelOperations.cpp:112` |
 | — | separator | | | | |
-| 12 | `S&plit file...` | `IDM_SPLIT 549` | — | enabled only if `isFsFile` (single FS file) | `CApp::Split()` `PanelSplitFile.cpp:235` |
-| 13 | `Com&bine files...` | `IDM_COMBINE 550` | — | enabled only if `isFsFile` | `CApp::Combine()` `PanelSplitFile.cpp:419` |
+| 12 | `&Split file...` | `IDM_SPLIT 549` | — | enabled only if `isOneFsFile` | `CApp::Split()` `PanelSplitFile.cpp:235` |
+| 13 | `Com&bine files...` | `IDM_COMBINE 550` | — | enabled only if `isOneFsFile` | `CApp::Combine()` `PanelSplitFile.cpp:419` |
 | — | separator | | | | |
 | 14 | `P&roperties\tAlt+Enter` | `IDM_PROPERTIES 551` | Alt+Enter | always | `Properties()` `PanelMenu.cpp:172` |
 | 15 | `Comme&nt...\tCtrl+Z` | `IDM_COMMENT 552` | Ctrl+Z | disabled if `readOnly` or hash | `ChangeComment()` `PanelOperations.cpp:487` |
-| 16 | popup `CRC SHA` (`IDM_CRC 553`) | | | always enabled; items compute hashes of the operated items (§3.13) | `CApp::CalculateCrc(name)` `PanelCrc.cpp:413` |
+| 16 | popup `CRC` (resource id **0**, `MY_MENUITEM_ID(0)`; `IDM_CRC 553` is defined in `resource.h` but not used by the menu) | | | always enabled; items compute hashes of the operated items (§3.13) | `CApp::CalculateCrc(name)` `PanelCrc.cpp:413` |
 | 16a | `CRC-32` | `IDM_CRC32 102` | | | `CalculateCrc("CRC32")` |
 | 16b | `CRC-64` | `IDM_CRC64 103` | | | `"CRC64"` |
 | 16c | `XXH64` | `IDM_XXH64 120` | | | `"XXH64"` |
@@ -140,20 +144,22 @@ Rebuilt for the current panel by `CFileMenu::Load` (`MyLoadMenu.cpp:588-734`) ea
 | 16i | `SHA3-256` | `IDM_SHA3_256 108` | | | `"SHA3-256"` |
 | 16j | `BLAKE2sp` | `IDM_BLAKE2SP 121` | | | `"BLAKE2sp"` |
 | 16k | `*` | `IDM_HASH_ALL 101` | | | `CalculateCrc("*")` (all methods) |
-| 17 | `Diff` | `IDM_DIFF 554` | — | hidden if no Diff tool configured (`ReadRegDiff` empty); disabled in hash folder | `CApp::DiffFiles()` `PanelItemOpen.cpp:747` |
+| 17 | `Di&ff` | `IDM_DIFF 554` | — | hidden if no Diff tool configured (`ReadRegDiff` empty); disabled in hash folder | `CApp::DiffFiles()` `PanelItemOpen.cpp:747` |
 | — | separator | | | | |
 | 18 | `Create Folder\tF7` | `IDM_CREATE_FOLDER 555` | F7 | disabled if `readOnly` or hash | `CreateFolder()` `PanelOperations.cpp:363` |
 | 19 | `Create File\tCtrl+N` | `IDM_CREATE_FILE 556` | Ctrl+N (also Shift+F4) | disabled if `readOnly` or hash | `CreateFile()` `PanelOperations.cpp:426` |
 | — | separator | | | | |
-| 20 | `Link...` | `IDM_LINK 558` | — | disabled unless FS folder with exactly one operated item; hidden under CE | `CApp::Link()` (`LinkDialog.cpp`) |
-| 21 | `Alternate Streams` | `IDM_ALT_STREAMS 559` | — | disabled unless `isAltStreamsSupported`; hidden under CE | `OpenAltStreams()` `PanelFolderChange.cpp:1082` |
-| 22-25 | `Ver Edit (&1)`, `Ver Commit`, `Ver Revert`, `Ver Diff (&0)` | `IDM_VER_EDIT 580`, `IDM_VER_COMMIT 581`, `IDM_VER_REVERT 582`, `IDM_VER_DIFF 583` | — | shown only when registry `7vc` path is set (`ReadReg_VerCtrlPath`) and `isFsFile` with size < 2 GB; read-only file → only "Ver Edit"; writable file → Commit/Revert/Diff | `CApp::VerCtrl(id)` `VerCtrl.cpp:141` |
+| 20 | `&Link...` | `IDM_LINK 558` | — | disabled unless exactly one operated item (`numItems == 1`); disabled in hash folder | `CApp::Link()` (`App.h:143`, `LinkDialog.cpp`) |
+| 21 | `&Alternate streams` | `IDM_ALT_STREAMS 559` | — | disabled unless `isAltStreamsSupported` | `OpenAltStreams()` `PanelFolderChange.cpp:1082` |
+| 22-25 | `Ver Edit (&1)`, `Ver Commit`, `Ver Revert`, `Ver Diff (&0)` (`g_Zvc_Strings` `MyLoadMenu.cpp:580`) — not in the `.rc`, appended by `CFileMenu::Load` | `IDM_VER_EDIT 580`, `IDM_VER_COMMIT 581`, `IDM_VER_REVERT 582`, `IDM_VER_DIFF 583` | — | appended only when Diff path is set **and** `isOneFsFile` **and** `ReadReg_VerCtrlPath` is non-empty **and** the file exists, is not a dir and is < 2 GB; read-only file → only "Ver Edit"; writable file → Commit/Revert/Diff (`MyLoadMenu.cpp:697-732`) | `CApp::VerCtrl(id)` `VerCtrl.cpp:141` |
 | — | separator | | | | |
-| 26 | `E&xit\tAlt+F4` | `IDCLOSE 8` | Alt+F4 | hidden in the context-menu variant | `SendMessage(WM_CLOSE)` |
+| 26 | `E&xit\tAlt+F4` | `IDCLOSE 8` | Alt+F4 | skipped in the context-menu variant | `SendMessage(hWnd, WM_CLOSE)` (`MyLoadMenu.cpp:816`) |
 
 Notes:
-* In the context-menu variant (`CFileMenu::Load` with `programMenu=false`) `IDCLOSE` is removed and the items are inserted at `startPos`.
-* Hash-folder rule (`isHash`): disables Open/Open Inside*/Open Outside/View/Edit/Copy To/Move To/Comment/Create Folder/Create File/Link/Diff (`MyLoadMenu.cpp:588+`).
+* In the context-menu variant (`CFileMenu::Load` with `programMenu=false`) `IDCLOSE` is skipped and the items are inserted at `startPos` (after the 7-Zip/System entries, §2.8).
+* Read-only rule: disables Rename/Move To/Delete/Comment/Create Folder/Create File (`MyLoadMenu.cpp:637-649`).
+* Hash-folder rule (`isHashFolder`): disables Open/Open Inside/Open Inside */Open Inside #/Open Outside/View/Edit/Copy To/Move To/Comment/Create Folder/Create File/Link/Diff — Rename and Delete stay enabled (`MyLoadMenu.cpp:650-670`).
+* `IDM_OPEN_INSIDE_ONE`/`IDM_OPEN_INSIDE_PARSER` are always shown (the "hide unless Diff set" branch is commented out).
 
 ### 2.2 Edit menu (`IDM_EDIT 501`)
 
@@ -161,14 +167,14 @@ Notes:
 |---|---|---|---|
 | `Select &All\tShift+[Grey +]` | `IDM_SELECT_ALL 600` | Shift+Num+ / Ctrl+A | `SelectAll(true)` `PanelSelect.cpp:206` |
 | `Deselect All\tShift+[Grey -]` | `IDM_DESELECT_ALL 601` | Shift+Num- | `SelectAll(false)` |
-| `&Invert Selection\t[Grey *]` | `IDM_INVERT_SELECTION 602` | Num* | `InvertSelection()` `PanelSelect.cpp:213` |
-| `Select...\t[Grey +]` | `IDM_SELECT 603` | Num+ | `SelectSpec(true)` `PanelSelect.cpp:154` |
-| `Deselect...\t[Grey -]` | `IDM_DESELECT 604` | Num- | `SelectSpec(false)` |
-| (MENUBARBREAK) | | | |
-| `Select by Type\tAlt+[Grey +]` | `IDM_SELECT_BY_TYPE 605` | Alt+Num+ | `SelectByType(true)` `PanelSelect.cpp:169` |
+| `&Invert Selection\tGrey *` | `IDM_INVERT_SELECTION 602` | Num* | `InvertSelection()` `PanelSelect.cpp:213` |
+| `Select...\tGrey +` | `IDM_SELECT 603` | Num+ | `SelectSpec(true)` `PanelSelect.cpp:154` |
+| `Deselect...\tGrey -` | `IDM_DESELECT 604` | Num- | `SelectSpec(false)` |
+| `""` id 0, `MY_MFT_MENUBARBREAK` (column break, not a separator) | | | |
+| `Select by Type\tAlt+[Grey+]` | `IDM_SELECT_BY_TYPE 605` | Alt+Num+ | `SelectByType(true)` `PanelSelect.cpp:169` |
 | `Deselect by Type\tAlt+[Grey -]` | `IDM_DESELECT_BY_TYPE 606` | Alt+Num- | `SelectByType(false)` |
 
-All always enabled. Dispatched in `OnMenuCommand` (`MyLoadMenu.cpp:805+`).
+All always enabled. Dispatched in `OnMenuCommand` (`MyLoadMenu.cpp:826-857`); every handler is followed by `g_App.Refresh_StatusBar()`. `Cut/Copy/Paste` (`IDM_EDIT_CUT/COPY/PASTE`) exist only as commented-out code in the `.rc`, in `OnMenuActivating` and in `OnMenuCommand` — they are not part of the shipped UI.
 
 ### 2.3 View menu (`IDM_VIEW 502`)
 
@@ -179,17 +185,17 @@ Radio/check state is refreshed in `OnMenuActivating` (`MyLoadMenu.cpp:420-436`).
 | `Lar&ge Icons\tCtrl+1` | `IDM_VIEW_LARGE_ICONS 700` | Ctrl+1 | radio, checked when `_listViewMode == 0` | `SetListViewMode(0)` `Panel.cpp:871` |
 | `S&mall Icons\tCtrl+2` | `IDM_VIEW_SMALL_ICONS 701` | Ctrl+2 | radio (mode 1) | `SetListViewMode(1)` |
 | `&List\tCtrl+3` | `IDM_VIEW_LIST 702` | Ctrl+3 | radio (mode 2) | `SetListViewMode(2)` |
-| `&Details\tCtrl+4` | `IDM_VIEW_DETAILS 703` | Ctrl+4 | radio (mode 3, **default**) | `SetListViewMode(3)` |
+| `&Details\tCtrl+4` | `IDM_VIEW_DETAILS 703` | Ctrl+4 | radio (mode 3, **default**, `MY_MFS_CHECKED` in the `.rc`) | `SetListViewMode(3)` |
 | separator | | | | |
-| `Arrange by Name\tCtrl+F3` | `IDM_VIEW_ARANGE_BY_NAME 710` | Ctrl+F3 | radio, checked when `_sortID == kpidName` | `SortItemsWithPropID(kpidName)` `PanelSort.cpp:256` |
-| `Arrange by Type\tCtrl+F4` | `IDM_VIEW_ARANGE_BY_TYPE 711` | Ctrl+F4 | radio (`kpidExtension`) | `SortItemsWithPropID(kpidExtension)` |
-| `Arrange by Date\tCtrl+F5` | `IDM_VIEW_ARANGE_BY_DATE 712` | Ctrl+F5 | radio (`kpidMTime`) | `SortItemsWithPropID(kpidMTime)` |
-| `Arrange by Size\tCtrl+F6` | `IDM_VIEW_ARANGE_BY_SIZE 713` | Ctrl+F6 | radio (`kpidSize`) | `SortItemsWithPropID(kpidSize)` |
-| `No Sort\tCtrl+F7` | `IDM_VIEW_ARANGE_NO_SORT 730` | Ctrl+F7 | radio (`kpidNoProperty`) | `SortItemsWithPropID(kpidNoProperty)` (archive order) |
+| `Name\tCtrl+F3` | `IDM_VIEW_ARANGE_BY_NAME 710` | Ctrl+F3 | radio, checked when `_sortID == kpidName` | `SortItemsWithPropID(kpidName)` `PanelSort.cpp:256` |
+| `Type\tCtrl+F4` | `IDM_VIEW_ARANGE_BY_TYPE 711` | Ctrl+F4 | radio (`kpidExtension`) | `SortItemsWithPropID(kpidExtension)` |
+| `Date\tCtrl+F5` | `IDM_VIEW_ARANGE_BY_DATE 712` | Ctrl+F5 | radio (`kpidMTime`) | `SortItemsWithPropID(kpidMTime)` |
+| `Size\tCtrl+F6` | `IDM_VIEW_ARANGE_BY_SIZE 713` | Ctrl+F6 | radio (`kpidSize`) | `SortItemsWithPropID(kpidSize)` |
+| `Unsorted\tCtrl+F7` | `IDM_VIEW_ARANGE_NO_SORT 730` | Ctrl+F7 | radio (`kpidNoProperty`) | `SortItemsWithPropID(kpidNoProperty)` (archive order) |
 | separator | | | | |
 | `Flat View` | `IDM_VIEW_FLAT_VIEW 731` | — | check: `GetFlatMode()` | `ChangeFlatMode()` `Panel.cpp:894` |
 | `&2 Panels\tF9` | `IDM_VIEW_TWO_PANELS 732` | F9 | check: `NumPanels == 2` | `SwitchOnOffOnePanel()` `App.cpp:360` |
-| popup `2017` (`IDM_VIEW_TIME_POPUP 760`) | | | popup label is replaced at open time by the current time formatted at the panel's timestamp level; items are `IDM_VIEW_TIME + k` (761+k) for the 5 levels DAY(-3)/MIN(-1)/SEC(0)/NTFS(7)/NS(9) each showing the current date/time at that precision, radio-checked on `_timestampLevel`; last item `IDM_VIEW_TIME_UTC 799` "UTC" check = `g_Timestamp_Show_UTC` | `MyLoadMenu.cpp:385+ (Is_MenuItem_TimePopup 133)`; handler sets `_timestampLevel` / toggles UTC and redraws |
+| popup `2017` (`IDM_VIEW_TIME_POPUP 760`; the `.rc` holds a single placeholder item `Time` = `IDM_VIEW_TIME 761`) | | | rebuilt each time the View menu opens (`MyLoadMenu.cpp:437-506`): popup label = current UTC time at `kTimestampPrintLevel_DAY`; sub-items are `IDM_VIEW_TIME + k` for the levels in `g_App._timestampLevels` (DAY, MIN, SEC, NTFS, NS — `kTimestampPrintLevel_*`), each labelled with the current time at that precision, radio-checked on `GetTimestampLevel()`; last item `IDM_VIEW_TIME_UTC 799` "UTC" check = `g_Timestamp_Show_UTC` | `Is_MenuItem_TimePopup` (`MyLoadMenu.cpp:133`); `IDM_VIEW_TIME + k` → `g_App.SetTimestampLevel(_timestampLevels[k])` (both panels, redraw; `App.h:202`); `IDM_VIEW_TIME_UTC` toggles `g_Timestamp_Show_UTC` + `RedrawListItems_InPanels()` (`MyLoadMenu.cpp:909-912`) |
 | popup `Toolbars` (`IDM_VIEW_TOOLBARS 733`) | | | | |
 | ↳ `Archive Toolbar` | `IDM_VIEW_ARCHIVE_TOOLBAR 750` | | check `ShowArchiveToolbar` | toggle + `ReloadToolbars` + `SaveToolbarChanges` |
 | ↳ `Standard Toolbar` | `IDM_VIEW_STANDARD_TOOLBAR 751` | | check `ShowStandardToolbar` | same |
@@ -199,20 +205,22 @@ Radio/check state is refreshed in `OnMenuActivating` (`MyLoadMenu.cpp:420-436`).
 | `Open Root Folder\t\\` | `IDM_OPEN_ROOT_FOLDER 734` | `\` or `/` typed in list | — | `OpenRootFolder()` `PanelFolderChange.cpp:1025` |
 | `Up One Level\tBackspace` | `IDM_OPEN_PARENT_FOLDER 735` | Backspace | — | `OpenParentFolder()` `PanelFolderChange.cpp:917` |
 | `Folders History...\tAlt+F12` | `IDM_FOLDERS_HISTORY 736` | Alt+F12 | — | `FoldersHistory()` `PanelFolderChange.cpp:866` |
-| `&Refresh\tCtrl+R` | `IDM_VIEW_REFRESH 737` | Ctrl+R | — | `OnReload(false)` `PanelItems.cpp:1451` |
-| `Auto Refresh` | `IDM_VIEW_AUTO_REFRESH 738` | — | check `g_App.Get_AutoRefresh_Mode()` (default on) | `g_App.Change_AutoRefresh_Mode()` (`MyLoadMenu.cpp:890`) |
+| `&Refresh\tCtrl+R` | `IDM_VIEW_REFRESH 737` | Ctrl+R | — | `g_App.RefreshView()` → focused panel `OnReload()` `PanelItems.cpp:1451` |
+| `Auto Refresh` | `IDM_VIEW_AUTO_REFRESH 738` | — | check `g_App.Get_AutoRefresh_Mode()` (`AutoRefresh_Mode`, default on) | `g_App.Change_AutoRefresh_Mode()` (`App.h:235`, pushes the flag into both panels) |
+
+`.rc`-level: under `UNDER_CE` the Toolbars popup is excluded and "Show NTFS streams"/"Show deleted files" are commented out.
 
 ### 2.4 Favorites menu (`IDM_FAVORITES 503`)
 
-Built dynamically in `OnMenuActivating` (`MyLoadMenu.cpp:385+`):
+The `.rc` only declares the popup `&Add folder to Favorites as` (`IDM_ADD_TO_FAVORITES 800`, containing one separator) followed by a separator; everything else is built in `OnMenuActivating` (`MyLoadMenu.cpp:508-547`) each time the menu opens:
 
 | Text | ID | Key | Handler |
 |---|---|---|---|
-| popup `Add folder to Favorites as` (`IDM_ADD_TO_FAVORITES 800`) with 10 items `Bookmark i` (`IDS_BOOKMARK 801` + " " + i, i = 0..9), accelerator `Alt+Shift+<i>` | `kSetBookmarkMenuID (810) + i` | Alt+Shift+0..9 | `CPanel::SetBookmark(i)` `PanelFolderChange.cpp:335` → `SaveFastFolders` |
+| popup `&Add folder to Favorites as` with 10 items `<LangString(IDS_BOOKMARK 801)> <i>` (i = 0..9), accelerator text `\tAlt+Shift+<i>` | `k_MenuID_SetBookmark (810) + i` (`MyLoadMenu.cpp:28`) | Alt+Shift+0..9 | `CPanel::SetBookmark(i)` `PanelFolderChange.cpp:335` → `SaveFastFolders` |
 | separator | | | |
-| 10 items: bookmark path (truncated to 100 chars, `"-"` if empty), accelerator `Alt+<i>` | `kOpenBookmarkMenuID (830) + i` | Alt+0..9 / RightCtrl+0..9 | `CPanel::OpenBookmark(i)` `PanelFolderChange.cpp:340` → `BindToPathAndRefresh` |
+| 10 items: bookmark path (`"-"` if empty; if longer than 100 chars the middle is replaced by `" ... "` keeping the first and last 50), accelerator text `\tAlt+<i>` | `k_MenuID_OpenBookmark (830) + i` (`MyLoadMenu.cpp:27`) | Alt+0..9 / RightCtrl+0..9 (§3.7) | `CPanel::OpenBookmark(i)` `PanelFolderChange.cpp:340` → `BindToPathAndRefresh` |
 
-Bookmarks list = `CFolderHistory` of exactly 10 strings (`ReadFastFolders` / `SaveFastFolders`, §5.2). `SetBookmark` stores the current folder's full path (`GetFsPath()`/`_currentFolderPrefix`).
+Bookmarks list = `CFolderHistory` of exactly 10 strings (`ReadFastFolders` / `SaveFastFolders`, §5.2). `SetBookmark` stores the current folder's full path (`GetFsPath()`/`_currentFolderPrefix`). A "Temp : <path>" item (`k_MenuID_Bookmark_Temp 850`) exists only under `#if 0`.
 
 ### 2.5 Tools menu (`IDM_TOOLS 504`)
 
@@ -220,35 +228,34 @@ Bookmarks list = `CFolderHistory` of exactly 10 strings (`ReadFastFolders` / `Sa
 |---|---|---|
 | `&Options...` | `IDM_OPTIONS 900` | `OptionsDialog(hwnd, g_hInstance)` `OptionsDialog.cpp:32` (§4.21) |
 | separator | | |
-| `&Benchmark` | `IDM_BENCHMARK 901` | `MyBenchmark(false)` `MyLoadMenu.cpp:798` → `Benchmark(totalMode=false)` in `CompressCall.cpp` → spawns `7zG.exe b` |
-| `Benchmark2` | `IDM_BENCHMARK2 902` | shown only if the Diff path is set (developer switch); `MyBenchmark(true)` → `7zG b -mm=*` "total" mode (§4.25) |
+| `&Benchmark` | `IDM_BENCHMARK 901` | `MyBenchmark(false)` `MyLoadMenu.cpp:798` (panel timers disabled) → `Benchmark(totalMode=false)` in `CompressCall.cpp` → spawns `7zG.exe b` |
+| `Benchmark 2` | `IDM_BENCHMARK2 902` | **only in the Windows CE build** (`#ifdef UNDER_CE` in the `.rc`); the desktop menu never contains it (the "hide unless Diff set" test in `CFileMenu::Load` is dead code because that loop only walks the File menu). Handler `MyBenchmark(true)` → `7zG b -mm=*` "total" mode. |
 | separator | | |
-| `Delete Temporary Files...` | `IDM_TEMP_DIR 910` | `CBrowseDialog2` (§4.3) opened on the system temp folder |
+| `Delete Temporary Files...` | `IDM_TEMP_DIR 910` | `MyBrowseForTempFolder(g_HWND)` (`BrowseDialog2.cpp:1853`, §4.3) — a `CBrowseDialog2` on the system temp folder; the old "navigate the panel to %TEMP%" code is commented out |
 
 ### 2.6 Help menu (`IDM_HELP 505`)
 
 | Text | ID | Key | Handler |
 |---|---|---|---|
-| `&Contents...\tF1` | `IDM_HELP_CONTENTS 960` | F1 | `ShowHelpWindow(kHelpTopic = "start.htm")` (HtmlHelp on `7-zip.chm`) |
+| `&Contents...\tF1` | `IDM_HELP_CONTENTS 960` | F1 | `ShowHelpWindow(kFMHelpTopic = "FM/index.htm")` (`MyLoadMenu.cpp:38`, HtmlHelp on `7-zip.chm`); excluded under CE |
 | separator | | | |
-| `&About 7-Zip...` | `IDM_ABOUT 961` | — | `CAboutDialog` (§4.1) |
+| `&About 7-Zip...` | `IDM_ABOUT 961` | — | `CAboutDialog dialog; dialog.Create(hWnd)` (§4.1) |
 
 ### 2.7 Command dispatch summary
 
-`OnMenuCommand(HWND, id)` (`MyLoadMenu.cpp:805-964`):
-* `IDCLOSE` → `WM_CLOSE`; `IDM_VIEW_*` (modes, sorts, flat, panels, toolbars, time levels, root/parent/history/refresh/auto-refresh); `IDM_SELECT*`/`IDM_INVERT_SELECTION`/`IDM_*_BY_TYPE`; `IDM_OPTIONS`; `IDM_BENCHMARK(2)`; `IDM_TEMP_DIR`; `IDM_HELP_CONTENTS`; `IDM_ABOUT`; `kMenuCmdID_Toolbar_Add/Extract/Test`; bookmark IDs; `IDM_VER_*` → `CApp::VerCtrl`.
-* Everything else → `ExecuteFileCommand(id)` (`MyLoadMenu.cpp:736-796`) which maps the File-menu IDs listed in §2.1 (and `IDM_CRC*`/`IDM_HASH_ALL` → `CalculateCrc`).
-* `FM.cpp:877 ExecuteCommand` handles `WM_COMMAND` from accelerators/toolbars and forwards to `OnMenuCommand`.
+`WM_COMMAND` in the main `WndProc` (`FM.cpp:894-907`): ids in `[kMenuCmdID_Toolbar_Start 1070, kMenuCmdID_Toolbar_End)` → `ExecuteCommand` (`FM.cpp:877`, toolbar Add/Extract/Test); everything else → `OnMenuCommand(hWnd, id)` (`MyLoadMenu.cpp:805-964`):
+* `IDCLOSE` → `SendMessage(WM_CLOSE)`; `IDM_SELECT*`/`IDM_INVERT_SELECTION`/`IDM_*_BY_TYPE` (+ `Refresh_StatusBar`); `IDM_VIEW_LARGE_ICONS..DETAILS` → `SetListViewMode(id - IDM_VIEW_LARGE_ICONS)` and re-check the radio in the View submenu; `IDM_VIEW_ARANGE_*`; `IDM_OPEN_ROOT_FOLDER`/`IDM_OPEN_PARENT_FOLDER`/`IDM_FOLDERS_HISTORY`/`IDM_VIEW_FLAT_VIEW`/`IDM_VIEW_REFRESH`/`IDM_VIEW_AUTO_REFRESH`; `IDM_VIEW_TWO_PANELS`; the four toolbar toggles; `IDM_VIEW_TIME_UTC`; `IDM_OPTIONS`; `IDM_BENCHMARK(2)`; `IDM_HELP_CONTENTS`; `IDM_ABOUT`; `IDM_TEMP_DIR`; default branch: bookmark ranges 830..839 → `OpenBookmark`, 810..819 → `SetBookmark`, `IDM_VIEW_TIME + k` → `SetTimestampLevel`.
+* Everything not matched above → `ExecuteFileCommand(id)` (`MyLoadMenu.cpp:736-796`): first `id >= kMenuCmdID_Plugin_Start (1100)` → focused panel `InvokePluginCommand(id)` and release of the cached context menus; otherwise the File-menu IDs of §2.1 (`IDM_OPEN` → `g_App.OpenItem()`, `IDM_OPEN_INSIDE*` → `OpenItemInside(NULL/"*"/"#")`, `IDM_OPEN_OUTSIDE` → `OpenItemOutside()`, `IDM_FILE_VIEW/EDIT` → `EditItem(false/true)`, `IDM_RENAME/COPY_TO/MOVE_TO`, `IDM_DELETE` → `Delete(!IsKeyDown(VK_SHIFT))`, `IDM_HASH_ALL`/`IDM_CRC*` → `CalculateCrc`, `IDM_DIFF`, `IDM_VER_*` → `VerCtrl(id)`, `IDM_SPLIT/COMBINE/PROPERTIES/COMMENT/CREATE_FOLDER/CREATE_FILE/LINK/ALT_STREAMS`); all of these are `CApp` one-liners forwarding to `GetFocusedPanel()` (`App.h`).
 
 ### 2.8 Context menus
 
 **List-view item context menu** — `CPanel::OnContextMenu(HANDLE, x, y)` (`PanelMenu.cpp:1083-1160`):
 * Invoked by right-click (`NM_RCLICK`, `PanelItems.cpp:1385 OnRightClick`) on items, or by the keyboard (`WM_CONTEXTMENU` with `x,y == -1` → positioned at the focused item's rectangle).
 * Right-click on the header (`x,y` inside header) → column context menu (below).
-* Menu composition (`PanelMenu.cpp:1083+`):
-  1. If the panel is an FS folder (not root/drives/network) and `ShowSystemMenu` is off, the **shell context menu** of the operated items is *not* inlined; instead `CreateSevenZipMenu` (`PanelMenu.cpp:792`) inserts the 7-Zip Explorer commands (`CZipContextMenu::QueryContextMenu`, IDs from `kSevenZipStartMenuID = 1100`, see §2.9), then `CreateFileMenu` (`PanelMenu.cpp:921`) appends the File-menu items from §2.1 (without Exit).
-  2. If `ShowSystemMenu` (Settings page) is on and the folder is FS, `CreateSystemMenu` (`PanelMenu.cpp:688`) queries the shell `IContextMenu` for the items' PIDLs (`CreateShellContextMenu` `PanelMenu.cpp:504`) with `CMF_EXPLORE | (Shift ? CMF_EXTENDEDVERBS : 0)` and inserts it as a `System` submenu (`IDS_SYSTEM 7103`) whose IDs start at `kSystemStartMenuID = 1500`.
-  3. Selected ID ≥ 1500 → `InvokePluginCommand(id, systemContextMenu, ...)` (`PanelMenu.cpp:999`) invokes the shell verb (`CMINVOKECOMMANDINFO` with the item's folder as working dir); 1100..1499 → 7-Zip context command (`CZipContextMenu::InvokeCommand`); otherwise → `ExecuteFileCommand`.
+* Menu composition — `CPanel::CreateFileMenu(menu, sevenZipCtx, systemCtx, programMenu=false)` (`PanelMenu.cpp:921-988`), then `menu.Track(TPM_LEFTALIGN|TPM_RIGHTBUTTON|TPM_RETURNCMD|TPM_NONOTIFY)`:
+  1. If the panel is **not an archive folder** (`!IsArcFolder()`): `CreateSevenZipMenu` (`PanelMenu.cpp:792`) inserts the 7-Zip Explorer commands (`CZipContextMenu::QueryContextMenu`, IDs `kSevenZipStartMenuID = kMenuCmdID_Plugin_Start = 1100` .. 1499, flags `CMF_EXPLORE | (Shift ? CMF_EXTENDEDVERBS : 0)`, see §2.9); then, only if `g_App.ShowSystemMenu` (Settings page) is on, `CreateSystemMenu` (`PanelMenu.cpp:688`) queries the shell `IContextMenu` for the items' PIDLs (`CreateShellContextMenu` `PanelMenu.cpp:504`) with the same flags and inserts it as a `System` submenu (`IDS_SYSTEM 7103`) whose IDs start at `kSystemStartMenuID = 1500`.
+  2. `CFileMenu::Load` appends the File-menu items from §2.1 (without Exit) after those entries.
+  3. Selected ID ≥ 1100 → `InvokePluginCommand(id, sevenZipCtx, systemCtx)` (`PanelMenu.cpp:999`): id ≥ 1500 → shell verb on the system menu (`CMINVOKECOMMANDINFO`, working dir = current folder), 1100..1499 → 7-Zip context command (`CZipContextMenu::InvokeCommand`); otherwise → `ExecuteFileCommand`.
 * Before modifying operations `CheckBeforeUpdate(resourceID)` (`PanelMenu.cpp:882`) refuses with `IDS_OPERATION_IS_NOT_SUPPORTED 6008` if a read-only folder is in the chain, and `IDS_MESSAGE_UNSUPPORTED_OPERATION_FOR_LONG_PATH_FOLDER 3013` for super-long paths.
 
 **Column header context menu** — `ShowColumnsContextMenu(x, y)` (`PanelItems.cpp:1396-1449`): one check item per available column (`_columns` property list, label = property name), the first (Name) column is grayed/always on; toggling sets `IsVisible` and re-inits columns; result persisted via `SaveListViewInfo` (§5.3).
@@ -304,13 +311,13 @@ Column header click → `OnColumnClick` (`PanelSort.cpp:281`) → `SortItemsWith
 | Folder type | Properties exposed (`GetPropertyInfo` table) | Source |
 |---|---|---|
 | RootFolder | `kpidName` (4) only | `RootFolder.cpp` `kProps` |
-| FSDrives | `kpidName`, `kpidTotalSize` (56), `kpidFreeSpace` (57), `kpidType` (20), `kpidVolumeName` (59), `kpidFileSystem` (24), `kpidClusterSize` (58) | `FSDrives.cpp` `kProps` |
+| FSDrives | `kpidName`, `kpidOutName` (94), `kpidTotalSize` (56), `kpidFreeSpace` (57), `kpidType` (20), `kpidVolumeName` (59), `kpidFileSystem` (24), `kpidClusterSize` (58) | `FSDrives.cpp` `kProps` |
 | FSFolder | `kpidName` 4, `kpidSize` 7, `kpidMTime` 12, `kpidCTime` 10, `kpidATime` 11, `kpidChangeTime` 98, `kpidAttrib` 9, `kpidPackSize` 8, `kpidINode` 91, `kpidLinks` 37, `kpidComment` 28, `kpidNumSubDirs` 31, `kpidNumSubFiles` 32, and `kpidPrefix` 30 (flat mode only); raw prop `kpidNtReparse` 89 | `FSFolder.cpp` `kProps` / `GetPropertyInfo` |
 | AltStreamsFolder | `kpidName`, `kpidSize`, `kpidPackSize` | `AltStreamsFolder.cpp` |
 | NetFolder | `kpidName`, `kpidLocalName` 60, `kpidComment`, `kpidProvider` 61 | `NetFolder.cpp` |
 | Archive (`7-Zip.<type>`) | the archive handler's item properties with `kpidPath` renamed to `kpidName` (`CAgent::GetPropertyInfo` `Agent.cpp:1881-1890`), plus `kpidNumSubDirs`, `kpidNumSubFiles` (for folders) and `kpidPrefix` (flat mode) added by `CAgentFolder` (`Agent.cpp` `GetNumberOfProperties/GetPropertyInfo`), plus raw properties (`kpidNtSecure` 86, `kpidNtReparse` 89, …) if the handler implements `IArchiveGetRawProps` | `Agent.cpp` |
 
-Other PROPIDs used by the FM as *item* values (not columns): `kpidIsDir` 6, `kpidIsAltStream` 78, `kpidIsDeleted` 84, `kpidOutName` 94 (name to use when copying out of FSDrives / hash folders), `kpidReadOnly` 93 (folder-level), `kpidType` 20 (folder-level), `kpidIsHash` 97 (folder-level), `kpidPath` 3, `kpidErrorType`/`kpidError`/`kpidErrorFlags`/`kpidWarning`/`kpidWarningFlags`/`kpidOffset`/`kpidPhySize`/`kpidTailSize` (archive levels, §3.11), `kpidTotalSize`/`kpidFreeSpace`/`kpidClusterSize`/`kpidVolumeName`/`kpidFileSystem` (drives).
+Other PROPIDs used by the FM as *item* values (not columns) — numbers from the `enum` in `7zip/PropID.h` (`kpidNoProperty = 0`, consecutive): `kpidIsDir` 6, `kpidIsAltStream` 63, `kpidIsDeleted` 65, `kpidNtSecure` 62, `kpidOutName` 94 (name to use when copying out of FSDrives / hash folders), `kpidReadOnly` 93 (folder-level), `kpidType` 20 (folder-level), `kpidIsHash` 97 (folder-level), `kpidPath` 3, `kpidErrorType` 69 / `kpidError` 55 / `kpidErrorFlags` 71 / `kpidWarning` 73 / `kpidWarningFlags` 72 / `kpidOffset` 36 / `kpidPhySize` 44 / `kpidTailSize` 87 (archive levels, §3.11), `kpidTotalSize` 56 / `kpidFreeSpace` 57 / `kpidClusterSize` 58 / `kpidVolumeName` 59 / `kpidFileSystem` 24 (drives), `kpidLocalName` 60 / `kpidProvider` 61 (network).
 
 ### 3.3 Sorting
 
@@ -360,50 +367,52 @@ Item selection state is kept in `_selectedStatusVector` (parallel to `_listView`
 
 ### 3.7 Keyboard map — `CPanel::OnKeyDown` (`PanelKey.cpp:39-357`)
 
-`LVN_KEYDOWN` handler; `ctrl/alt/shift/leftCtrl/rightCtrl` states are read with `IsKeyDown`. The table lists every case in order of the switch (`kVKeyPropIDPairs` at `PanelKey.cpp:15-28` maps `VK_F3..VK_F7` to `kpidName, kpidExtension, kpidMTime, kpidSize, kpidNoProperty`).
+`LVN_KEYDOWN` handler; `alt/ctrl/rightCtrl/shift` states are read with `IsKeyDown` (`PanelKey.cpp:46-50`; `leftCtrl` is commented out). The pre-switch checks run first, in this order: Tab, digits with RightCtrl/Alt, Alt+F1/F2, F9, Ctrl+F3..F12 (sorting, then falls through to the switch). The table lists every case in order of the code (`g_VKeyPropIDPairs` at `PanelKey.cpp:15-28` maps `VK_F3..VK_F7` to `kpidName, kpidExtension, kpidMTime, kpidSize, kpidNoProperty`; `FindVKeyPropIDPair` `:30`). Returning `true` swallows the key; `false` lets the list view process it too.
 
 | Key | Modifiers | Action | Source |
 |---|---|---|---|
-| Tab | — | `_panelCallback->OnTab()` → switch focused panel (only 2-panel mode) | `PanelKey.cpp:39+` |
-| `0`..`9` | RightCtrl or Alt (+Shift) | Shift → `SetBookmark(digit)`; else `OpenBookmark(digit)` | |
-| F1 | Alt | focus address bar of panel 0 (`SetFocusToPath(0)`) | |
-| F2 | Alt | focus address bar of panel 1 | |
-| F9 | — | `SwitchOnOffOnePanel` (via `OnMenuCommand(IDM_VIEW_TWO_PANELS)`) | |
-| F3..F7 | Ctrl | `SortItemsWithPropID(kpidName / kpidExtension / kpidMTime / kpidSize / kpidNoProperty)` | `FindVKeyPropIDPair` `PanelKey.cpp:30` |
-| Shift (key down) | — | remembers `_selectMark` anchor for later group selection | |
-| F2 | — | `RenameFile()` | |
-| F3 | — | `EditItem(false)` (View) | |
-| F4 | — / Shift | `EditItem(true)` (Edit); Shift+F4 → `CreateFile()` | |
-| F5 | — / Shift | `OnCopy(move=false, copyToSame=Shift)` (Shift+F5 = copy into the same folder → rename prompt) | |
-| F6 | — / Shift | `OnCopy(move=true, copyToSame=Shift)` | |
-| F7 | — | `CreateFolder()` | |
-| Delete | — / Shift | `DeleteItems(toRecycleBin = !Shift)` | |
-| Insert | Ctrl / Shift / plain | Ctrl+Ins → `EditCopy()`; Shift+Ins → `EditPaste()`; plain Insert in AlternativeSelection mode → `OnInsert()` | |
-| Down / Up | Shift | `OnArrowWithShift()` (group select) | |
-| Down / Up | Alt (Up only) | Alt+Up → `OnSetSameFolder()` (§3.8) | |
-| Right / Left | Alt | `OnSetSubFolder()` (§3.8); Shift+arrows → `OnArrowWithShift` | |
-| PgDn | Ctrl | `OpenFocusedItemAsInternal()` (also handled in `CMyListView::OnMessage` `Panel.cpp:161+`) | |
-| PgUp | Ctrl | `OpenParentFolder()` | |
-| Num + (`VK_ADD`) | Alt / Shift / — | Alt → `SelectByType(true)`; Shift → `SelectAll(true)`; plain → `SelectSpec(true)` | |
-| Num - (`VK_SUBTRACT`) | Alt / Shift / — | `SelectByType(false)` / `SelectAll(false)` / `SelectSpec(false)` | |
-| Num * (`VK_MULTIPLY`) | — | `InvertSelection()` | |
-| Backspace | — | `OpenParentFolder()` | |
-| `\` or `/` (`WM_CHAR` in list) | — | `OpenDrivesFolder()` (`CMyListView::OnMessage` `Panel.cpp:161+`) | |
-| A | Ctrl | `SelectAll(true)` | |
-| X / C / V | Ctrl | `EditCut()` / `EditCopy()` / `EditPaste()` (§3.16) | |
-| N | Ctrl | `CreateFile()` | |
-| R | Ctrl | `OnReload()` (refresh) | |
-| W | Ctrl | close the current panel (`SwitchOnOffOnePanel` when 2 panels) | |
-| Z | Ctrl | `ChangeComment()` | |
-| 1 / 2 / 3 / 4 | Ctrl | `SetListViewMode(0..3)` | |
-| F12 | Alt | `FoldersHistory()` (also via accelerator) | |
-| Enter | (list `NM_RETURN`/`LVN_ITEMACTIVATE`) | `OnNotifyActivateItems` (`PanelListNotify.cpp:538`): Alt → `Properties()`; Shift → `OpenSelectedItems(false)` (outside); else `OpenSelectedItems(true)` | |
-| Esc in address edit | | restores the current path text (`OnNotifyComboBoxEndEdit` `PanelFolderChange.cpp:532`) | |
-| Enter in address edit | | `OnNotifyComboBoxEnter` → `BindToPathAndRefresh(text)`; on failure shows the error and keeps the old folder (`PanelFolderChange.cpp:522`) | |
-| Tab in address edit | | focus list (`CMyComboBoxEdit::OnMessage` `Panel.cpp:276`) | |
-| F9 / Ctrl+W / Alt+F1/F2 in address edit | | same as in list | `Panel.cpp:276+` |
+| Tab | — (only when `hwndFrom == _listView`) | `_panelCallback->OnTab()` → switch focused panel (only 2-panel mode) | `PanelKey.cpp:41` |
+| `0`..`9` | RightCtrl or Alt (+Shift) | Shift → `SetBookmark(digit)`; else `OpenBookmark(digit)` | `:52-67` |
+| F1 | Alt (no Ctrl/Shift) | focus address bar of panel 0 (`SetFocusToPath(0)`) | `:69-76` |
+| F2 | Alt (no Ctrl/Shift) | focus address bar of panel 1 | `:69-76` |
+| F9 | — (no modifiers) | `g_App.SwitchOnOffOnePanel()` called directly (not via the menu); the key is not swallowed | `:78-81` |
+| F3..F7 | Ctrl | `SortItemsWithPropID(kpidName / kpidExtension / kpidMTime / kpidSize / kpidNoProperty)`; Ctrl+F8..F12 match nothing | `:83-88` |
+| Shift (key down) | — | `_selectionIsDefined = false; _prevFocusedItem = focused` — anchor for later group selection | `:92-97` |
+| F2 | — (no modifiers) | `RenameFile()` | `:105-112` |
+| F3 | — | `EditItem(false)` (View) | `:114-121` |
+| F4 | — / Shift | `EditItem(true)` (Edit); Shift+F4 → `CreateFile()` | `:123-135` |
+| F5 | — / Shift (no Alt/Ctrl) | `OnCopy(move=false, copyToSame=Shift)` (Shift+F5 = copy into the same folder → rename prompt) | `:137-144` |
+| F6 | — / Shift (no Alt/Ctrl) | `OnCopy(move=true, copyToSame=Shift)` | `:146-153` |
+| F7 | — | `CreateFolder()` (handled here on purpose instead of the accelerator table, see comment `:159-161`) | `:155-165` |
+| Delete | any / Shift | `DeleteItems(toRecycleBin = !Shift)` regardless of Ctrl/Alt | `:167-170` |
+| Insert | Ctrl / Shift / plain (never with Alt) | Ctrl+Ins → `EditCopy()`; Shift+Ins → `EditPaste()`; plain Insert in AlternativeSelection mode (`_mySelectMode`) → `OnInsert()` | `:172-192` |
+| Down | Shift | `OnArrowWithShift()` (group select); key passed on | `:194-198` |
+| Up | Alt / Shift | Alt+Up → `OnSetSameFolder()` (§3.8); Shift+Up → `OnArrowWithShift()` | `:200-206` |
+| Right / Left | Alt / Shift | Alt+Right and Alt+Left both → `OnSetSubFolder()` (§3.8); Shift → `OnArrowWithShift()` | `:208-222` |
+| PgDn (`VK_NEXT`) | Ctrl (no Alt/Shift) | swallowed here (`return true`); the actual `OpenFocusedItemAsInternal()` runs from `CMyListView::OnMessage` `WM_KEYDOWN` (`Panel.cpp:211-218`) | `:224-231` |
+| PgUp (`VK_PRIOR`) | Ctrl (no Alt/Shift) | `OpenParentFolder()` — only in `CMyListView::OnMessage` (`Panel.cpp:220-226`), not in `OnKeyDown` | `Panel.cpp:220` |
+| Num + (`VK_ADD`) | Alt / Shift / — | Alt → `SelectByType(true)`; Shift → `SelectAll(true)`; plain → `SelectSpec(true)`; Ctrl+Num+ does nothing (but is swallowed) | `:233-241` |
+| Num - (`VK_SUBTRACT`) | Alt / Shift / — | `SelectByType(false)` / `SelectAll(false)` / otherwise (incl. Ctrl) `SelectSpec(false)` | `:243-251` |
+| Backspace | any | `OpenParentFolder()` | `:261-263` |
+| `\` or `/` (`WM_CHAR` in list) | — | `OpenDrivesFolder()` — handled in `CMyListView::OnMessage` (`Panel.cpp:163-177`: `wParam == '\\' || wParam == '/'`, or `/` with the extended flag = numpad divide); the `VK_DIVIDE`/`'/'`/`VK_OEM_5` cases in `OnKeyDown` are commented out. `WM_CHAR` for numpad `* + -` is swallowed there to avoid the list's incremental search | `Panel.cpp:163-177` |
+| A | Ctrl | `SelectAll(true)` | `:276-282` |
+| X / C / V | Ctrl | `EditCut()` / `EditCopy()` / `EditPaste()` (§3.16; Cut and Paste are no-ops) | `:283-303` |
+| N | Ctrl | `CreateFile()` | `:304-310` |
+| R | Ctrl | `OnReload()` (refresh) | `:311-317` |
+| W | Ctrl | `PostMessage(g_HWND, WM_COMMAND, IDCLOSE)` → **closes the whole 7zFM window** (same as File → Exit), not just a panel | `:318-324` |
+| Z | Ctrl | `ChangeComment()` | `:326-332` |
+| 1 / 2 / 3 / 4 | Ctrl | `SetListViewMode(0..3)` | `:333-342` |
+| Num * (`VK_MULTIPLY`) | any | `InvertSelection()` | `:344-348` |
+| F12 | Alt (no Ctrl/Shift) | `FoldersHistory()` (also via accelerator `IDR_ACCELERATOR1`) | `:349-354` |
+| Enter | (list `NM_RETURN`/`LVN_ITEMACTIVATE`) | `OnNotifyActivateItems` (`PanelListNotify.cpp:538-547`): Alt alone (no Shift/Ctrl) → `Properties()`; otherwise `OpenSelectedItems(tryInternal = !shift || alt || ctrl)` → Shift alone = open outside. Shift+Enter is additionally caught in `CMyListView::OnMessage` (`Panel.cpp:201-209`) → `OpenSelectedItems(false)`. Alt+Enter's `WM_SYSCHAR` beep is suppressed (`Panel.cpp:178-186`). | |
+| Esc in address edit | | `WM_CHAR` swallowed (`Panel.cpp:333-339`); `CBEN_ENDEDIT` with `CBENF_ESCAPE` restores `_currentFolderPrefix` text and posts `kSetFocusToListView` (`OnNotifyComboBoxEndEdit` `PanelFolderChange.cpp:532-541`) | |
+| Enter in address edit | | `CBENF_RETURN` → `OnNotifyComboBoxEnter(text)` → `BindToPathAndRefresh(text)`; on success focus goes back to the list; on failure the error box is shown and the old folder stays (`OnNotifyComboBoxEnter` `PanelFolderChange.cpp:522-530`) | |
+| Tab in address edit | | `SetFocusToList()` (`CMyComboBoxEdit::OnMessage` `Panel.cpp:305-308`) | |
+| F9 / Ctrl+W / Alt+F1/F2 in address edit | | same as in list (`Panel.cpp:309-331`; Alt+F1/F2 via `WM_SYSKEYDOWN`, `Panel.cpp:281-300`) | `Panel.cpp:276+` |
 
 Mouse: single click / double click per `SingleClick` setting (`LVS_EX_ONECLICKACTIVATE`); Alt+double-click → Properties; Shift+double-click → open outside (same `OnNotifyActivateItems` path). Right-click → context menu (§2.8). Left-drag on items → `OnDrag(isRightButton=false)` (`LVN_BEGINDRAG`), right-drag → `OnDrag(true)` (`LVN_BEGINRDRAG`) (§3.15).
+
+Keys that exist only in the menu (no key handler): Ctrl+PgDn text on "Open Inside" is honoured via the list-view path above; `Alt+F4` (Exit) is the standard system close; F1 and Alt+F12 come from the accelerator table (§1.1).
 
 ### 3.8 Navigation
 
@@ -434,10 +443,10 @@ Mouse: single click / double click per `SingleClick` setting (`LVS_EX_ONECLICKAC
 
 **Opening a file that is inside an archive** — `CPanel::OpenItemInArchive(index, tryInternal, tryExternal, editMode, type)` (`PanelItemOpen.cpp:1484-1803`):
 1. If `tryInternal` and the archive handler supports `IInArchiveGetStream`, try opening the item *as an archive directly from the stream* (`OpenAsArc_Msg` `PanelItemOpen.cpp:528`, no extraction, virtual `CFolderLink` with `IsVirtual = true`).
-2. Otherwise extract the item (and, for a folder, its subtree) to a fresh temp directory `<Temp>\7zO<8 hex>\` (`kTempDirPrefix = "7zO"`, `CTempDir`). If the item is small — size ≤ `RAM >> max(numLevels+1, 8)` and ≤ 4 MiB threshold — extraction goes to memory first (`CVirtFileSystem` in `ExtractCallback.cpp`, flushed to disk afterwards); a Zone.Identifier alt stream is written when `WriteZone` policy says so (`ReadZoneFile`/`WriteZoneFile` `:1334/1352`, mode `kAll` for opened items).
+2. Otherwise extract the item (and, for a folder, its subtree) to a fresh temp directory `<Temp>\7zO<8 hex>\` (`kTempDirPrefix = "7zO"`, `CTempDir`). If the item is small — size ≤ `fileLimit` where `fileLimit = g_RAM_Size >> max(numLevels + 1, 8)` when the RAM size is known, else 4 MiB (`PanelItemOpen.cpp:1613-1615`) — extraction goes to memory first (`CVirtFileSystem` in `ExtractCallback.cpp`, flushed to disk afterwards); a Zone.Identifier alt stream is written when `WriteZone` policy says so (`ReadZoneFile`/`WriteZoneFile` `:1334/1352`, mode `kAll` for opened items).
 3. If the archive is read-only (`kpidReadOnly`) and `editMode`, the user is warned that changes will not be saved (message built from `IDS_CANNOT_UPDATE_FILE 3010`-style strings).
 4. Start the item: `editMode` → `StartEditApplication` (`PanelItemOpen.cpp:719`, Viewer/Editor from settings, fallback `notepad.exe`); else `StartApplication` (shell open) after `IsVirus_Message` check (`:867`: names with 5+ consecutive spaces, RLO/ RTL override characters, or executable extension after trailing dots/spaces → `IDS_VIRUS 3012` confirmation).
-5. A watcher thread (`MyThreadFunction`, `PanelItemOpen.cpp` ~1110-1330) waits for the launched process; because many apps hand off to an existing process, it uses `CreateToolhelp32Snapshot` (`GetSnapshot` `:256`) to find child processes / same-image processes started within ~2 s and waits for all of them. When they exit (or on `CExitEventLauncher` exit) it compares the temp file's size and mtime with the stored `CTempFileInfo`; if changed it posts `kOpenItemChanged` → `OnOpenItemChanged` (`:1037/1063`): asks `IDS_WANT_UPDATE_MODIFIED_FILE 3009` ("File was modified. Do you want to update it in the archive?"), on Yes → `IFolderOperations::CopyFromFile(index, tempPath)` (`CThreadCopyFrom` `:1032`, with progress) which re-packs the archive (§6.7), then reloads. On failure `IDS_CANNOT_UPDATE_FILE 3010`. Finally the temp dir is deleted (if the file was not modified or after the update) — `DeleteOldTempFiles` sweeps leftovers on the next start.
+5. A watcher thread (`MyThreadFunction`, `PanelItemOpen.cpp` ~1110-1330) waits for the launched process; because many apps hand off to an existing process, it uses `CreateToolhelp32Snapshot` (`GetSnapshot` `:256`) to find child processes / same-image processes started within ~2 s and waits for all of them. When they exit (or on `CExitEventLauncher` exit) it compares the temp file's size and mtime with the stored `CTempFileInfo`; if changed it posts `kOpenItemChanged` → `OnOpenItemChanged` (`:1037/1063`): asks `IDS_WANT_UPDATE_MODIFIED_FILE 3009` ("File was modified. Do you want to update it in the archive?"), on Yes → `IFolderOperations::CopyFromFile(index, tempPath)` (`CThreadCopyFrom` `:1032`, with progress) which re-packs the archive (§6.7), then reloads. On failure `IDS_CANNOT_UPDATE_FILE 3010`. Finally the temp dir is deleted (if the file was not modified or after the update). Note: `DeleteOldTempFiles()` (`PanelItemOpen.cpp:1815`) is never called anywhere, so leftovers from crashed sessions are not swept automatically — only `Tools → Delete Temporary Files...` (§2.5) lets the user clean them.
 6. `CTempFileInfo` fields: `ItemIndex`, `ItemName`, `FolderPath`, `FilePath`, `RelPath`, `FileInfo` (size/mtime), `NeedDelete` (`Panel.h`).
 
 **`kStartExtensions`** (`PanelItemOpen.cpp:633-660`; `DoItemAlwaysStart` `:665` — these are always opened externally by Enter, never tried as archives): `exe bat ps1 com lnk chm msi doc dot xls ppt pps wps wpt wks xlr wdb vsd pub docx docm dotx dotm xlsx xlsm xltx xltm xlsb xps xlam pptx pptm potx potm ppam ppsx ppsm vsdx xsn mpp msg dwf flv swf epub odt ods wb3 pdf ps txt xml xsd xsl xslt hxk hxc htm html xhtml xht mht mhtml htw asp aspx css cgi jsp shtml h hpp hxx c cpp cxx m mm go swift awk sed hta js json php php3 php4 php5 phptml pl pm py pyo rb tcl ts vbs asm mak clw csproj vcproj sln dsp dsw`. **`kExeExtensions`** (`:629`) = `exe bat ps1 com lnk` — used by `IsVirus_Message` (a name whose real extension is one of these but is hidden behind many spaces / RLO / trailing dots triggers the `IDS_VIRUS 3012` warning).
@@ -457,7 +466,7 @@ Mouse: single click / double click per `SingleClick` setting (`LVS_EX_ONECLICKAC
 
 | Operation | Behaviour | Source |
 |---|---|---|
-| Delete (`DeleteItems(toRecycleBin)`) | `PanelOperations.cpp:112-262`. Needs `IFolderOperations` (`MessageBox_Error_UnsupportOperation` otherwise); `CheckBeforeUpdate(IDS_ERROR_DELETING 6107)`. FS folder & recycle bin: `SHFileOperation(FO_DELETE, FOF_ALLOWUNDO)` with the item full paths (double-null list); paths ≥ `MAX_PATH` cannot go to the recycle bin → `IDS_ERROR_LONG_PATH_TO_RECYCLE 6108`. Otherwise: confirmation `MessageBoxW` with title `IDS_CONFIRM_FILE_DELETE 6100` / `IDS_CONFIRM_FOLDER_DELETE 6101` / `IDS_CONFIRM_ITEMS_DELETE 6102` and text `IDS_WANT_TO_DELETE_FILE 6103` `"Are you sure you want to delete '{0}'?"` / `IDS_WANT_TO_DELETE_FOLDER 6104` / `IDS_WANT_TO_DELETE_ITEMS 6105` `"...these {0} items?"`; then `CThreadFolderOperations` (`PanelOperations.cpp:55-101`) runs `IFolderOperations::Delete(indices, n, progress)` under a progress dialog titled `IDS_DELETING 6106`; errors → `MessageBoxErrorForUpdate(hr, IDS_ERROR_DELETING)` (`:103`). Focus is restored to the item after the deleted range. | |
+| Delete (`DeleteItems(toRecycleBin)`) | `PanelOperations.cpp:112-262`. Needs `IFolderOperations` (`MessageBox_Error_UnsupportOperation` otherwise); `CheckBeforeUpdate(IDS_ERROR_DELETING 6107)`. FS folder & recycle bin: `SHFileOperation(FO_DELETE, FOF_ALLOWUNDO)` with the item full paths (double-null list); paths ≥ `MAX_PATH` cannot go to the recycle bin → `IDS_ERROR_LONG_PATH_TO_RECYCLE 6108`. Otherwise: confirmation `MessageBoxW` with title `IDS_CONFIRM_FILE_DELETE 6100` / `IDS_CONFIRM_FOLDER_DELETE 6101` / `IDS_CONFIRM_ITEMS_DELETE 6102` and text `IDS_WANT_TO_DELETE_FILE 6103` `"Are you sure you want to delete '{0}'?"` / `IDS_WANT_TO_DELETE_FOLDER 6104` / `IDS_WANT_TO_DELETE_ITEMS 6105` `"...these {0} items?"`; then `CThreadFolderOperations` (`PanelOperations.cpp:38-98`) runs `IFolderOperations::Delete(indices, n, progress)` under a progress dialog titled `IDS_DELETING 6106`; errors → `MessageBoxErrorForUpdate(hr, IDS_ERROR_DELETING)` (`:103`). Focus is restored to the item after the deleted range. | |
 | Rename (`RenameFile`, F2) | `PanelOperations.cpp:478`: starts in-place label editing (`_listView.EditLabel(focused)`). `OnBeginLabelEdit` (`PanelListNotify.cpp:549+`) rejects `..` and read-only folders; `OnEndLabelEdit`: empty/unchanged → ignore; FS: `IsCorrectFsName` (`:274`, rejects only a last path component equal to `.` or `..`) and `CorrectFsPath` (`:284`, resolves the typed name against the folder so `sub\name` moves into a sub-folder); calls `IFolderOperations::Rename(index, newName, progress)` under progress `IDS_RENAMING 6006`; error → `IDS_ERROR_RENAMING 6009`; posts `kReLoadMessage` to refresh and re-focus the renamed item by name. | |
 | Create Folder (F7) | `PanelOperations.cpp:363-424`: `Dlg_CreateFolder` (`CComboDialog`, title `IDS_CREATE_FOLDER 6300`, label `IDS_CREATE_FOLDER_NAME 6302`, default `IDS_CREATE_FOLDER_DEFAULT_NAME 6304` = "New Folder"); FS: `CorrectFsPath` allows `a\b\c` (complex dir); `IFolderOperations::CreateFolder(name, progress)`; error → `IDS_CREATE_FOLDER_ERROR 6306`; the new folder gets focused+selected. | |
 | Create File (Ctrl+N / Shift+F4) | `PanelOperations.cpp:426-476`: `CComboDialog` (`IDS_CREATE_FILE 6301`, `IDS_CREATE_FILE_NAME 6303`, default `IDS_CREATE_FILE_DEFAULT_NAME 6305` = "New File"); `IFolderOperations::CreateFile` (FS: `CREATE_NEW`, fails if exists; archives: `E_NOTIMPL`); error → `IDS_CREATE_FILE_ERROR 6307`. | |
@@ -477,10 +486,10 @@ Mouse: single click / double click per `SingleClick` setting (`LVS_EX_ONECLICKAC
 
 | Part | Content |
 |---|---|
-| 0 | `IDS_N_SELECTED_ITEMS 3002` = `"{0} object(s) selected"` with `{0}` = `"<selected> / <total>"` where `total` excludes `..`; when nothing is selected the focused item counts as 0 |
-| 1 | total `kpidSize` of the selected items (`ConvertSizeToString` — thousands separated by spaces, e.g. `1 234 567`), empty if nothing selected |
-| 2 | size of the focused item |
-| 3 | `kpidMTime` of the focused item formatted at `_timestampLevel` |
+| 0 | `g_App.LangString_N_SELECTED_ITEMS` (cached `IDS_N_SELECTED_ITEMS 3002` = `"{0} object(s) selected"`) with `{0}` = `"<operated> / <total>"` — `operated` = `Get_ItemIndices_Operated` (selected items, else the focused item), `total` = `_selectedStatusVector.Size()` (all items excluding `..`) (`PanelListNotify.cpp:767-775`) |
+| 1 | total `kpidSize` of the operated items (`ConvertSizeToString` — thousands separated by spaces, e.g. `1 234 567`), empty if none |
+| 2 | size of the focused item — only when `GetSelectedCount() > 0` and the focused item is not `..`, else empty |
+| 3 | `kpidMTime` of the focused item via `ConvertPropertyToShortString2` (same condition as part 2) |
 
 `SetItemText(LVITEMW&)` (`PanelListNotify.cpp:152-522`) renders cell text lazily (`LVS_OWNERDATA`-style callback `LVN_GETDISPINFO`):
 * Name cell: item name; names containing the RLO char (U+202E) get it replaced by `_`; 4 or more consecutive spaces are collapsed to `"... "`; a trailing space is shown as U+009C/U+2423 (`␣`) so it stays visible; `..` for the parent row. Icons: `IFolderGetSystemIconIndex::GetSystemIconIndex(index)` if the folder implements it (FS/drives always; archives only when `ShowRealFileIcons` is on or the folder is not "slow"), else `g_Ext_to_Icon_Map` cache keyed by extension/attrib (folder icon for dirs).
@@ -495,14 +504,14 @@ Mouse: single click / double click per `SingleClick` setting (`LVS_EX_ONECLICKAC
 
 `CApp::CalculateCrc(methodName)` (`PanelCrc.cpp:413`) → `CalculateCrc2` (`:338-411`):
 * Inside an archive: `CopyTo` with `streamMode = true` and `hashMethods = {methodName}` (or all if `"*"`) — the Agent extracts to a hashing stream (`IFolderExtractToStreamCallback`), results collected in `CHashBundle`.
-* FS folder: `CThreadCrc` (`:194-336`) — first `CDirEnumerator` (`:47`, `EnterToDirs = !flat`, follows the operated items recursively, counting files/bytes with progress status `"Scanning"`), then hashes each file in 32 KiB reads, updating progress every 2 MiB and showing the current file path; errors are collected (`AddErrorMessage` `:177`) and shown in the progress dialog's message list; title `IDS_CHECKSUM_CALCULATING` (GUI res).
+* FS folder: `CThreadCrc` (`:140-336`, `ProcessVirt` `:194`) — first `CDirEnumerator` (`:47`, `EnterToDirs = !flat`, follows the operated items recursively, counting files/bytes), then hashes each file in `kBufSize = 32 KiB` reads (`:28`), updating the progress with the current file path; errors are collected (`AddErrorMessage` `:177`) and shown in the progress dialog's message list (the `IDS_CHECKSUM_CALCULATING` status text is commented out, `:255`).
 * Results: `ShowHashResults(hb, hwnd)` (`GUI/HashGUI.cpp`) — `CListViewDialog` with 2 columns (`Name`/`Value`): `Files`, `Folders`, `Size`, `AltStreams`, `AltStreams size`, `Errors`, then for each method `<Method> for data:`, `<Method> for data and names:`, `<Method> for streams and names:` and for a single file the plain `<Method>: <hex>`; Ctrl+C copies `name: value` lines.
 
 ### 3.14 Split / Combine — `PanelSplitFile.cpp`, `SplitUtils.cpp`
 
-**Split** (`CApp::Split()` `PanelSplitFile.cpp:235-353`): requires exactly one FS file (`IDS_SELECT_ONE_FILE 3014`). `CSplitDialog` (§4.20) pre-filled with the current folder as destination and volume presets from `AddVolumeItems` (`SplitUtils.cpp:75`: `"10M"`, `"100M"`, `"1000M"`, `"650M - CD"`, `"700M - CD"`, `"4092M - FAT"`, `"4480M - DVD"`, `"8128M - DVD DL"`, `"23040M - BD"`). `ParseVolumeSizes` (`SplitUtils.cpp:9-73`): numbers with suffix `b/k/m/g/t` (case-insensitive, 1024-based), `-` terminates parsing (so the display suffix after `-` is ignored), space-separated list = successive sizes with the last repeated. Checks: a volume size ≥ file size → `IDS_SPLIT_VOL_MUST_BE_SMALLER 7306`; more than 100 volumes → confirmation `IDS_SPLIT_CONFIRM_TITLE 7304` / `IDS_SPLIT_CONFIRM_MESSAGE 7305` (`"Specified volume size: {0} bytes. Are you sure…"`). Output names `<name>.001`, `.002`, … (`CVolSeqName` `:63`, minimum 3 digits, grows to 4+ when needed). `CThreadSplit` (`:141-233`) copies with a 1 MiB buffer, pre-allocates volumes, runs under a progress dialog titled `IDS_SPLITTING 7303`; an I/O error aborts the thread (already written volumes are left on disk) and is reported through the progress dialog's error list.(`CApp::Split()` `PanelSplitFile.cpp:235-353`): requires exactly one FS file (`IDS_SELECT_ONE_FILE 3014`). `CSplitDialog` (§4.20) pre-filled with the current folder as destination and volume presets from `AddVolumeItems` (`SplitUtils.cpp:75`: `"10M"`, `"100M"`, `"1000M"`, `"650M - CD"`, `"700M - CD"`, `"4092M - FAT"`, `"4480M - DVD"`, `"8128M - DVD DL"`, `"23040M - BD"`). `ParseVolumeSizes` (`SplitUtils.cpp:9-73`): numbers with suffix `b/k/m/g/t` (case-insensitive, 1024-based), `-` terminates parsing (so the display suffix after `-` is ignored), space-separated list = successive sizes with the last repeated. Checks: a volume size ≥ file size → `IDS_SPLIT_VOL_MUST_BE_SMALLER 7306`; more than 100 volumes → confirmation `IDS_SPLIT_CONFIRM_TITLE 7304` / `IDS_SPLIT_CONFIRM_MESSAGE 7305` (`"Specified volume size: {0} bytes. Are you sure…"`). Output names `<name>.001`, `.002`, … (`CVolSeqName` `:63`, minimum 3 digits, grows to 4+ when needed). `CThreadSplit` (`:141-233`) copies with a 1 MiB buffer, pre-allocates volumes, runs under a progress dialog titled `IDS_SPLITTING 7303`; an I/O error aborts the thread (already written volumes are left on disk) and is reported through the progress dialog's error list.
+**Split** (`CApp::Split()` `PanelSplitFile.cpp:235-353`): requires exactly one FS file (`IDS_SELECT_ONE_FILE 3014`). `CSplitDialog` (§4.20) pre-filled with the current folder as destination and volume presets from `AddVolumeItems` (`SplitUtils.cpp:75`: `"10M"`, `"100M"`, `"1000M"`, `"650M - CD"`, `"700M - CD"`, `"4092M - FAT"`, `"4480M - DVD"`, `"8128M - DVD DL"`, `"23040M - BD"`). `ParseVolumeSizes` (`SplitUtils.cpp:9-73`): numbers with suffix `b/k/m/g/t` (case-insensitive, 1024-based), `-` terminates parsing (so the display suffix after `-` is ignored), space-separated list = successive sizes with the last repeated. Checks: a volume size ≥ file size → `IDS_SPLIT_VOL_MUST_BE_SMALLER 7306`; more than 100 volumes → confirmation `IDS_SPLIT_CONFIRM_TITLE 7304` / `IDS_SPLIT_CONFIRM_MESSAGE 7305` (`"Specified volume size: {0} bytes. Are you sure…"`). Output names `<name>.001`, `.002`, … (`CVolSeqName` `:29`, minimum 3 digits, grows to 4+ when needed). `CThreadSplit` (`:80-137`) copies with a `kBufSize = 1 MiB` buffer (`:139`), pre-allocates volumes, runs under a progress dialog titled `IDS_SPLITTING 7303`; an I/O error aborts the thread (already written volumes are left on disk) and is reported through the progress dialog's error list.tination and volume presets from `AddVolumeItems` (`SplitUtils.cpp:75`: `"10M"`, `"100M"`, `"1000M"`, `"650M - CD"`, `"700M - CD"`, `"4092M - FAT"`, `"4480M - DVD"`, `"8128M - DVD DL"`, `"23040M - BD"`). `ParseVolumeSizes` (`SplitUtils.cpp:9-73`): numbers with suffix `b/k/m/g/t` (case-insensitive, 1024-based), `-` terminates parsing (so the display suffix after `-` is ignored), space-separated list = successive sizes with the last repeated. Checks: a volume size ≥ file size → `IDS_SPLIT_VOL_MUST_BE_SMALLER 7306`; more than 100 volumes → confirmation `IDS_SPLIT_CONFIRM_TITLE 7304` / `IDS_SPLIT_CONFIRM_MESSAGE 7305` (`"Specified volume size: {0} bytes. Are you sure…"`). Output names `<name>.001`, `.002`, … (`CVolSeqName` `:29`, minimum 3 digits, grows to 4+ when needed). `CThreadSplit` (`:80-137`) copies with a `kBufSize = 1 MiB` buffer (`:139`), pre-allocates volumes, runs under a progress dialog titled `IDS_SPLITTING 7303`; an I/O error aborts the thread (already written volumes are left on disk) and is reported through the progress dialog's error list.
 
-**Combine** (`CApp::Combine()` `:419+`): requires one FS file whose name parses as a volume `…001` (`CVolSeqName::ParseName`, digits only after the last dot and equal to `001`), else `IDS_COMBINE_CANT_DETECT_SPLIT_FILE 7404`; needs at least a second part `…002` else `IDS_COMBINE_CANT_FIND_MORE_THAN_ONE_PART 7405`; output name = file name without the numeric extension (trailing dots trimmed; if empty → `"file"`); destination chosen with `CCopyDialog` titled `IDS_COMBINE 7400` / `IDS_COMBINE_TO 7401` (info line = detected first part `AddInfoFileName` `:413`); existing output file → `IDS_FILE_EXIST 3008` overwrite question; `CThreadCombine` (`:355-411`) concatenates consecutive volumes until a gap, progress titled `IDS_COMBINING 7402`.
+**Combine** (`CApp::Combine()` `:419+`): requires exactly one FS file (`IDS_COMBINE_SELECT_ONE_FILE 7403`, `:435`) whose name parses as a volume `…001` (`CVolSeqName::ParseName`, digits only after the last dot and equal to `001`), else `IDS_COMBINE_CANT_DETECT_SPLIT_FILE 7404`; needs at least a second part `…002` else `IDS_COMBINE_CANT_FIND_MORE_THAN_ONE_PART 7405`; output name = file name without the numeric extension (trailing dots trimmed; if empty → `"file"`); destination chosen with `CCopyDialog` titled `IDS_COMBINE 7400` / `IDS_COMBINE_TO 7401` (info line = detected first part `AddInfoFileName` `:413`); existing output file → `IDS_FILE_EXIST 3008` overwrite question; `CThreadCombine` (`:345-411`) concatenates consecutive volumes until a gap, progress titled `IDS_COMBINING 7402`.
 
 ### 3.15 Drag & drop — `PanelDrag.cpp`
 
@@ -512,15 +521,15 @@ Source side — `CPanel::OnDrag(nmListView, isRightButton)` (`PanelDrag.cpp:1500
 * `CDropSource::QueryContinueDrag`: Esc → cancel; button release → drop; for right-button drags the right button controls the drop. `GiveFeedback` → default cursors.
 * `DoDragDrop` with `effectsOK = DROPEFFECT_MOVE | DROPEFFECT_COPY` (`DROPEFFECT_LINK` never offered). After it returns: if the target set a folder path and `MustBeProcessedBySource` (target could not process) → `CopyTo(dest, moveMode = effect == MOVE)` performed by the source panel; messages shown in `CMessagesDialog`; `KillSelection()`; the temp dir is deleted if it was created and the target did not take ownership (`k_TargetFlags_*`).
 
-Target side — `CDropTarget` (`:1834-2760`, registered with `RegisterDragDrop` for each panel list view by `CApp::CreateDragTarget` `:2983`):
+Target side — `CDropTarget` (class `:386-560`, methods `:1927-2760`; one instance `g_App._dropTarget` created by `CApp::CreateDragTarget` `:2983` and registered with `RegisterDragDrop` on the **main window** in `WM_CREATE`, `FM.cpp:1023`):
 * `DragEnter/DragOver` → `PositionCursor(pt)` (`:1927`): hit-tests the list; a folder item under the cursor is highlighted (`LVIS_DROPHILITED`) and becomes the target sub-folder; otherwise the panel's current folder is the target. Dropping onto the source panel's own folder (same panel, no sub-folder) is refused (`_isAppTarget`/same-panel check), as is dropping onto `..`.
 * `GetEffect(keyState)`: Ctrl → COPY; Shift → MOVE; Alt or Ctrl+Shift → LINK → not supported → `DROPEFFECT_NONE`; no modifier → MOVE when source and target are on the same drive (`IsItSameDrive` `:2066`, first char of paths / same volume) else COPY. Effect forced to COPY when the target is an archive.
-* `Drop(dataObject, keyState, pt, effect)` (`:2400+`): loads names from HDROP (`LoadNames_From_DataObject` `:2383`); right-button drop shows menu `NDragMenu` = {`Copy`, `Move`, `Copy To "<archive>"` (when target is an archive), `Add to archive...`, separator, `Cancel`} (`IDS_COPY 6000`/`IDS_MOVE 6001` + `kMenuCmdID_*`), left-button uses the computed effect. If the target is an FS folder: files are copied/moved by the *target* panel via `CopyFsItems` → `CopyFileSystemItems` (`FSFolderCopy.cpp`, with progress) unless the source is 7zFM itself in which case the source is told the target path (`SendToSource_TargetPath_enable` `:2222`) and does the copy (so archive extraction and progress run in the source). If the target is an archive: confirmation `IDS_CONFIRM_FILE_COPY 6010` / `IDS_WANT_TO_COPY_FILES 6011` `"Are you sure you want to copy files to archive"` then `CopyFromNoAsk(moveMode, filePaths)` (`PanelCopy.cpp:452`) → `IFolderOperations::CopyFrom` (Agent re-pack, §6.7). "Add to archive..." → `CompressDropFiles(names, folderPrefix, ...)` (`:2817-2981`): if the source names live in a `7zE`/`7zO` temp folder (`AreThereNamesFromTemp` `:2794`), the destination is redirected to the target panel folder (or root FS) to avoid archiving into temp; then `CompressFiles(destPath, arcName=CreateArchiveName(names), type="", names, email=false, showDialog=true, waitFinish=false)` (§8.1).
-* External drops from Explorer into an FM panel are supported through the same `CDropTarget` (HDROP only) and go through `CopyFsItems`/`CopyFromNoAsk`. Drops *to* Explorer are supported through the deferred HDROP (Explorer pulls the files from the `7zE` temp folder; the folder stays until `DeleteOldTempFiles` on next start or the exit hook).
+* `Drop(dataObject, keyState, pt, effect)` (`:2400+`): loads names from HDROP (`LoadNames_From_DataObject` `:2383`); right-button drop shows menu `NDragMenu` (`:340-385`, `g_Pairs`): `k_Copy_Base` Copy (`IDS_COPY 6000`) / Move (`IDS_MOVE 6001`), `k_Copy_ToArc` (`IDS_COPY_TO 6002`, when the target is an archive), `k_AddToArc` (`IDS_CONTEXT_COMPRESS 2324`, Explorer resource), `k_Cancel` (`IDS_CANCEL 402`), left-button uses the computed effect. If the target is an FS folder: files are copied/moved by the *target* panel via `CopyFsItems` → `CopyFileSystemItems` (`FSFolderCopy.cpp`, with progress) unless the source is 7zFM itself in which case the source is told the target path (`SendToSource_TargetPath_enable` `:2222`) and does the copy (so archive extraction and progress run in the source). If the target is an archive: confirmation `IDS_CONFIRM_FILE_COPY 6010` / `IDS_WANT_TO_COPY_FILES 6011` `"Are you sure you want to copy files to archive"` then `CopyFromNoAsk(moveMode, filePaths)` (`PanelCopy.cpp:452`) → `IFolderOperations::CopyFrom` (Agent re-pack, §6.7). "Add to archive..." → `CompressDropFiles(names, folderPrefix, ...)` (`:2817-2981`): if the source names live in a `7zE`/`7zO` temp folder (`AreThereNamesFromTemp` `:2794`), the destination is redirected to the target panel folder (or root FS) to avoid archiving into temp; then `CompressFiles(destPath, arcName=CreateArchiveName(names), type="", names, email=false, showDialog=true, waitFinish=false)` (§8.1).
+* External drops from Explorer into an FM panel are supported through the same `CDropTarget` (HDROP only) and go through `CopyFsItems`/`CopyFromNoAsk`. Drops *to* Explorer are supported through the deferred HDROP (Explorer pulls the files from the `7zE` temp folder; the folder is removed by the source when it is not handed over to the target — there is no startup sweep, see §3.9).
 
 ### 3.16 Clipboard — `PanelMenu.cpp:427-489`
 
-* `EditCopy()` (Ctrl+C / Ctrl+Ins): puts the operated items' *names* (or full paths for FS: `GetItemFullPath`) on the clipboard as `CF_UNICODETEXT`, lines joined with `"\r\n"` (`ClipboardSetText`). No `CF_HDROP` is placed — pasting into Explorer is not supported.
+* `EditCopy()` (Ctrl+C / Ctrl+Ins, `PanelMenu.cpp:432-453`): puts the **selected** items' *names* (`Get_ItemIndices_Selected` + `GetItemName`, never full paths) on the clipboard as text, lines joined with `"\r\n"` (`ClipboardSetText`). No `CF_HDROP` is placed — pasting into Explorer is not supported; the `InvokeSystemCommand("copy")` branch is commented out.
 * `EditCut()` and `EditPaste()` are no-ops (bodies commented out; `PanelMenu.cpp:427, 455`).
 * `CListViewDialog` copy (§4.14) and progress-dialog message copy (§4.17) also use the text clipboard.
 
@@ -542,7 +551,7 @@ Target side — `CDropTarget` (`:1834-2760`, registered with `RegisterDragDrop` 
 
 ### 6.1 Interfaces — `FileManager/IFolder.h`
 
-All are COM-style (`IUnknown`-derived, GUID `{23170F69-40C1-278A-0000-0008xx0000}` with `xx` = the number below; `Z7_IFACE_CONSTR_FOLDER(name, id)` `IFolder.h:11-16`). A macOS port can implement them as plain C++ abstract classes with the same method set; the FM only ever calls them through `QueryInterface`.
+All are COM-style (`IUnknown`-derived, GUID `{23170F69-40C1-278A-0000-000800xx0000}` with `xx` = the interface number below (`Z7_DECL_IFACE_7ZIP_SUB(i, base, 8, n)` → bytes `0,0,0,8,0,n,0,0`, `7zip/IDecl.h:18-23`); `Z7_IFACE_CONSTR_FOLDER(name, id)` `IFolder.h:11-16`). A macOS port can implement them as plain C++ abstract classes with the same method set; the FM only ever calls them through `QueryInterface`.
 
 | Interface (id) | Methods | Implemented by |
 |---|---|---|
@@ -551,7 +560,7 @@ All are COM-style (`IUnknown`-derived, GUID `{23170F69-40C1-278A-0000-0008xx0000
 | `IFolderWasChanged` (0x04) `:54-56` | `WasChanged(Int32*)` | FSFolder (change notification), FSDrives |
 | `IFolderOperationsExtractCallback` (0x0B, derives `IProgress`) `:60-73` | `AskWrite(srcPath, srcIsFolder, srcTime, srcSize, destPath, BSTR *destPathResult, Int32 *writeAnswer)`, `ShowMessage(message)`, `SetCurrentFilePath(filePath)`, `SetNumFiles(numFiles)` (+ `IProgress::SetTotal/SetCompleted`) | `CExtractCallbackImp` (FM) |
 | `IFolderOperations` (0x13) `:76-89` | `CreateFolder(name, IProgress*)`, `CreateFile(name, IProgress*)`, `Rename(index, newName, IProgress*)`, `Delete(indices, numItems, IProgress*)`, `CopyTo(Int32 moveMode, indices, numItems, Int32 includeAltStreams, Int32 replaceAltStreamCharsMode, const wchar_t *path, IFolderOperationsExtractCallback*)`, `CopyFrom(Int32 moveMode, fromFolderPath, const wchar_t *const *itemsPaths, numItems, IProgress*)`, `SetProperty(index, propID, const PROPVARIANT*, IProgress*)`, `CopyFromFile(index, fullFilePath, IProgress*)` | FSFolder, FSDrives (CopyTo only in volume mode), AltStreamsFolder, CAgentFolder |
-| (`IFolderOperationsDeleteToRecycleBin`, commented out `:94`) | `DeleteToRecycleBin` — not used; FM calls `SHFileOperation` directly | — |
+| (`IFolderOperationsDeleteToRecycleBin` 0x06/0x03, dead `FOLDER_INTERFACE2` macro `:92`) | `DeleteToRecycleBin` — not used; FM calls `SHFileOperation` directly | — |
 | `IFolderGetSystemIconIndex` (0x07) `:98-100` | `GetSystemIconIndex(index, Int32*)` | FSFolder, FSDrives, RootFolder, NetFolder, CAgentFolder (extension-based) |
 | `IFolderGetItemFullSize` (0x08) `:102-104` | `GetItemFullSize(index, PROPVARIANT*, IProgress*)` | FSFolder (unused by FM) |
 | `IFolderCalcItemFullSize` (0x14) `:106-108` | `CalcItemFullSize(index, IProgress*)` — computes and caches size/NumSubDirs/NumSubFiles for a folder item | FSFolder (F3 on a folder) |
@@ -640,29 +649,40 @@ Agent-side interfaces (`Agent/Agent.h`, `7zip/UI/Common/IFileExtractCallback.h`/
 
 ### 7.1 Files and loading
 
-* Lang files live in `<exeDir>\Lang\<id>.txt` (`GetLangDirPrefix()` `LangUtils.cpp:33-36`), UTF-8, format (`Common/Lang.cpp:20-120`): optional BOM, first line **exactly** `;!@Lang2@!UTF-8!` (`kLangSignature`), then lines; `\r` stripped (`:144-153`); a line that is a bare number sets the *next* ID (must be ≥ current, ≤ 2^30); an empty/whitespace line skips one ID; `;` lines are comments (collected in `Comments`, shown on the Language page); every other line is the text for the current ID (then ID++). Escapes: `\n`, `\t`, `\\`; other `\x` kept literally. Line 0 must equal `"7-Zip"` (validated by `CLang::Open(fileName, "7-Zip")` `:122-165`); line 1 = English language name, line 2 = native name (used by LangPage). Max file size 1 MiB. Lookup `CLang::Get(id)` binary-searches the sorted ID vector (`:167-173`).
-* Selection (`ReloadLang` `LangUtils.cpp:308-336`): registry `Lang` empty → `OpenDefaultLang()` (`:279-306`): computes candidate short names from the system UI `LANGID` (`Lang_GetShortNames_for_DefaultLang` `:242`, table `kLangs` mapping primary/sub language IDs to `en`, `de`, `fr`, `pt-br`, `zh-cn`, … via `FindShortNames` `:183`), tries `<sub-lang name>.txt` then `<primary>.txt`; value `"-"` → no lang file (built-in English resources); otherwise `Lang\<value>.txt` (`.txt` appended if missing; a value containing a path separator is ignored). `LoadLangOneTime()` (`:40`) runs at startup; `ReloadLang()` after the Language page applies.
-* Fallback: every `LangString(id)` (`:137-159`) returns the lang text if present, else the resource string (`MyLoadString`); `LangString_OnlyFromLangFile` (`:161`) returns empty when absent (used where a different default is wanted).
+* Lang files live in `<exeDir>\Lang\<id>.txt` (`GetLangDirPrefix()` `LangUtils.cpp:33-38`), opened by `LangOpen(lang, path)` (`:28`) → `CLang::Open(fileName, "7-Zip")` (`Common/Lang.cpp:122-165`).
+* **File format is positional, not `key = value`** (`CLang::OpenFromString` `Common/Lang.cpp:22-120`):
+  1. File ≤ 1 MiB, valid UTF-8 (`ConvertUTF8ToUnicode` must succeed), optional BOM `U+FEFF`; every `\r` byte is removed before parsing and a NUL byte truncates the file (`:143-152`).
+  2. The first line must be exactly `;!@Lang2@!UTF-8!` (`kLangSignature` `:20`).
+  3. The parser keeps a current ID (starts at `-1024`) and classifies each following line:
+     * **whitespace-only line** → `id++` (consumes one ID, no string);
+     * line starting with `;` → comment: `id++` (also consumes an ID); the text is collected in `CLang::Comments` unless the line is a lone `;` (shown on the Language page);
+     * line that parses **entirely** as an unsigned integer → sets `id` to that number; it must be ≤ 2^30 and ≥ the current id, otherwise the whole file is rejected;
+     * any other line → the string for the current `id`, then `id++`; rejected if no number line has been seen yet (`id < 0`).
+  4. Escapes: `\n` → newline, `\t` → tab, `\\` → backslash; `\` followed by any other character keeps both characters; a `\` at the end of a line rejects the file.
+  5. After parsing, `Get(0)` must equal `"7-Zip"` (id `0`), otherwise the file is rejected and English resources are used. By convention line 1 = English language name, line 2 = native name (`LangPage.cpp`).
+  6. Lookup `CLang::Get(id)` (`:167-173`) binary-searches the sorted `_ids` vector and returns `NULL` for missing IDs; therefore any ID not present in the file transparently falls back to the built-in resource string.
+* Selection (`ReloadLang` `LangUtils.cpp:308-336`): registry value `Lang` (§5) empty → `OpenDefaultLang()` (`:279-306`): computes candidate short names from the system UI `LANGID` (`Lang_GetShortNames_for_DefaultLang` `:242`, table `kLangs` `:169` mapping primary/sub language IDs to `en`, `de`, `fr`, `pt-br`, `zh-cn`, … via `FindShortNames` `:183`), tries `<sub-language name>.txt` then `<primary>.txt`; value `"-"` → no lang file (built-in English resources); a value containing a path separator is ignored (no lang file); otherwise `.txt` is appended only when the value contains no dot, and the file `Lang\<value>` is opened. `LoadLangOneTime()` (`:40`) runs once at startup; `ReloadLang()` again after the Language page applies. `g_LangID` holds the chosen short name.
+* Fallback: `LangString(id)` / `LangString(id, dest)` (`:137-159`) return the lang text if present, else the resource string (`MyLoadString`); `LangString_OnlyFromLangFile(id, dest)` (`:161`) returns empty when absent (used by the menu loader and wherever a different default is wanted).
 
-### 7.2 ID namespaces (what the lang file keys are)
+### 7.2 ID namespaces (what the lang file lines are keyed by)
 
-Lang IDs are the **same numbers as the Win32 resource IDs**; the mapping rules:
+Lang IDs are the **same numbers as the Win32 resource IDs**. Rules by consumer:
 
 | Range / rule | Meaning | Applied by |
 |---|---|---|
-| Menu item IDs (`IDM_*`, 500-961; popup titles 500-505) | menu text incl. `&` and `\t` accelerator | `MyLoadMenu.cpp:73 FindLangItem`, `MyChangeMenu :140` (also copies accelerator text from the resource if the translation lacks `\t`) |
-| Dialog IDs (`IDD_*`) | dialog caption | `LangSetWindowText(hwnd, IDD_x)` |
-| Control IDs ≥ 1000 (`IDT_/IDX_/IDG_/IDR_/IDB_*`) | control text; the low-numbered per-dialog IDs (100-199) are **not** localized | `LangSetDlgItems(hwnd, ids, n)` `:75`; `LangSetDlgItems_Colon` `:97` (appends `:`), `_RemoveColon` `:113` |
-| 401 OK, 402 Cancel, 406 Yes, 407 No, 408 Close, 409 Help, 411 Continue | standard buttons (`kLangPairs` `:63-72`) | `LangSetDlgItems` automatically for `IDOK…IDCONTINUE` |
-| 1000 + kpid (1003-1104) | property names (`PropertyName.rc`) | `GetNameOfProperty` |
-| 3000-3999 | FM messages, progress (`3900-3906`), extract (`34xx`), password (`38xx`) | `LangString` |
+| Menu item IDs (`IDM_*`, 540-961) and popup IDs (top-level popups by position → `k_LangID_TopMenuItems` = 500-505; `IDM_ADD_TO_FAVORITES 800`; `IDM_VIEW_TOOLBARS 733`) | menu text incl. `&`; the accelerator part (`\t...`) of the **resource** string is always re-appended after the translation, so lang files carry no shortcuts | `MyChangeMenu` (`MyLoadMenu.cpp:140-262`) using `LangString_OnlyFromLangFile` (untranslated items keep the resource text). Special cases via `kIDLangPairs` (`:64-71`): `IDCLOSE` (Exit) → **557**; `IDM_VIEW_ARANGE_BY_NAME/TYPE/DATE/SIZE` → `IDS_PROP_NAME 1004` / `IDS_PROP_FILE_TYPE 1020` / `IDS_PROP_MTIME 1012` / `IDS_PROP_SIZE 1007`; `IDM_OPEN_INSIDE_ONE/PARSER` = text of `IDM_OPEN_INSIDE 541` stripped of `&` and `\t…` + `" *"` / `" #"`; `IDM_BENCHMARK2` = `IDM_BENCHMARK 901` + `" 2"`. Not localized: the time popup and its items, everything inside the Favorites popup (bookmark items are generated), items with id ≥ 65536. |
+| Dialog IDs (`IDD_*`) | dialog caption | `LangSetWindowText(hwnd, IDD_x)` (`:130`) — only when the ID exists in the lang file |
+| Control IDs (`IDT_/IDX_/IDG_/IDR_/IDB_/IDC_*` ≥ 1000 as listed per dialog in §4) | control text; `langID == controlID` | `LangSetDlgItems(hwnd, ids, n)` (`:75`): first the standard buttons through `kLangPairs` (`:63-72`) for those present in the dialog, then `LangSetDlgItemText(hwnd, id, id)` for each listed id; `LangSetDlgItems_Colon` (`:97`) appends `:`; `LangSetDlgItems_RemoveColon` (`:113`) strips a trailing `:`. Controls whose ID is absent from the lang file keep the resource text. |
+| 401 OK, 402 Cancel, 406 Yes, 407 No, 408 Close, 409 Help, 411 Continue | standard buttons: Win32 `IDOK 1`, `IDCANCEL 2`, `IDYES 6`, `IDNO 7`, `IDCLOSE 8`, `IDHELP 9`, `IDCONTINUE 11` → these lang IDs (`kLangPairs`) | `LangSetDlgItems` automatically |
+| `1000 + kpid` (1000-1107) | property / column names (`PropertyName.rc` holds the English resources with the same IDs) | `GetNameOfProperty(propID, name)` (`PropertyName.cpp:10`): for `propID < 1000` → `LangString(1000 + propID)`; if empty → the handler-supplied name; else the number |
+| 3000-3999 | FM messages, progress (`3900-3906`), extract (`34xx`), password (`38xx`), open-archive errors | `LangString` |
 | 4000-4099 | Compress dialog | |
 | 6000-6603 | FM operation strings (copy/delete/create/comment/select/properties/messages) | |
 | 7100-7405 | root items, toolbar buttons, split/combine | |
 | 7600-7610 | benchmark; 7700-7715 link; 7800-7821 memory dialog | |
-| `IDS_*` in GUI (`resource2.h`/`resource3.h`): 2100 options, 2200 system, 2300 menu, 2400 folders, 2500 settings, 2900 about, 3000-3999, 4000+, 7300 split, `IDS_CHECKSUM_*`, `IDS_MEM_*`, `IDS_PROGRESS_*` (`3320-3327` update ops `ADD/UPDATE/ANALYZE/REPLICATE/REPACK/SKIPPING/DELETE/HEADER`) | | |
+| `IDS_*` in GUI (`resource2.h`/`resource3.h`): 2100 options, 2200 system, 2300 menu (Explorer context strings 2300-2330), 2400 folders, 2500 settings, 2900 about, 3000-3999, 4000+, 7300 split, `IDS_CHECKSUM_*`, `IDS_MEM_*`, `IDS_PROGRESS_*` (`3320-3327` update ops `ADD/UPDATE/ANALYZE/REPLICATE/REPACK/SKIPPING/DELETE/HEADER`) | | |
 
-Reference English file: `Lang/en.ttt` (repo `DOC`/`Lang`), `k_NumLangLines_EN = 443` lines. Everything not in this table (hard-coded ASCII such as `"7-Zip"`, method names, unit suffixes `KB/MB`, drive type names, `kDriveTypes`, benchmark labels like "Rating", format names, `k_CannotCopy…` messages) is **not** localizable in the Windows build either.
+Reference English file: `Lang/en.ttt` (repo `DOC`/`Lang`); `k_NumLangLines_EN = 443` (`LangPage.cpp:19`) is the line count the Language page uses to compute a translation's completeness. Everything not in this table (hard-coded ASCII such as `"7-Zip"`, method names, unit suffixes `KB/MB`, drive type names `kDriveTypes`, benchmark labels like "Rating", format names, `k_CannotCopy…` messages, the "Temp"/time popup labels) is **not** localizable in the Windows build either.
 
 ### 7.3 Localizable surface checklist for the port
 
@@ -681,14 +701,14 @@ Menus (all items + popups), toolbar labels, dialog captions/controls listed in �
 | Function (`CompressCall.cpp`) | Command line | Called from |
 |---|---|---|
 | `CompressFiles(arcPathPrefix, arcName, arcType, addExtension, names, email, showDialog, waitFinish)` `:188-236` | `7zG a -i#map[ -t<type>][ -seml.][ -ad][ -slp][ -an][ -saa|-sae] -- "<arcPathPrefix><arcName>"` | `CPanel::AddToArchive` (`Panel.cpp:922-958`: dest prefix = current FS folder, name = `CreateArchiveName(paths)` of the operated items, `showDialog = true`), drag-drop "Add to archive", `CZipContextMenu` |
-| `ExtractArchives(arcPaths, outFolder, showDialog, elimDup, writeZone)` `:238-280` | `7zG x -an -ai#map -o"<outFolder>"[ -spe][ -snz][ -ad][ -slp]` | `CPanel::ExtractArchives` (`Panel.cpp:1008-1039`: FS folder only; out folder = `<arcDir>\<GetSubFolderNameForExtract2(arcName)>\` for one archive or `<arcDir>\*\` for several — `*` is replaced by each archive's name by 7zG; `elimDup` = `ci.ElimDup`, `writeZone` = `ci.WriteZone`), context menu Extract/Extract Here/Extract to |
-| `TestArchives(arcPaths, hashMode)` `:276-290` | `7zG t -an -ai#map[ -thash][ -slp]` (`hashMode` adds `-thash` so `.sha256`-style files are tested as hash archives) | `CPanel::TestArchives` (`Panel.cpp:1103-1177`) when in an FS folder |
-| `CalcChecksum(paths, methodName, arcPathPrefix, arcFileName)` `:302-328` | `7zG h -i#map -scrc<method>[ -o...]` (`arcFileName` non-empty → generate a hash file `"<prefix><arcFileName>"`) | context menu CRC SHA items with `-> file` / `Checksum : Test` (FM menu items compute in-process instead, §3.13) |
-| `Benchmark(totalMode)` `:330-340` | `7zG b[ -mm=*][ -slp]` | Tools → Benchmark |
+| `ExtractArchives(arcPaths, outFolder, showDialog, elimDup, writeZone)` `:255-276` | `7zG x -an -ai#map -o"<outFolder>"[ -spe][ -snz][ -ad][ -slp]` | `CPanel::ExtractArchives` (`Panel.cpp:1008-1039`: FS folder only; out folder = `<arcDir>\<GetSubFolderNameForExtract2(arcName)>\` for one archive or `<arcDir>\*\` for several — `*` is replaced by each archive's name by 7zG; `elimDup` = `ci.ElimDup`, `writeZone` = `ci.WriteZone`), context menu Extract/Extract Here/Extract to |
+| `TestArchives(arcPaths, hashMode)` `:278-290` | `7zG t -an -ai#map[ -thash][ -slp]` (`hashMode` adds `-thash` so `.sha256`-style files are tested as hash archives) | `CPanel::TestArchives` (`Panel.cpp:1103-1177`) when in an FS folder |
+| `CalcChecksum(paths, methodName, arcPathPrefix, arcFileName)` `:292-328` | `7zG h -i#map -scrc<method>[ -o...]` (`arcFileName` non-empty → generate a hash file `"<prefix><arcFileName>"`) | context menu CRC SHA items with `-> file` / `Checksum : Test` (FM menu items compute in-process instead, §3.13) |
+| `Benchmark(totalMode)` `:332-340` | `7zG b[ -mm=*][ -slp]` | Tools → Benchmark |
 
-Inside an archive folder the FM does *not* spawn 7zG: `ExtractArchives` becomes `OnCopy` (copy to a folder via the Agent, `Panel.cpp:1008+`), `TestArchives` becomes `CopyTo` with `testMode = true` (`CThreadTest` `Panel.cpp:1064`, summary message with `IDS_PROP_FILES`, `IDS_PROP_SIZE`, `IDS_PROP_PACKED_SIZE`, … + `IDS_MESSAGE_NO_ERRORS`), `AddToArchive` refuses with `MessageBox_Error_UnsupportOperation` unless the panel is an FS folder (`Panel.cpp:922+`), so "Add" never runs on items inside archives (drag them to an FS folder first).
+Inside an archive folder the FM does *not* spawn 7zG: `ExtractArchives` becomes `OnCopy` (copy to a folder via the Agent, `Panel.cpp:1008+`), `TestArchives` becomes `CopyTo` with `testMode = true` (`CThreadTest` `Panel.cpp:1054`, summary message with `IDS_PROP_FILES`, `IDS_PROP_SIZE`, `IDS_PROP_PACKED_SIZE`, … + `IDS_MESSAGE_NO_ERRORS`), `AddToArchive` refuses with `MessageBox_Error_UnsupportOperation` unless the panel is an FS folder (`Panel.cpp:922+`), so "Add" never runs on items inside archives (drag them to an FS folder first).
 
-### 8.2 7zG entry — `GUI/GUI.cpp` (`WinMain` → `Main2` `:130-330`)
+### 8.2 7zG entry — `GUI/GUI.cpp` (`WinMain` → `Main2` `:137-400`)
 
 Parses the 7-Zip command line (`CArcCmdLineParser`, same syntax as `7z.exe`), loads codecs (`Codecs_AddHashArcHandler`), then: `b` → `Benchmark(...)` (`BenchmarkDialog.cpp`); extract group (`x`, `e`, `t`) → `CExtractCallbackImp` + `ExtractGUI(codecs, formats, excluded, paths, censor, options, showDialog, messageWasDisplayed, callback, hwnd)`; update group (`a`, `u`, `d`, `rn`) → `CUpdateCallbackGUI` + `UpdateGUI(...)`; `h` → `HashCalcGUI`. Exit codes `NExitCode::kSuccess/kWarning/kFatalError/kUserError`; errors shown with `ErrorMessage`/`ShowSysErrorMessage` (`:99-128`); `IDS_UNSUPPORTED_ARCHIVE_TYPE`, `IDS_MEM_ERROR`, `IDS_CANT_OPEN_ARCHIVE`, `IDS_UPDATE_NOT_SUPPORTED` "Update operations are not supported for this archive." (`Extract.rc`).
 
@@ -704,17 +724,17 @@ Parses the 7-Zip command line (`CArcCmdLineParser`, same syntax as `7z.exe`), lo
 Implements `IFolderArchiveExtractCallback` (`AskOverwrite`, `PrepareOperation`, `MessageError`, `SetOperationResult`), `IFolderArchiveExtractCallback2` (`ReportExtractResult`), `IExtractCallbackUI` (`BeforeOpen`, `OpenResult`, `ThereAreNoFiles`, `ExtractResult`, `SetPassword`), `IOpenCallbackUI` (`Open_CheckBreak`, `Open_SetTotal`, `Open_SetCompleted`, `Open_Finished`, `Open_CryptoGetTextPassword`, `Open_GetPasswordIfAny`, `Open_WasPasswordAsked`, `Open_Clear_PasswordWasAsked_Flag` `:97-171`), `IFolderOperationsExtractCallback` (`AskWrite`, `ShowMessage`, `SetCurrentFilePath`, `SetNumFiles`), `IFolderExtractToStreamCallback` (hash/stream mode → `CVirtFileSystem`/hashers), `ICompressProgressInfo` (`SetRatioInfo`), `IArchiveRequestMemoryUseCallback` (`RequestMemoryUse` → `CMemDialog` §4.12; `Read_LimitGB` registry limit; remembers the answer), `ICryptoGetTextPassword`/`2`, `IProgress` (`SetTotal`/`SetCompleted` → `CProgressSync`).
 
 Key behaviours:
-* `AskOverwrite(existName, existTime, existSize, newName, newTime, newSize, &answer)`: `OverwriteMode` `kAsk` → `COverwriteDialog` (§4.15; `ShowExtraButtons` unless single item); answers: `IDYES → kYes`, `IDNO → kNo`, `IDB_YES_TO_ALL → kYesToAll` (switches `OverwriteMode = kOverwrite`), `IDB_NO_TO_ALL → kNoToAll` (`kSkip`), `IDB_AUTO_RENAME → kAutoRename` (`kRename`), `IDCANCEL → E_ABORT`. Modes `kOverwrite/kSkip/kRename/kRenameExisting` answer without UI. Progress is paused while the dialog is up (`ProgressDialog->WaitCreating()`, `Sync.CheckStop` after).
-* `AskWrite` (FS copy path, `:700-800`): same overwrite modes applied to `CFSFolder` copies; `kRename` → `AutoRenamePath(dest)` (`name (2).ext`…); `kRenameExisting` → renames the existing file; `kOverwrite` → deletes/replaces; asks with the same dialog in `kAsk`. Answers `writeAnswer = BoolToInt(...)`, `destPathResult` may be changed.
-* `PrepareOperation(name, isFolder, askExtractMode, position)`: sets the status line to `IDS_PROGRESS_EXTRACTING` / `IDS_PROGRESS_TESTING` / `IDS_PROGRESS_SKIPPING` ("Skipping") and the file path (`_currentArchivePath` prefix + name).
-* `SetOperationResult(opRes, encrypted)` / `ReportExtractResult`: `kOK` → nothing; others → `SetExtractErrorMessage(opRes, encrypted, name, s)` (`:277-413`): `IDS_EXTRACT_MSG_UNSUPPORTED_METHOD` "Unsupported compression method", `…DATA_ERROR` "Data error", `…CRC_ERROR` "CRC failed", `…UNAVAILABLE_DATA`, `…UEXPECTED_END`, `…DATA_AFTER_END`, `…IS_NOT_ARC`, `…HEADERS_ERROR`, `…WRONG_PSW_CLAIM` "Wrong password"; when `encrypted` the guess `IDS_EXTRACT_MSG_WRONG_PSW_GUESS` "Wrong password?" is appended (legacy full sentences `IDS_EXTRACT_MESSAGE_*` `"Data error in '{0}'. File is broken"` etc. are also in `Extract.rc`); `NumArchiveErrors++`; message → `Sync.AddError_Message` (progress list) and `NumFileErrorsInCurrent`.
+* `AskOverwrite(existName, existTime, existSize, newName, newTime, newSize, &answer)` (`:201-233`): `OverwriteMode` `kAsk` → `COverwriteDialog` (§4.15; `ShowExtraButtons` unless single item); answers: `IDYES → kYes`, `IDNO → kNo`, `IDB_YES_TO_ALL → kYesToAll` (switches `OverwriteMode = kOverwrite`), `IDB_NO_TO_ALL → kNoToAll` (`kSkip`), `IDB_AUTO_RENAME → kAutoRename` (`kRename`), `IDCANCEL → E_ABORT`. Modes `kOverwrite/kSkip/kRename/kRenameExisting` answer without UI. Progress is paused while the dialog is up (`ProgressDialog->WaitCreating()`, `Sync.CheckStop` after).
+* `AskWrite` (FS copy path, `:710-800`): same overwrite modes applied to `CFSFolder` copies; `kRename` → `AutoRenamePath(dest)` (`name (2).ext`…); `kRenameExisting` → renames the existing file; `kOverwrite` → deletes/replaces; asks with the same dialog in `kAsk`. Answers `writeAnswer = BoolToInt(...)`, `destPathResult` may be changed.
+* `PrepareOperation(name, isFolder, askExtractMode, position)` (`:235`): sets the status line to `IDS_PROGRESS_EXTRACTING` / `IDS_PROGRESS_TESTING` / `IDS_PROGRESS_SKIPPING` ("Skipping") and the file path (`_currentArchivePath` prefix + name).
+* `SetOperationResult(opRes, encrypted)` (`:375`) / `ReportExtractResult`: `kOK` → nothing; others → `SetExtractErrorMessage(opRes, encrypted, name, s)` (`:277-413`): `IDS_EXTRACT_MSG_UNSUPPORTED_METHOD` "Unsupported compression method", `…DATA_ERROR` "Data error", `…CRC_ERROR` "CRC failed", `…UNAVAILABLE_DATA`, `…UEXPECTED_END`, `…DATA_AFTER_END`, `…IS_NOT_ARC`, `…HEADERS_ERROR`, `…WRONG_PSW_CLAIM` "Wrong password"; when `encrypted` the guess `IDS_EXTRACT_MSG_WRONG_PSW_GUESS` "Wrong password?" is appended (legacy full sentences `IDS_EXTRACT_MESSAGE_*` `"Data error in '{0}'. File is broken"` etc. are also in `Extract.rc`); `NumArchiveErrors++`; message → `Sync.AddError_Message` (progress list) and `NumFileErrorsInCurrent`.
 * `MessageError(message, path)` (`:259`) → `AddError_Message_Name`; `ShowMessage` → list; `SetCurrentFilePath2` (`:426`) computes archive-relative display path.
-* Password: `CryptoGetTextPassword` (`:676+`, `SetPassword`): if `!PasswordIsDefined` → `CPasswordDialog` (parent = progress dialog, `WaitCreating`), Cancel → `E_ABORT`; the password is then cached for the whole run (`PasswordIsDefined = true`) and `Open_GetPasswordIfAny` hands it to nested opens; `PasswordWasAsked` lets the FM know it must remember it on the `CFolderLink`.
+* Password: `CryptoGetTextPassword` (`:683-708`, `SetPassword`): if `!PasswordIsDefined` → `CPasswordDialog` (parent = progress dialog, `WaitCreating`), Cancel → `E_ABORT`; the password is then cached for the whole run (`PasswordIsDefined = true`) and `Open_GetPasswordIfAny` hands it to nested opens; `PasswordWasAsked` lets the FM know it must remember it on the `CFolderLink`.
 * `CVirtFileSystem` (`:840-1200`): in-memory extraction target used by "open item in archive" for small files — collects `CVirtFile{Name, Data, IsDir, Attrib, times, ZoneBuf}` up to `MaxTotalAllocSize`, then `FlushToDisk(closeLast)` (`:1175`) writes them under `DirPrefix`, writing `:Zone.Identifier` per `ZoneMode` (`WriteZoneFile_To_FS`), preserving attributes/times, and reports errors via `MessageError`.
 
 ### 8.5 Update (Add) flow — `GUI/UpdateGUI.cpp`, callbacks `UpdateCallbackGUI(2).cpp`
 
-1. `UpdateGUI(codecs, formats, cmdArcPath, options, showDialog, messageWasDisplayed, callback, hwnd)` (`:544-600`): if `showDialog` → `ShowDialog(...)` (`:220-540`) fills `NCompressDialog::CInfo` (`ArcPath` = archive name without extension when `-ad`, `Level` from registry (`Level` default 5), `FormatIndex` from `-t` or registry `Archiver`, `Password`, `EncryptHeaders`, `SolidBlockSize`, `NumThreads`, `PathMode`, `OpenShareForWrite`, `DeleteAfterCompressing`, `UpdateMode` from the action set (`FindActionSet`), time/NTFS options from `CFormatOptions`) and shows `CCompressDialog` (§4.23); cancel → `E_ABORT`. Result: `options.ArchivePath.ParseFromPath(di.ArcPath, k_ArcNameMode_Smart)`, `options.MethodMode.Properties` = `SetOutProperties` + parsed user parameters (`ParseAndAddPropertires` `:176`, `IsThereMethodOverride` `:154`), `options.SfxMode/SfxModule` (`kDefaultSfxModule = "7z.sfx"` `:31`, from the module dir `:561-565`), `options.VolumesSizes` (splitting to volumes with `-ad` on an existing archive → `"Splitting to volumes is not supported"` `:480` when updating), `options.EMailMode/EMailRemoveAfter/EMailAddress`, `options.WorkingDir = GetWorkDir(workDirInfo, archivePath)` (`:529-540`), `options.PathMode`, `options.DeleteAfterCompressing`, NT options (`SymLinks/HardLinks/AltStreams/NtSecurity/PreserveATime`), time options.
+1. `UpdateGUI(codecs, formats, cmdArcPath, options, showDialog, messageWasDisplayed, callback, hwnd)` (`:543-600`): if `showDialog` → `ShowDialog(...)` (`:315-541`) fills `NCompressDialog::CInfo` (`ArcPath` = archive name without extension when `-ad`, `Level` from registry (`Level` default 5), `FormatIndex` from `-t` or registry `Archiver`, `Password`, `EncryptHeaders`, `SolidBlockSize`, `NumThreads`, `PathMode`, `OpenShareForWrite`, `DeleteAfterCompressing`, `UpdateMode` from the action set (`FindActionSet`), time/NTFS options from `CFormatOptions`) and shows `CCompressDialog` (§4.23); cancel → `E_ABORT`. Result: `options.ArchivePath.ParseFromPath(di.ArcPath, k_ArcNameMode_Smart)`, `options.MethodMode.Properties` = `SetOutProperties` + parsed user parameters (`ParseAndAddPropertires` `:176`, `IsThereMethodOverride` `:154`), `options.SfxMode/SfxModule` (`kDefaultSfxModule = "7z.sfx"` `:31`, from the module dir `:561-565`), `options.VolumesSizes` (splitting to volumes with `-ad` on an existing archive → `"Splitting to volumes is not supported"` `:480` when updating), `options.EMailMode/EMailRemoveAfter/EMailAddress`, `options.WorkingDir = GetWorkDir(workDirInfo, archivePath)` (`:529-540`), `options.PathMode`, `options.DeleteAfterCompressing`, NT options (`SymLinks/HardLinks/AltStreams/NtSecurity/PreserveATime`), time options.
 2. `CThreadUpdating` (`:38-60`) runs `UpdateArchive(codecs, formats, cmdArcPath, censor, options, errorInfo, openCallback, updateCallback, needSetPath)` (`7zip/UI/Common/Update.cpp`) under `CProgressDialog` titled `IDS_PROGRESS_COMPRESSING` "Compressing" (`:579`; for hash "archives" `IDS_CHECKSUM_CALCULATING` `:585`) with `ShowCompressionInfo = true` (shows Packed size / Ratio rows).
 3. `CUpdateCallbackGUI` (`UpdateCallbackGUI.cpp`): `StartScanning` → status `IDS_SCANNING` "Scanning"; `ScanError` → `AddError_Code_Name` + `FailedFiles`; `FinishScanning` → totals; `StartArchive(name)` → status `IDS_PROGRESS_COMPRESSING`, `Set_TitleFileName`; `SetNumItems/SetTotal/SetCompleted/SetRatioInfo` → progress; `GetStream(name, isDir, isAnti, mode)`/`ReportUpdateOperation(op, name, isDir)` → status text from `k_UpdNotifyLangs` (`UpdateCallbackGUI2.cpp:17-27`: `IDS_PROGRESS_ADD` "Add", `…UPDATE` "Update", `…ANALYZE` "Analyze", `…REPLICATE` "Replicate", `…REPACK` "Repack", `…SKIPPING` "Skipping", `…DELETE` "Delete", `…HEADER` "Header"); `OpenFileError`/`ReadingFileError` → error list (`S_FALSE` = skip file, continue); `SetOperationResult` → files counter; `ReportExtractResult` (re-packing existing items) → `SetExtractErrorMessage`; `CryptoGetTextPassword2` → `ShowAskPasswordDialog` when `AskPassword` (`-p` without value) else the dialog password; `DeletingAfterArchiving(path, isDir)` → status `IDS_PROGRESS_REMOVE` "Removing"; `WriteSfx` → status `"WriteSfx"`; `MoveArc_*` → status `"NN% : … : Moving : temp → dest"` (`_lang_Moving = IDS_MOVING`); `OpenResult` for updating an existing archive → `OpenResult_GUI` message (`IDS_UPDATE_NOT_SUPPORTED` when the handler can't update).
 4. Email mode (`-seml`): after the archive is written, `SendMailAttachment` (`Update.cpp`, MAPI `MAPISendMail`) attaches it; `EMailRemoveAfter` deletes the temp archive afterwards.
@@ -722,13 +742,13 @@ Key behaviours:
 ### 8.6 Test and Hash
 
 * `7zG t` = extract flow with `TestMode` (no files written; `IDS_PROGRESS_TESTING` title; summary in §8.3).
-* `7zG h -scrc<m>` → `HashCalcGUI(paths, options)` (`HashGUI.cpp:280-345`): `CThreadHashCalc` runs `HashCalc(...)` (`7zip/UI/Common/HashCalc.cpp`) with `CHashCallbackGUI` (`:60-260`: `StartScanning` → `IDS_SCANNING`, `SetNumFiles`, `SetTotal`, `SetCompleted`, `OpenFileError`, `BeforeFirstFile`, `GetStream`, `SetOperationResult`, `AfterLastFile` → `ShowHashResults` list dialog), progress title `IDS_CHECKSUM_CALCULATING`; `-scrc` may be repeated; `*` = all methods. `Checksum : Test` = opening the `.sha256` file as a hash "archive" and testing (`Codecs_AddHashArcHandler`).
+* `7zG h -scrc<m>` → `HashCalcGUI(paths, options)` (`HashGUI.cpp:283-308`): `CHashCallbackGUI` (`:25-280`, itself the `CProgressThreadVirt` and the `IHashCallbackUI`) runs `HashCalc(...)` (`7zip/UI/Common/HashCalc.cpp`) (callbacks: `StartScanning` → `IDS_SCANNING`, `SetNumFiles`, `SetTotal`, `SetCompleted`, `OpenFileError`, `BeforeFirstFile`, `GetStream`, `SetOperationResult`, `AfterLastFile` → `ShowHashResults` list dialog), progress title `IDS_CHECKSUM_CALCULATING`; `-scrc` may be repeated; `*` = all methods. `Checksum : Test` = opening the `.sha256` file as a hash "archive" and testing (`Codecs_AddHashArcHandler`).
 * In-process FM hashing (§3.13) uses the same `CHashBundle`/`ShowHashResults`.
 
 ### 8.7 Error reporting, pause/background/priority, password prompting — summary
 
-* All long operations run on a worker thread with a `CProgressDialog`/`CProgressSync` pair (§4.17). Non-fatal errors accumulate in the dialog's message list (max lines unbounded; the dialog stays open at the end); fatal `HRESULT`s become `FinalMessage.ErrorMessage` shown as a `MessageBox` after the thread ends (`CProgressThreadVirt::Process` `ProgressDialog2.cpp:1432-1475`: catches `UString`, `AString`, `char*`, `CSystemException` → `HResultToMessage`, `...` → `"Unknown error"`). `E_ABORT` is silent.
-* Pause/Continue: `CProgressSync::CheckStop()` (`:100-110`) is polled by every callback (`SetCompleted`, `CheckBreak`, `Open_SetCompleted`); while `_paused` it sleeps 100 ms in a loop; `_stopped` → returns `E_ABORT`. Background: `IDLE_PRIORITY_CLASS` for the process (`OnPriorityButton`), reverted when clicking Foreground. Cancel: pause → confirm → stop.
+* All long operations run on a worker thread with a `CProgressDialog`/`CProgressSync` pair (§4.17). Non-fatal errors accumulate in the dialog's message list (`CProgressSync::AddError_Message/_Name/_Code_Name` `ProgressDialog2.cpp:222-260`, no cap; the dialog stays open at the end with the list and `MessagesDisplayed`); fatal results become `FinalMessage.ErrorMessage` shown as a `MessageBox` after the thread ends (`CProgressThreadVirt::Process` `ProgressDialog2.cpp:1432-1475`: `catch(const wchar_t*)`, `catch(const UString&)`, `catch(const char*)` → the text, `catch(int v)` → `"Error #<v>"`, `catch(...)` → `"Error"`; a non-`S_OK` `Result` without text → `HResultToMessage(Result)`; up to 32 `ErrorPaths` are appended; a message with `Result == S_OK` forces `E_FAIL`). `E_ABORT` is silent (no message). `FinalMessage.OkMessage` (e.g. the test summary) is shown with `MB_OK` only when there is no error text (`:1023-1034`).
+* Pause/Continue: `CProgressSync::CheckStop()` (`:100-110`) is polled by every callback (`SetCompleted`, `CheckBreak`, `Open_SetCompleted`); while `_paused` it sleeps `kPauseSleepTime = 100 ms` in a loop; `_stopped` → returns `E_ABORT`. Background/Foreground (`IDB_PROGRESS_BACKGROUND`): `OnPriorityButton` (`:1150-1156`) toggles `SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS / NORMAL_PRIORITY_CLASS)` for the **whole process**. Cancel (`IDCANCEL`/close, `:1245-1282`): if not already paused → `OnPauseButton()`; `MessageBoxW(IDS_PROGRESS_ASK_CANCEL, MB_YESNOCANCEL)`; Yes → `_cancelWasPressed`; then the pause is undone if it was auto-applied; only on Yes does the dialog proceed to `OnCancel()` → `Sync.Set_Stopped(true)` (`:571`). A close request arriving while the question box is open is honoured afterwards (`_externalCloseMessageWasReceived`).
 * Password prompting: `CPasswordDialog` is always created with the progress dialog as parent after `WaitCreating()` so it appears on top; for FM in-process operations the panel window is the parent (`FileFolderPluginOpen.cpp`). The FM remembers the password per archive chain (`CFolderLink`) and pre-seeds `PasswordIsDefined` for nested opens, re-opens after update (`ReOpen` with `openCallback` from `updateCallback100` QI `IArchiveOpenCallback`), and for Copy/Test (`CPanelCopyThread` sets `ExtractCallbackSpec->PasswordIsDefined = UsePassword`).
 * 7zG exit is reported via the process exit code only; 7zFM refreshes its panels through the 1 s timer / `IFolderWasChanged` after 7zG writes files.
 
@@ -748,13 +768,13 @@ Key behaviours:
 | 8 | Link dialog: hard links, file/dir symlinks, junctions, WSL links (`LinkDialog`, `CreateHardLink/CreateSymbolicLink/SetReparseData`), `kpidNtReparse` column | Offer Hard Link (`link(2)`) and Symbolic Link (`symlink(2)`) only; show symlink targets via `readlink` in a "Link" column. |
 | 9 | Recycle bin via `SHFileOperation(FOF_ALLOWUNDO)` (`DeleteItems`), long-path limitation message | `NSFileManager.trashItem(at:resultingItemURL:)` for Del; Shift+Del/Cmd+Backspace+Option = permanent delete with the same confirmation strings. |
 | 10 | Shell property sheet (`InvokeSystemCommand("properties")`), `ShellExecute` open/edit, `notepad.exe` fallback, Viewer/Editor/Diff `.exe` paths | Properties for FS items → the same `CListViewDialog` used for archives (or `NSWorkspace.activateFileViewerSelecting` + "Get Info"); open with `NSWorkspace.open`; Viewer/Editor/Diff settings accept app bundles or command lines (`open -a`), default viewer = Quick Look (`QLPreviewPanel`), default editor = TextEdit. |
-| 11 | Watching externally opened temp files with `WaitForSingleObject` on the child process + `CreateToolhelp32Snapshot` heuristics (`PanelItemOpen.cpp` `MyThreadFunction`) | Use `NSWorkspace.open(…configuration:)` completion + `NSRunningApplication` termination observation, **plus** an FSEvents/`DispatchSource` (`.write/.rename`) watcher on the temp file; prompt `IDS_WANT_UPDATE_MODIFIED_FILE` on change or on app quit, then `CopyFromFile`. Keep `7zO`/`7zE` temp-dir naming so `DeleteOldTempFiles` and the temp browser work unchanged. |
+| 11 | Watching externally opened temp files with `WaitForSingleObject` on the child process + `CreateToolhelp32Snapshot` heuristics (`PanelItemOpen.cpp` `MyThreadFunction`) | Use `NSWorkspace.open(…configuration:)` completion + `NSRunningApplication` termination observation, **plus** an FSEvents/`DispatchSource` (`.write/.rename`) watcher on the temp file; prompt `IDS_WANT_UPDATE_MODIFIED_FILE` on change or on app quit, then `CopyFromFile`. Keep `7zO`/`7zE` temp-dir naming so the temp browser (Tools → Delete Temporary Files) works unchanged; note that Windows never calls `DeleteOldTempFiles` (§1.1), so a startup sweep would be an improvement, not parity. |
 | 12 | OLE drag & drop (`IDataObject/IDropSource/IDropTarget`, `CF_HDROP`, private formats `7-Zip::SetTargetFolder/SetTransfer/GetTransfer`, right-button drag menu) | `NSDraggingSource`/`NSDraggingDestination` with `NSFilePromiseProvider` for archive items (deferred extraction to the promised destination, same `7zE` temp dir when the receiver is not 7-Zip); `NSPasteboard` file URLs for FS items; internal pasteboard type `org.7-zip.transfer` for panel-to-panel drops; modifier mapping: Option = copy, Cmd = move, default = move on same volume else copy (mirrors `GetEffect`). Right-button drag menu → drop menu shown on drag with Control held, or skip. |
 | 13 | Clipboard `CF_UNICODETEXT` names only (`EditCopy`), `EditCut/EditPaste` no-ops | Copy names as text **and** file URLs (`NSPasteboard.writeObjects`) for FS items; leave Cut/Paste unimplemented or implement Paste = `CopyFromNoAsk` of pasteboard file URLs. |
 | 14 | Toolbar/ReBar/ComboBoxEx/ListView/StatusBar/PropertySheet Win32 controls, dialog units | `NSToolbar` (Add/Extract/Test/Copy/Move/Delete/Info with the same command IDs), `NSPathControl`/editable `NSComboBox` address bar, `NSTableView` (report) / `NSCollectionView` (icons/list) with `NSOutlineView` not needed; `NSTabViewController` for Options; status bar as a bottom `NSTextField` row with 4 sections. |
 | 15 | System image lists / `SHGetFileInfo` icons (`SysIconUtils.cpp`), `IDB_*` toolbar bitmaps | `NSWorkspace.icon(forFile:)` / `icon(for: UTType)` with a per-extension cache (same `g_Ext_to_Icon_Map` semantics), SF Symbols or the original bitmaps for toolbar. |
 | 16 | Taskbar progress (`ITaskbarList3`), `SetPriorityClass(IDLE)` for Background, `SeLockMemoryPrivilege` large pages (`-slp`, `LargePages` setting) | Dock icon progress (`NSDockTile` badge/progress view); Background = lower the worker thread QoS (`.background`); remove the large-pages option. |
-| 17 | `HtmlHelp` topics (`7-zip.chm`: `start.htm`, `fm/*.htm`, `fm/plugins/7-zip/add.htm`, `extract.htm`, `benchmark.htm`, `temp.htm`) | Apple Help Book or open the bundled HTML in the default browser with the same topic paths. |
+| 17 | `HtmlHelp` topics (`7-zip.chm`: Help → Contents opens `FM/index.htm` (`kFMHelpTopic`), dialogs open `fm/*.htm`, `fm/plugins/7-zip/add.htm`, `extract.htm`, `benchmark.htm`, `temp.htm`) | Apple Help Book or open the bundled HTML in the default browser with the same topic paths. |
 | 18 | Lang files in `<exe>\Lang\*.txt`, registry `Lang`, system `LANGID` matching (`kLangs` table) | Ship `Lang/*.txt` in the bundle `Resources/Lang`, keep the `;!@Lang2@!UTF-8!` format and numeric IDs (so existing translations work), pick the default from `Locale.preferredLanguages` mapped to the same short names; optionally overlay `.strings` for AppKit-only UI. |
 | 19 | `descript.ion` file comments (`FSFolder SetProperty(kpidComment)`, `TextPairs`) | Use Finder comments (`kMDItemFinderComment` via `NSMetadataItem`/AppleScript is awkward) — simplest: keep `descript.ion` semantics for parity, or map to the `com.apple.metadata:kMDItemFinderComment` xattr. |
 | 20 | `FindFirstChangeNotification` folder watching (`IFolderWasChanged`) | `DispatchSource.makeFileSystemObjectSource` on the directory fd or FSEvents; keep the 1 s poll loop calling `WasChanged`. |
@@ -766,6 +786,12 @@ Key behaviours:
 | 26 | Console-style Benchmark dialog `IDD_BENCH_TOTAL` writing to a read-only edit | Same, with a monospaced `NSTextView`. |
 | 27 | `IsVirus_Message` (RLO / many spaces / hidden `.exe`) | Keep the check (RLO and space padding are platform-independent); extend `kExeExtensions` with `app`, `command`, `sh`, `pkg`, `dmg` for the hidden-extension warning. |
 | 28 | Per-process single-threaded UI with modal `DialogBoxParam` loops, `PostMessage(kReLoadMessage)` etc. | `DispatchQueue.main.async` equivalents for the `kShiftSelectMessage`/`kReLoadMessage`/`kSetFocusToListView`/`kOpenItemChanged`/`kRefresh_StatusBar` deferred actions; sheets instead of modal dialogs where the operation has a clear parent window (progress dialog remains a separate window because it can outlive/pause the panel). |
+| 29 | Codecs are loaded lazily at first use (`LoadGlobalCodecs` commented out in `FM.cpp:738-743`); `7z.dll` is a separate DLL found next to the exe | Link the codec library statically into `SevenZipCore`; keep lazy initialisation so the window appears before the format table is built. |
+| 30 | `Ctrl+W` and File → Exit close the whole 7zFM window (`PanelKey.cpp:318-324` posts `IDCLOSE`); there is no per-window/tab close | Map `Cmd+W` to close the window (= quit the document window) as on Windows; do not reinterpret it as "close panel". |
+| 31 | `Benchmark 2` menu item exists only in the Windows CE build (`#ifdef UNDER_CE`); `Cut/Copy/Paste` and "Show NTFS streams"/"Show deleted files" are commented out | Omit them; keep `IDM_BENCHMARK2 902` handling only if a hidden "total" benchmark is wanted. |
+| 32 | Command line `7zFM.exe [path] [-t<type>]` (`FM.cpp:639-661`, `WM_CREATE` opens an existing file as an archive and exits with an "Error" box if it fails) | `open -a 7-Zip <path>` / `NSApplicationDelegate.application(_:open:)`; a file argument opens as an archive in panel 0; keep `-t` as an app argument for automation. |
+| 33 | Small-screen mode (`g_IsSmallScreen = !IsDialogSizeOK(200, 200)`, `FM.cpp:630`) hides toolbar labels by default and drops disabled File-menu items | Not needed on macOS; always full menus. |
+| 34 | `RegisterDragDrop` on the main window with one `CDropTarget` that hit-tests both panel list views | One `NSDraggingDestination` per panel table view. |
 
 ---
 *End of inventory.*
