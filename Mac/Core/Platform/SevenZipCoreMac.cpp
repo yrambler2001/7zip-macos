@@ -12,8 +12,18 @@
 #include "../../../CPP/Common/MyString.h"
 #include "../../../CPP/Windows/ResourceString.h"
 
+// Every header that declares an interface GUID must be included here so that
+// MyInitGuid.h turns the declarations into definitions (one TU per binary):
+#include "../../../CPP/7zip/IDecl.h"
+#include "../../../CPP/7zip/IProgress.h"
+#include "../../../CPP/7zip/IStream.h"
+#include "../../../CPP/7zip/IPassword.h"
+#include "../../../CPP/7zip/ICoder.h"
 #include "../../../CPP/7zip/Archive/IArchive.h"
+#include "../../../CPP/7zip/UI/Common/IFileExtractCallback.h"
 #include "../../../CPP/7zip/UI/FileManager/IFolder.h"
+#include "../../../CPP/7zip/UI/Agent/IFolderArchive.h"
+#include "../../../CPP/7zip/UI/Agent/Agent.h"
 
 #include "PlatformHooks.h"
 

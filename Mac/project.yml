@@ -404,8 +404,10 @@ targets:
     platform: macOS
     sources:
       - path: Core
+        headerVisibility: project
         excludes:
           - "Platform/**"
+          - "include/**"
           - "Info.plist"
       - path: Core/include
         headerVisibility: public
