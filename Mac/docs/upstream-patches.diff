@@ -1,0 +1,322 @@
+--- a/CPP/7zip/UI/Agent/Agent.h
++++ b/CPP/7zip/UI/Agent/Agent.h
+@@ -15,6 +15,10 @@
+ 
+ #include "AgentProxy.h"
+ #include "IFolderArchive.h"
++
++#ifndef INVALID_FILE_ATTRIBUTES
++#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)
++#endif
+ 
+ extern CCodecs *g_CodecsObj;
+ HRESULT LoadGlobalCodecs();
+@@ -329,6 +333,7 @@
+ 
+ // #ifdef NEW_FOLDER_INTERFACE
+ 
++#ifdef _WIN32
+ struct CCodecIcons
+ {
+   struct CIconPair
+@@ -342,14 +347,17 @@
+   void LoadIcons(HMODULE m);
+   bool FindIconIndex(const UString &ext, int &iconIndex) const;
+ };
++#endif // _WIN32
+ 
+ 
+ Z7_CLASS_IMP_COM_1(
+   CArchiveFolderManager
+   , IFolderManager
+ )
++#ifdef _WIN32
+   CObjectVector<CCodecIcons> CodecIconsVector;
+   CCodecIcons InternalIcons;
++#endif
+   bool WasLoaded;
+ 
+   void LoadFormats();
+--- a/CPP/7zip/UI/Agent/Agent.cpp
++++ b/CPP/7zip/UI/Agent/Agent.cpp
+@@ -1517,7 +1517,10 @@
+   {
+     pathU = us2fs(path);
+     if (!pathU.IsEmpty()
+-      && !NFile::NName::IsAltStreamPrefixWithColon(path))
++      #ifdef _WIN32
++      && !NFile::NName::IsAltStreamPrefixWithColon(path)
++      #endif
++      )
+     {
+       NFile::NName::NormalizeDirPathPrefix(pathU);
+       NFile::NDir::CreateComplexDir(pathU);
+@@ -1644,8 +1647,13 @@
+       return GetLastError_noZero_HRESULT();
+     if (fi.IsDir())
+       return E_FAIL;
++   #ifdef _WIN32
+     _attrib = fi.Attrib;
+     _isDeviceFile = fi.IsDevice;
++   #else
++    _attrib = fi.GetWinAttrib();
++    _isDeviceFile = S_ISCHR(fi.mode) || S_ISBLK(fi.mode);
++   #endif
+     FString dirPrefix, fileName;
+     if (NFile::NDir::GetFullPathAndSplit(us2fs(_archiveFilePath), dirPrefix, fileName))
+     {
+@@ -1691,7 +1699,7 @@
+     if (!inStream)
+     {
+       arc.MTime.Set_From_FiTime(fi.MTime);
+-      arc.MTime.Def = !fi.IsDevice;
++      arc.MTime.Def = !_isDeviceFile;
+     }
+     
+     ArchiveType = GetTypeOfArc(arc);
+--- a/CPP/7zip/UI/Agent/AgentOut.cpp
++++ b/CPP/7zip/UI/Agent/AgentOut.cpp
+@@ -282,13 +282,18 @@
+ 
+   {
+     FString folderPrefix = _folderPrefix;
++   #ifdef _WIN32
+     if (!NFile::NName::IsAltStreamPrefixWithColon(fs2us(folderPrefix)))
++   #endif
+       NFile::NName::NormalizeDirPathPrefix(folderPrefix);
+     
+     RINOK(dirItems.EnumerateItems2(folderPrefix, _updatePathPrefix, _names, requestedPaths))
+ 
+     if (_updatePathPrefix_is_AltFolder)
+     {
++     #ifndef _WIN32
++      return E_NOTIMPL;
++     #else
+       FOR_VECTOR(i, dirItems.Items)
+       {
+         CDirItem &item = dirItems.Items[i];
+@@ -296,6 +301,7 @@
+           return E_NOTIMPL;
+         item.IsAltStream = true;
+       }
++     #endif
+     }
+   }
+ 
+@@ -565,7 +571,11 @@
+ 
+   CDirItem di;
+ 
++ #ifdef _WIN32
+   di.Attrib = FILE_ATTRIBUTE_DIRECTORY;
++ #else
++  di.SetAsDir();
++ #endif
+   di.Size = 0;
+   if (_proxy2)
+     di.Name = _proxy2->GetDirPath_as_Prefix(_agentFolder->_proxyDirIndex /* , isAltStreamFolder */);
+@@ -573,8 +583,8 @@
+     di.Name = _proxy->GetDirPath_as_Prefix(_agentFolder->_proxyDirIndex);
+   di.Name += folderName;
+ 
+-  FILETIME ft;
+-  NTime::GetCurUtcFileTime(ft);
++  CFiTime ft;
++  NTime::GetCurUtc_FiTime(ft);
+   di.CTime = di.ATime = di.MTime = ft;
+ 
+   dirItems.Items.Add(di);
+--- a/CPP/7zip/UI/Agent/ArchiveFolderOut.cpp
++++ b/CPP/7zip/UI/Agent/ArchiveFolderOut.cpp
+@@ -44,7 +44,11 @@
+           return false;
+         if (!found)
+           break;
++       #ifdef _WIN32
+         if (fileInfo.IsDir())
++       #else
++        if (enumerator.DirEntry_IsDir(fileInfo, false))
++       #endif
+           names.Add(fileInfo.Name);
+       }
+     }
+@@ -57,9 +61,11 @@
+     if (!res)
+       return false;
+   }
++ #ifdef _WIN32
+   // we clear read-only attrib to remove read-only dir
+   if (!SetFileAttrib(path, 0))
+     return false;
++ #endif
+   return RemoveDir(path);
+ }
+ 
+--- a/CPP/7zip/UI/Agent/UpdateCallbackAgent.cpp
++++ b/CPP/7zip/UI/Agent/UpdateCallbackAgent.cpp
+@@ -36,14 +36,14 @@
+ }
+ 
+ 
+-HRESULT CUpdateCallbackAgent::SetTotal(UINT64 size)
++HRESULT CUpdateCallbackAgent::SetTotal(UInt64 size)
+ {
+   if (Callback)
+     return Callback->SetTotal(size);
+   return S_OK;
+ }
+ 
+-HRESULT CUpdateCallbackAgent::SetCompleted(const UINT64 *completeValue)
++HRESULT CUpdateCallbackAgent::SetCompleted(const UInt64 *completeValue)
+ {
+   if (Callback)
+     return Callback->SetCompleted(completeValue);
+--- a/CPP/7zip/UI/Agent/ArchiveFolderOpen.cpp
++++ b/CPP/7zip/UI/Agent/ArchiveFolderOpen.cpp
+@@ -6,10 +6,13 @@
+ 
+ #include "../../../Common/StringToInt.h"
+ #include "../../../Windows/DLL.h"
++#ifdef _WIN32
+ #include "../../../Windows/ResourceString.h"
++#endif
+ 
+ #include "Agent.h"
+ 
++#ifdef _WIN32
+ extern HINSTANCE g_hInstance;
+ static const UINT kIconTypesResId = 100;
+ 
+@@ -58,6 +61,7 @@
+   }
+   return false;
+ }
++#endif // _WIN32
+ 
+ 
+ void CArchiveFolderManager::LoadFormats()
+@@ -67,6 +71,7 @@
+ 
+   LoadGlobalCodecs();
+ 
++ #ifdef _WIN32
+   #ifdef Z7_EXTERNAL_CODECS
+   CodecIconsVector.Clear();
+   FOR_VECTOR (i, g_CodecsObj->Libs)
+@@ -76,6 +81,7 @@
+   }
+   #endif
+   InternalIcons.LoadIcons(g_hInstance);
++ #endif // _WIN32
+   WasLoaded = true;
+ }
+ 
+@@ -151,6 +157,7 @@
+ }
+ */
+ 
++#ifdef _WIN32
+ static void AddIconExt(const CCodecIcons &lib, UString &dest)
+ {
+   FOR_VECTOR (i, lib.IconPairs)
+@@ -161,11 +168,14 @@
+ }
+ 
+ 
++#endif
++
+ Z7_COM7F_IMF(CArchiveFolderManager::GetExtensions(BSTR *extensions))
+ {
+   *extensions = NULL;
+   LoadFormats();
+   UString res;
++ #ifdef _WIN32
+   
+   #ifdef Z7_EXTERNAL_CODECS
+   /*
+@@ -179,6 +189,17 @@
+   AddIconExt(
+       // g_CodecsObj->
+       InternalIcons, res);
++ #else
++  FOR_VECTOR (i, g_CodecsObj->Formats)
++  {
++    const CObjectVector<CArcExtInfo> &exts = g_CodecsObj->Formats[i].Exts;
++    FOR_VECTOR (k, exts)
++    {
++      res.Add_Space_if_NotEmpty();
++      res += exts[k].Ext;
++    }
++  }
++ #endif
+ 
+   return StringToBstr(res, extensions);
+ }
+@@ -189,7 +210,9 @@
+   *iconPath = NULL;
+   *iconIndex = 0;
+   LoadFormats();
+-
++ #ifndef _WIN32
++  UNUSED_VAR(ext)
++ #else
+   #ifdef Z7_EXTERNAL_CODECS
+   // FOR_VECTOR (i, g_CodecsObj->Libs)
+   FOR_VECTOR (i, CodecIconsVector)
+@@ -214,6 +237,7 @@
+       return StringToBstr(fs2us(path), iconPath);
+     }
+   }
++ #endif // _WIN32
+   return S_OK;
+ }
+ 
+--- a/CPP/7zip/UI/FileManager/SplitUtils.h
++++ b/CPP/7zip/UI/FileManager/SplitUtils.h
+@@ -6,10 +6,14 @@
+ #include "../../../Common/MyTypes.h"
+ #include "../../../Common/MyString.h"
+ 
++#ifdef _WIN32
+ #include "../../../Windows/Control/ComboBox.h"
++#endif
+ 
+ bool ParseVolumeSizes(const UString &s, CRecordVector<UInt64> &values);
++#ifdef _WIN32
+ void AddVolumeItems(NWindows::NControl::CComboBox &volumeCombo);
++#endif
+ UInt64 GetNumberOfVolumes(UInt64 size, const CRecordVector<UInt64> &volSizes);
+ 
+ #endif
+--- a/CPP/7zip/UI/FileManager/SplitUtils.cpp
++++ b/CPP/7zip/UI/FileManager/SplitUtils.cpp
+@@ -58,6 +58,8 @@
+ }
+ 
+ 
++
++#ifdef _WIN32
+ static const char * const k_Sizes[] =
+ {
+     "10M"
+@@ -78,6 +80,8 @@
+     combo.AddString(CSysString(k_Sizes[i]));
+ }
+ 
++#endif
++
+ UInt64 GetNumberOfVolumes(UInt64 size, const CRecordVector<UInt64> &volSizes)
+ {
+   if (size == 0 || volSizes.Size() == 0)
+--- a/CPP/Windows/ResourceString.h
++++ b/CPP/Windows/ResourceString.h
+@@ -9,7 +9,9 @@
+ namespace NWindows {
+ 
+ UString MyLoadString(UINT resourceID);
++#ifdef _WIN32
+ void MyLoadString(HINSTANCE hInstance, UINT resourceID, UString &dest);
++#endif
+ void MyLoadString(UINT resourceID, UString &dest);
+ 
+ }

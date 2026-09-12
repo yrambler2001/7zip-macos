@@ -58,6 +58,8 @@ bool ParseVolumeSizes(const UString &s, CRecordVector<UInt64> &values)
 }
 
 
+
+#ifdef _WIN32
 static const char * const k_Sizes[] =
 {
     "10M"
@@ -77,6 +79,8 @@ void AddVolumeItems(NWindows::NControl::CComboBox &combo)
   for (unsigned i = 0; i < Z7_ARRAY_SIZE(k_Sizes); i++)
     combo.AddString(CSysString(k_Sizes[i]));
 }
+
+#endif
 
 UInt64 GetNumberOfVolumes(UInt64 size, const CRecordVector<UInt64> &volSizes)
 {

@@ -36,14 +36,14 @@ HRESULT CUpdateCallbackAgent::WriteSfx(const wchar_t * /* name */, UInt64 /* siz
 }
 
 
-HRESULT CUpdateCallbackAgent::SetTotal(UINT64 size)
+HRESULT CUpdateCallbackAgent::SetTotal(UInt64 size)
 {
   if (Callback)
     return Callback->SetTotal(size);
   return S_OK;
 }
 
-HRESULT CUpdateCallbackAgent::SetCompleted(const UINT64 *completeValue)
+HRESULT CUpdateCallbackAgent::SetCompleted(const UInt64 *completeValue)
 {
   if (Callback)
     return Callback->SetCompleted(completeValue);

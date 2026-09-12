@@ -44,7 +44,11 @@ static bool Delete_EmptyFolder_And_EmptySubFolders(const FString &path)
           return false;
         if (!found)
           break;
+       #ifdef _WIN32
         if (fileInfo.IsDir())
+       #else
+        if (enumerator.DirEntry_IsDir(fileInfo, false))
+       #endif
           names.Add(fileInfo.Name);
       }
     }
@@ -57,9 +61,11 @@ static bool Delete_EmptyFolder_And_EmptySubFolders(const FString &path)
     if (!res)
       return false;
   }
+ #ifdef _WIN32
   // we clear read-only attrib to remove read-only dir
   if (!SetFileAttrib(path, 0))
     return false;
+ #endif
   return RemoveDir(path);
 }
 

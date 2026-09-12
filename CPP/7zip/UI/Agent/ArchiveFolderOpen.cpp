@@ -6,10 +6,13 @@
 
 #include "../../../Common/StringToInt.h"
 #include "../../../Windows/DLL.h"
+#ifdef _WIN32
 #include "../../../Windows/ResourceString.h"
+#endif
 
 #include "Agent.h"
 
+#ifdef _WIN32
 extern HINSTANCE g_hInstance;
 static const UINT kIconTypesResId = 100;
 
@@ -58,6 +61,7 @@ bool CCodecIcons::FindIconIndex(const UString &ext, int &iconIndex) const
   }
   return false;
 }
+#endif // _WIN32
 
 
 void CArchiveFolderManager::LoadFormats()
@@ -67,6 +71,7 @@ void CArchiveFolderManager::LoadFormats()
 
   LoadGlobalCodecs();
 
+ #ifdef _WIN32
   #ifdef Z7_EXTERNAL_CODECS
   CodecIconsVector.Clear();
   FOR_VECTOR (i, g_CodecsObj->Libs)
@@ -76,6 +81,7 @@ void CArchiveFolderManager::LoadFormats()
   }
   #endif
   InternalIcons.LoadIcons(g_hInstance);
+ #endif // _WIN32
   WasLoaded = true;
 }
 
@@ -151,6 +157,7 @@ Z7_COM7F_IMF(CArchiveFolderManager::GetExtensions(const wchar_t *type, BSTR *ext
 }
 */
 
+#ifdef _WIN32
 static void AddIconExt(const CCodecIcons &lib, UString &dest)
 {
   FOR_VECTOR (i, lib.IconPairs)
@@ -161,11 +168,14 @@ static void AddIconExt(const CCodecIcons &lib, UString &dest)
 }
 
 
+#endif
+
 Z7_COM7F_IMF(CArchiveFolderManager::GetExtensions(BSTR *extensions))
 {
   *extensions = NULL;
   LoadFormats();
   UString res;
+ #ifdef _WIN32
   
   #ifdef Z7_EXTERNAL_CODECS
   /*
@@ -179,6 +189,17 @@ Z7_COM7F_IMF(CArchiveFolderManager::GetExtensions(BSTR *extensions))
   AddIconExt(
       // g_CodecsObj->
       InternalIcons, res);
+ #else
+  FOR_VECTOR (i, g_CodecsObj->Formats)
+  {
+    const CObjectVector<CArcExtInfo> &exts = g_CodecsObj->Formats[i].Exts;
+    FOR_VECTOR (k, exts)
+    {
+      res.Add_Space_if_NotEmpty();
+      res += exts[k].Ext;
+    }
+  }
+ #endif
 
   return StringToBstr(res, extensions);
 }
@@ -189,7 +210,9 @@ Z7_COM7F_IMF(CArchiveFolderManager::GetIconPath(const wchar_t *ext, BSTR *iconPa
   *iconPath = NULL;
   *iconIndex = 0;
   LoadFormats();
-
+ #ifndef _WIN32
+  UNUSED_VAR(ext)
+ #else
   #ifdef Z7_EXTERNAL_CODECS
   // FOR_VECTOR (i, g_CodecsObj->Libs)
   FOR_VECTOR (i, CodecIconsVector)
@@ -214,6 +237,7 @@ Z7_COM7F_IMF(CArchiveFolderManager::GetIconPath(const wchar_t *ext, BSTR *iconPa
       return StringToBstr(fs2us(path), iconPath);
     }
   }
+ #endif // _WIN32
   return S_OK;
 }
 

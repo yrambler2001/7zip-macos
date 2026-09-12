@@ -282,13 +282,18 @@ Z7_COM7F_IMF(CAgent::DoOperation(
 
   {
     FString folderPrefix = _folderPrefix;
+   #ifdef _WIN32
     if (!NFile::NName::IsAltStreamPrefixWithColon(fs2us(folderPrefix)))
+   #endif
       NFile::NName::NormalizeDirPathPrefix(folderPrefix);
     
     RINOK(dirItems.EnumerateItems2(folderPrefix, _updatePathPrefix, _names, requestedPaths))
 
     if (_updatePathPrefix_is_AltFolder)
     {
+     #ifndef _WIN32
+      return E_NOTIMPL;
+     #else
       FOR_VECTOR(i, dirItems.Items)
       {
         CDirItem &item = dirItems.Items[i];
@@ -296,6 +301,7 @@ Z7_COM7F_IMF(CAgent::DoOperation(
           return E_NOTIMPL;
         item.IsAltStream = true;
       }
+     #endif
     }
   }
 
@@ -565,7 +571,11 @@ HRESULT CAgent::CreateFolder(ISequentialOutStream *outArchiveStream,
 
   CDirItem di;
 
+ #ifdef _WIN32
   di.Attrib = FILE_ATTRIBUTE_DIRECTORY;
+ #else
+  di.SetAsDir();
+ #endif
   di.Size = 0;
   if (_proxy2)
     di.Name = _proxy2->GetDirPath_as_Prefix(_agentFolder->_proxyDirIndex /* , isAltStreamFolder */);
@@ -573,8 +583,8 @@ HRESULT CAgent::CreateFolder(ISequentialOutStream *outArchiveStream,
     di.Name = _proxy->GetDirPath_as_Prefix(_agentFolder->_proxyDirIndex);
   di.Name += folderName;
 
-  FILETIME ft;
-  NTime::GetCurUtcFileTime(ft);
+  CFiTime ft;
+  NTime::GetCurUtc_FiTime(ft);
   di.CTime = di.ATime = di.MTime = ft;
 
   dirItems.Items.Add(di);
