@@ -27,7 +27,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSString *)stringForID:(uint32_t)langID fallback:(NSString *)fallback NS_SWIFT_NAME(string(forID:fallback:));
 /// Only from the loaded language file (LangString_OnlyFromLangFile); nil if absent or no file.
 - (nullable NSString *)translatedStringForID:(uint32_t)langID NS_SWIFT_NAME(translatedString(forID:));
-/// Built-in English (MyLoadString equivalent); "" if unknown.
+/// Built-in English (MyLoadString equivalent): en.ttt, then the few Windows resource-only
+/// strings (PropertyName.rc names missing from en.ttt); "" if unknown.
 - (NSString *)englishStringForID:(uint32_t)langID NS_SWIFT_NAME(englishString(forID:));
 
 /// Loads Lang/<code>.txt. code nil or "" = pick from the system UI language; "-" = built-in

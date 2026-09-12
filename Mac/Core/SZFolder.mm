@@ -622,6 +622,16 @@ static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^ge
   return 0;
 }
 
++ (BOOL)timestampShowUTC
+{
+  return g_Timestamp_Show_UTC;
+}
+
++ (void)setTimestampShowUTC:(BOOL)show
+{
+  g_Timestamp_Show_UTC = show;
+}
+
 + (NSInteger)compareFileName:(NSString *)name1 withFileName:(NSString *)name2
 {
   const UString a = SZUStringFromNSString(name1);

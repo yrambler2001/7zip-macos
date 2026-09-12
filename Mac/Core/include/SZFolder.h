@@ -105,6 +105,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) BOOL supportsCompare;       ///< IFolderCompare
 /// IFolderCompare::CompareItems (<0, 0, >0). Falls back to comparing typed values.
 - (NSInteger)compareItemAtIndex:(NSInteger)index1 withItemAtIndex:(NSInteger)index2 propID:(SZPropID)propID NS_SWIFT_NAME(compareItem(at:with:propID:));
+/// g_Timestamp_Show_UTC (Windows/PropVariantConv.h): display times as UTC instead of local.
+@property (class, nonatomic) BOOL timestampShowUTC;
 /// CompareFileNames_ForFolderList: case-insensitive, numeric-aware ("file2" < "file10").
 + (NSInteger)compareFileName:(NSString *)name1 withFileName:(NSString *)name2 NS_SWIFT_NAME(compareFileName(_:with:));
 

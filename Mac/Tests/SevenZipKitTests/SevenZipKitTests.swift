@@ -356,6 +356,8 @@ final class SevenZipKitTests: XCTestCase {
         XCTAssertEqual(lang.englishString(forID: 7100), "Computer")
         XCTAssertEqual(lang.englishString(forID: 3002), "{0} object(s) selected")
         XCTAssertEqual(lang.englishString(forID: 1004), "Name")
+        XCTAssertEqual(lang.englishString(forID: 1019), "CRC", "PropertyName.rc string absent from en.ttt")
+        XCTAssertEqual(lang.string(forID: 1019), "CRC")
         XCTAssertTrue(lang.englishString(forID: 3009).contains("\n"), "\\n escape becomes a newline")
         XCTAssertEqual(lang.string(forID: 999_999, fallback: "fb"), "fb")
         XCTAssertEqual(lang.string(forID: 999_999), "")

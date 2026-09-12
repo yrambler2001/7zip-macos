@@ -30,6 +30,38 @@
 
 static const wchar_t *SZLangHook(UInt32 langID);
 
+// English resource strings that exist in the Windows string tables but not in Lang/en.ttt
+// (PropertyName.rc IDS_PROP_* entries the translations never carried). MyLoadString falls
+// back to these after the lang file and en.ttt, like the Win32 resource would.
+struct SZResourceString { UInt32 id; const wchar_t *text; };
+static const SZResourceString kResourceOnlyStrings[] =
+{
+  { 1019, L"CRC" },
+  { 1067, L"SHA-1" },
+  { 1068, L"SHA-256" },
+  { 1084, L"Is not archive type" },
+  { 1085, L"Physical Size can't be detected" },
+  { 1086, L"Zeros Tail Is Allowed" },
+  { 1092, L"Stream ID" },
+  { 1094, L"Out Name" },
+  { 1096, L"ArcFileName" },
+  { 1097, L"IsHash" },
+  { 1099, L"User ID" },
+  { 1100, L"Group ID" },
+  { 1101, L"Device Major" },
+  { 1102, L"Device Minor" },
+  { 1103, L"Dev Major" },
+  { 1104, L"Dev Minor" },
+};
+
+static const wchar_t *SZResourceOnlyString(UInt32 langID)
+{
+  for (const SZResourceString &r : kResourceOnlyStrings)
+    if (r.id == langID)
+      return r.text;
+  return NULL;
+}
+
 @implementation SZLang
 {
   CLang _english;
@@ -81,6 +113,8 @@ static const wchar_t *SZLangHook(UInt32 langID);
   const wchar_t *s = _current.IsEmpty() ? NULL : _current.Get(langID);
   if (!s)
     s = _english.Get(langID);
+  if (!s)
+    s = SZResourceOnlyString(langID);
   return s;
 }
 
@@ -109,6 +143,8 @@ static const wchar_t *SZLangHook(UInt32 langID);
 {
   std::lock_guard<std::mutex> lock(_mutex);
   const wchar_t *s = _english.Get(langID);
+  if (!s)
+    s = SZResourceOnlyString(langID);
   return s ? SZStringFromWChars(s, (unsigned)wcslen(s)) : @"";
 }
 

@@ -20,9 +20,11 @@ FOUNDATION_EXPORT const unsigned char SevenZipKitVersionString[];
 #import <SevenZipKit/SZSettings.h>
 #import <SevenZipKit/SZProgressDelegate.h>
 
+NS_ASSUME_NONNULL_BEGIN
 /// 7-Zip engine version string ("26.03") from C/7zVersion.h.
 FOUNDATION_EXPORT NSString *SZEngineVersionString(void);
 /// 7-Zip engine copyright/date line.
 FOUNDATION_EXPORT NSString *SZEngineCopyrightString(void);
+NS_ASSUME_NONNULL_END
 
 #endif
