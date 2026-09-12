@@ -16,6 +16,10 @@
 #include "AgentProxy.h"
 #include "IFolderArchive.h"
 
+#ifndef INVALID_FILE_ATTRIBUTES
+#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)
+#endif
+
 extern CCodecs *g_CodecsObj;
 HRESULT LoadGlobalCodecs();
 void FreeGlobalCodecs();
@@ -329,6 +333,7 @@ public:
 
 // #ifdef NEW_FOLDER_INTERFACE
 
+#ifdef _WIN32
 struct CCodecIcons
 {
   struct CIconPair
@@ -342,14 +347,17 @@ struct CCodecIcons
   void LoadIcons(HMODULE m);
   bool FindIconIndex(const UString &ext, int &iconIndex) const;
 };
+#endif // _WIN32
 
 
 Z7_CLASS_IMP_COM_1(
   CArchiveFolderManager
   , IFolderManager
 )
+#ifdef _WIN32
   CObjectVector<CCodecIcons> CodecIconsVector;
   CCodecIcons InternalIcons;
+#endif
   bool WasLoaded;
 
   void LoadFormats();

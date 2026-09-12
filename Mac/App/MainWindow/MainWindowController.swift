@@ -1,0 +1,370 @@
+// MainWindowController.swift -- the 7zFM main window (FM.cpp WndProc, App.cpp CApp): toolbar
+// with the seven buttons, one or two panels in a split view, window/panel persistence.
+
+import Cocoa
+import SevenZipKit
+
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate, NSMenuItemValidation, PanelDelegate {
+
+    private let splitView = NSSplitView()
+    private var panels: [PanelViewController] = []   // index 0 always exists; 1 created on demand
+    private(set) var numPanels = 1
+    private(set) var focusedPanelIndex = 0             // LastFocusedPanel
+    private var refreshTimer: Timer?
+    private var autoRefresh = Settings.autoRefresh     // AutoRefresh_Mode
+    private var toolbarsMask = Settings.toolbarsMask
+    private var pendingSplitterRatio: Double?
+
+    var focusedPanel: PanelViewController { panels[min(focusedPanelIndex, panels.count - 1)] }
+
+    // Toolbar identifiers (App.cpp g_ArchiveButtons / g_StandardButtons)
+    private static let archiveItems: [NSToolbarItem.Identifier] = [.szAdd, .szExtract, .szTest]
+    private static let standardItems: [NSToolbarItem.Identifier] = [.szCopy, .szMove, .szDelete, .szInfo]
+
+    init() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                              backing: .buffered, defer: false)
+        window.title = "7-Zip"
+        window.minSize = NSSize(width: 360, height: 240)
+        window.tabbingMode = .disallowed
+        super.init(window: window)
+        window.delegate = self
+        buildContent()
+        buildToolbar()
+        restoreState()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    // MARK: - Layout (CApp::Create / MoveSubWindows)
+
+    private func buildContent() {
+        guard let window else { return }
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        splitView.delegate = self
+        splitView.translatesAutoresizingMaskIntoConstraints = false
+        let content = NSView()
+        content.addSubview(splitView)
+        NSLayoutConstraint.activate([
+            splitView.topAnchor.constraint(equalTo: content.topAnchor),
+            splitView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            splitView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+        ])
+        window.contentView = content
+        panels = [makePanel(0)]
+        splitView.addArrangedSubview(panels[0].view)
+    }
+
+    private func makePanel(_ index: Int) -> PanelViewController {
+        let panel = PanelViewController(index: index)
+        panel.delegate = self
+        panel.view.translatesAutoresizingMaskIntoConstraints = false
+        return panel
+    }
+
+    private func buildToolbar() {
+        let toolbar = NSToolbar(identifier: "7zFMToolbar")
+        toolbar.delegate = self
+        toolbar.allowsUserCustomization = false
+        toolbar.displayMode = (toolbarsMask & 1) != 0 ? .iconAndLabel : .iconOnly
+        window?.toolbar = toolbar
+        window?.toolbarStyle = .expanded
+    }
+
+    private var visibleToolbarItems: [NSToolbarItem.Identifier] {
+        var ids: [NSToolbarItem.Identifier] = []
+        if (toolbarsMask & 8) != 0 { ids += Self.archiveItems }
+        if (toolbarsMask & 4) != 0 { ids += Self.standardItems }
+        return ids
+    }
+
+    // MARK: - Startup / persistence (CWindowInfo, CApp::Save)
+
+    private func restoreState() {
+        guard let window else { return }
+        if let frame = Settings.windowFrame, !frame.isEmpty {
+            window.setFrame(NSRectFromString(frame), display: false)
+        } else {
+            window.center()
+        }
+        numPanels = Settings.numPanels
+        focusedPanelIndex = min(Settings.currentPanel, numPanels - 1)
+        pendingSplitterRatio = Settings.splitterPos
+        if numPanels == 2 { showSecondPanel() }
+        for (i, panel) in panels.enumerated() {
+            // 7zFM starts in the root folder when nothing is stored; on macOS the home
+            // directory is the natural first view (the root is one "Up" away).
+            panel.navigate(to: Settings.panelPath(i) ?? NSHomeDirectory())
+        }
+        panels[0].isActive = focusedPanelIndex == 0
+        if panels.count > 1 { panels[1].isActive = focusedPanelIndex == 1 }
+        if Settings.maximized { window.zoom(nil) }
+        startRefreshTimer()
+    }
+
+    /// Command-line path (FM.cpp:975-1012): panel 0 opens it; a file is opened as an archive.
+    func openStartupPath(_ path: String, formatHint: String?) {
+        let full = (path as NSString).isAbsolutePath ? path : FileManager.default.currentDirectoryPath + "/" + path
+        panels[0].navigate(to: full, formatHint: formatHint)
+    }
+
+    func saveState() {
+        guard let window else { return }
+        Settings.windowFrame = NSStringFromRect(window.frame)
+        Settings.maximized = window.isZoomed
+        Settings.numPanels = numPanels
+        Settings.currentPanel = focusedPanelIndex
+        if numPanels == 2 && splitView.arrangedSubviews.count == 2 {
+            let w = splitView.bounds.width
+            if w > 0 { Settings.splitterPos = Double(splitView.arrangedSubviews[0].frame.width / w) }
+        }
+        for (i, panel) in panels.enumerated() {
+            Settings.setPanelPath(panel.pathToPersist, i)
+        }
+        Settings.autoRefresh = autoRefresh
+        Settings.toolbarsMask = toolbarsMask
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        refreshTimer?.invalidate()
+        saveState()
+    }
+
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        window?.makeFirstResponder(nil)
+        DispatchQueue.main.async { [self] in
+            applyPendingSplitter()
+            focusedPanel.focusList()
+        }
+    }
+
+    private func applyPendingSplitter() {
+        guard numPanels == 2, let ratio = pendingSplitterRatio else { return }
+        pendingSplitterRatio = nil
+        splitView.setPosition(splitView.bounds.width * ratio, ofDividerAt: 0)
+    }
+
+    // MARK: - Panels (CApp::SwitchOnOffOnePanel, App.cpp:360-380)
+
+    private func showSecondPanel() {
+        if panels.count < 2 {
+            let panel = makePanel(1)
+            panels.append(panel)
+            panel.navigate(to: Settings.panelPath(1) ?? NSHomeDirectory())
+        }
+        if !splitView.arrangedSubviews.contains(panels[1].view) {
+            splitView.addArrangedSubview(panels[1].view)
+        }
+        panels[1].view.isHidden = false
+        numPanels = 2
+        DispatchQueue.main.async { [self] in
+            if let ratio = pendingSplitterRatio {
+                pendingSplitterRatio = nil
+                splitView.setPosition(splitView.bounds.width * ratio, ofDividerAt: 0)
+            } else {
+                splitView.setPosition(splitView.bounds.width * 0.5, ofDividerAt: 0)
+            }
+        }
+    }
+
+    func switchOnOffOnePanel() {
+        if numPanels == 1 {
+            showSecondPanel()
+        } else {
+            // close the non-focused panel (it is kept alive and reused later)
+            let closing = focusedPanelIndex == 0 ? 1 : 0
+            if numPanels == 2 && splitView.arrangedSubviews.count == 2 {
+                let w = splitView.bounds.width
+                if w > 0 { Settings.splitterPos = Double(splitView.arrangedSubviews[0].frame.width / w) }
+            }
+            splitView.removeArrangedSubview(panels[closing].view)
+            panels[closing].view.removeFromSuperview()
+            numPanels = 1
+            setFocusedPanel(focusedPanelIndex == 0 ? 0 : 1)
+        }
+        focusedPanel.focusList()
+    }
+
+    private func setFocusedPanel(_ index: Int) {
+        focusedPanelIndex = index
+        for (i, panel) in panels.enumerated() { panel.isActive = i == index }
+        refreshTitle()
+    }
+
+    /// CApp::RefreshTitle (App.cpp:963): the focused panel's path, "7-Zip" when empty.
+    private func refreshTitle() {
+        let path = focusedPanel.currentPath
+        window?.title = path.isEmpty ? "7-Zip" : path
+    }
+
+    // MARK: PanelDelegate
+
+    func panelDidBecomeActive(_ panel: PanelViewController) {
+        if let i = panels.firstIndex(where: { $0 === panel }), i != focusedPanelIndex || !panel.isActive {
+            setFocusedPanel(i)
+        }
+    }
+
+    func panelDidChangeFolder(_ panel: PanelViewController) {
+        if panel === focusedPanel { refreshTitle() }
+    }
+
+    // MARK: - Auto refresh (kTimerElapse polling of IFolderWasChanged)
+
+    private func startRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self, self.autoRefresh else { return }
+            for panel in self.panels.prefix(self.numPanels) { panel.refreshIfChanged() }
+        }
+    }
+
+    // MARK: - NSSplitViewDelegate
+
+    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
+        120   // kPanelSizeMin
+    }
+
+    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
+        splitView.bounds.width - 120
+    }
+
+    func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {
+        // keep the stored ratio while the window resizes (7zFM stores the position as a ratio)
+        let views = splitView.arrangedSubviews
+        guard views.count == 2, oldSize.width > 0 else {
+            splitView.adjustSubviews()
+            return
+        }
+        let ratio = views[0].frame.width / max(oldSize.width - splitView.dividerThickness, 1)
+        splitView.adjustSubviews()
+        splitView.setPosition((splitView.bounds.width - splitView.dividerThickness) * ratio, ofDividerAt: 0)
+    }
+
+    // MARK: - NSToolbarDelegate (App.cpp CreateToolbar / ReloadToolbars)
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { visibleToolbarItems }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.archiveItems + Self.standardItems }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        let (label, symbol, action): (String, String, Selector)
+        switch itemIdentifier {
+        case .szAdd: (label, symbol, action) = (Lang.text(7200, "Add"), "plus.rectangle.on.folder", #selector(MenuActions.toolbarAddToArchive(_:)))         // kMenuCmdID_Toolbar_Add 1070, IDS_ADD
+        case .szExtract: (label, symbol, action) = (Lang.text(7201, "Extract"), "arrow.down.doc", #selector(MenuActions.toolbarExtractArchives(_:)))       // kMenuCmdID_Toolbar_Extract 1071, IDS_EXTRACT
+        case .szTest: (label, symbol, action) = (Lang.text(7202, "Test"), "checkmark.seal", #selector(MenuActions.toolbarTestArchives(_:)))              // kMenuCmdID_Toolbar_Test 1072, IDS_TEST
+        case .szCopy: (label, symbol, action) = (Lang.text(7203, "Copy"), "doc.on.doc", #selector(MenuActions.fileCopyTo(_:)))                          // IDM_COPY_TO 546, IDS_BUTTON_COPY
+        case .szMove: (label, symbol, action) = (Lang.text(7204, "Move"), "arrow.right.doc.on.clipboard", #selector(MenuActions.fileMoveTo(_:)))        // IDM_MOVE_TO 547, IDS_BUTTON_MOVE
+        case .szDelete: (label, symbol, action) = (Lang.text(7205, "Delete"), "trash", #selector(MenuActions.fileDelete(_:)))                           // IDM_DELETE 548, IDS_BUTTON_DELETE
+        case .szInfo: (label, symbol, action) = (Lang.text(7206, "Info"), "info.circle", #selector(MenuActions.fileProperties(_:)))                    // IDM_PROPERTIES 551, IDS_BUTTON_INFO
+        default: return nil
+        }
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        item.target = nil          // responder chain; disabled while nobody implements the action
+        item.action = action
+        item.isBordered = true
+        return item
+    }
+
+    private func reloadToolbars() {
+        guard let toolbar = window?.toolbar else { return }
+        while !toolbar.items.isEmpty { toolbar.removeItem(at: 0) }
+        for (i, id) in visibleToolbarItems.enumerated() { toolbar.insertItem(withItemIdentifier: id, at: i) }
+        toolbar.displayMode = (toolbarsMask & 1) != 0 ? .iconAndLabel : .iconOnly
+        Settings.toolbarsMask = toolbarsMask
+    }
+
+    // MARK: - Menu commands on the window (OnMenuCommand, MyLoadMenu.cpp:805-964)
+
+    @objc func viewTwoPanels(_ sender: Any?) { switchOnOffOnePanel() }                     // IDM_VIEW_TWO_PANELS 732 / F9
+
+    @objc func viewAutoRefresh(_ sender: Any?) {                                            // IDM_VIEW_AUTO_REFRESH 738
+        autoRefresh.toggle()
+        Settings.autoRefresh = autoRefresh
+    }
+
+    @objc func viewArchiveToolbar(_ sender: Any?) { toolbarsMask ^= 8; reloadToolbars() }             // IDM_VIEW_ARCHIVE_TOOLBAR 750
+    @objc func viewStandardToolbar(_ sender: Any?) { toolbarsMask ^= 4; reloadToolbars() }            // IDM_VIEW_STANDARD_TOOLBAR 751
+    @objc func viewToolbarsLargeButtons(_ sender: Any?) { toolbarsMask ^= 2; reloadToolbars() }       // IDM_VIEW_TOOLBARS_LARGE_BUTTONS 752 (size is fixed on macOS; state kept)
+    @objc func viewToolbarsShowButtonsText(_ sender: Any?) { toolbarsMask ^= 1; reloadToolbars() }    // IDM_VIEW_TOOLBARS_SHOW_BUTTONS_TEXT 753
+
+    @objc func viewTimestampLevel(_ sender: Any?) {                                         // IDM_VIEW_TIME + k
+        guard let level = (sender as? NSMenuItem)?.representedObject as? Int else { return }
+        Settings.timestampLevel = level
+        for panel in panels { panel.reload() }
+    }
+
+    @objc func viewTimeUTC(_ sender: Any?) {                                                // IDM_VIEW_TIME_UTC 799
+        Settings.timestampShowUTC.toggle()
+        SZFolder.timestampShowUTC = Settings.timestampShowUTC
+        for panel in panels { panel.reload() }
+    }
+
+    @objc func favoritesSetBookmark(_ sender: Any?) {                                       // CPanel::SetBookmark
+        guard let tag = (sender as? NSMenuItem)?.tag else { return }
+        let i = tag - MainMenu.kMenuIDSetBookmark
+        guard (0..<10).contains(i) else { return }
+        var list = Settings.folderShortcuts
+        list[i] = focusedPanel.currentPath
+        Settings.folderShortcuts = list
+    }
+
+    @objc func favoritesOpenBookmark(_ sender: Any?) {                                      // CPanel::OpenBookmark
+        guard let tag = (sender as? NSMenuItem)?.tag else { return }
+        let i = tag - MainMenu.kMenuIDOpenBookmark
+        guard (0..<10).contains(i) else { return }
+        let path = Settings.folderShortcuts[i]
+        guard !path.isEmpty else { return }
+        focusedPanel.navigate(to: path, fallbackToRoot: false)
+    }
+
+    @objc func fileExit(_ sender: Any?) {                                                   // IDCLOSE -> WM_CLOSE
+        window?.performClose(sender)
+    }
+
+    @objc func helpAbout(_ sender: Any?) {                                                  // IDM_ABOUT 961 (CAboutDialog; full dialog is a later wave)
+        let engine = "7-Zip \(SZEngineVersionString())"
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "7-Zip",
+            .applicationVersion: SZEngineVersionString(),
+            .version: "",
+            .credits: NSAttributedString(string: "\(engine)\n\(SZEngineCopyrightString())\n\nmacOS port. Engine: LGPL with unRAR restriction (see License.txt)."),
+        ])
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(viewTwoPanels(_:)): item.state = numPanels == 2 ? .on : .off
+        case #selector(viewAutoRefresh(_:)): item.state = autoRefresh ? .on : .off
+        case #selector(viewArchiveToolbar(_:)): item.state = (toolbarsMask & 8) != 0 ? .on : .off
+        case #selector(viewStandardToolbar(_:)): item.state = (toolbarsMask & 4) != 0 ? .on : .off
+        case #selector(viewToolbarsLargeButtons(_:)): item.state = (toolbarsMask & 2) != 0 ? .on : .off
+        case #selector(viewToolbarsShowButtonsText(_:)): item.state = (toolbarsMask & 1) != 0 ? .on : .off
+        case #selector(viewTimestampLevel(_:)):
+            item.state = ((item.representedObject as? Int) == Settings.timestampLevel) ? .on : .off
+        case #selector(viewTimeUTC(_:)): item.state = Settings.timestampShowUTC ? .on : .off
+        case #selector(favoritesOpenBookmark(_:)):
+            let i = item.tag - MainMenu.kMenuIDOpenBookmark
+            return (0..<10).contains(i) && !Settings.folderShortcuts[i].isEmpty
+        default: break
+        }
+        return true
+    }
+}
+
+extension NSToolbarItem.Identifier {
+    static let szAdd = NSToolbarItem.Identifier("sz.add")
+    static let szExtract = NSToolbarItem.Identifier("sz.extract")
+    static let szTest = NSToolbarItem.Identifier("sz.test")
+    static let szCopy = NSToolbarItem.Identifier("sz.copy")
+    static let szMove = NSToolbarItem.Identifier("sz.move")
+    static let szDelete = NSToolbarItem.Identifier("sz.delete")
+    static let szInfo = NSToolbarItem.Identifier("sz.info")
+}

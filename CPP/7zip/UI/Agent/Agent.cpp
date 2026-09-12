@@ -1517,7 +1517,10 @@ Z7_COM7F_IMF(CAgentFolder::Extract(const UInt32 *indices,
   {
     pathU = us2fs(path);
     if (!pathU.IsEmpty()
-      && !NFile::NName::IsAltStreamPrefixWithColon(path))
+      #ifdef _WIN32
+      && !NFile::NName::IsAltStreamPrefixWithColon(path)
+      #endif
+      )
     {
       NFile::NName::NormalizeDirPathPrefix(pathU);
       NFile::NDir::CreateComplexDir(pathU);
@@ -1644,8 +1647,13 @@ Z7_COM7F_IMF(CAgent::Open(
       return GetLastError_noZero_HRESULT();
     if (fi.IsDir())
       return E_FAIL;
+   #ifdef _WIN32
     _attrib = fi.Attrib;
     _isDeviceFile = fi.IsDevice;
+   #else
+    _attrib = fi.GetWinAttrib();
+    _isDeviceFile = S_ISCHR(fi.mode) || S_ISBLK(fi.mode);
+   #endif
     FString dirPrefix, fileName;
     if (NFile::NDir::GetFullPathAndSplit(us2fs(_archiveFilePath), dirPrefix, fileName))
     {
@@ -1691,7 +1699,7 @@ Z7_COM7F_IMF(CAgent::Open(
     if (!inStream)
     {
       arc.MTime.Set_From_FiTime(fi.MTime);
-      arc.MTime.Def = !fi.IsDevice;
+      arc.MTime.Def = !_isDeviceFile;
     }
     
     ArchiveType = GetTypeOfArc(arc);
