@@ -50,8 +50,9 @@ class OptionsPageBase: NSViewController, OptionsPage {
     var initMode = false
 
     override func loadView() {
+        // Frame-driven on purpose: NSTabView sets the page frame, the content inside is
+        // laid out with constraints.
         view = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
     }
 
     /// Changed(): enables the Apply button.
@@ -212,6 +213,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         window.title = Lang.text(2100, "Options")     // IDS_OPTIONS 2100
         window.minSize = NSSize(width: 560, height: 420)
         window.tabbingMode = .disallowed
+        window.isReleasedWhenClosed = false          // the controller reuses it on every open
         super.init(window: window)
         window.delegate = self
         buildContent()
@@ -222,8 +224,10 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
     /// Tools > Options (IDM_OPTIONS 900).
     static func showOptions() {
         let controller = shared
+        let wasVisible = controller.window?.isVisible ?? false
         controller.reloadPages()
         controller.showWindow(nil)
+        if !wasVisible { controller.window?.center() }
         controller.window?.makeKeyAndOrderFront(nil)
     }
 
@@ -244,7 +248,6 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
             OptionsLanguagePage(),    // IDD_LANG 2101
             OptionsPluginsPage(),     // macOS only
         ]
-        tabView.delegate = self
         tabView.translatesAutoresizingMaskIntoConstraints = false
         for page in pages {
             page.owner = self
@@ -252,6 +255,9 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
             item.label = pageTitle(page)
             tabView.addTabViewItem(item)
         }
+        // Only now: adding the first item selects it, and that must not overwrite the stored
+        // "last page" before reloadPages() has read it.
+        tabView.delegate = self
 
         configure(okButton, Lang.text(401, "OK"), #selector(okPressed(_:)))            // IDOK -> lang 401
         configure(cancelButton, Lang.text(402, "Cancel"), #selector(cancelPressed(_:)))  // IDCANCEL -> 402
@@ -303,6 +309,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
 
     private func reloadPages() {
         for page in pages {
+            // NSTabView loads a page's view lazily, but OnInit touches its controls.
+            page.loadViewIfNeeded()
             page.clearChanged()
             page.withoutChangeTracking { page.pageDidLoad() }
         }
@@ -328,6 +336,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         helpButton.title = Lang.text(409, "Help")
         for (i, page) in pages.enumerated() {
             tabView.tabViewItem(at: i).label = pageTitle(page)
+            page.loadViewIfNeeded()
             page.withoutChangeTracking { page.relabelPage() }
         }
         OptionsPostApply.reloadLangItems()

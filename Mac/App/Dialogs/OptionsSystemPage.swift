@@ -158,6 +158,12 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         return url.standardizedFileURL == ourURL.standardizedFileURL
     }
 
+    /// The application's name without the ".app" extension.
+    private static func displayName(_ url: URL) -> String {
+        let name = FileManager.default.displayName(atPath: url.path)
+        return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+    }
+
     private static func isOther7Zip(_ url: URL?) -> Bool {
         guard let url else { return false }
         if let bundle = Bundle(url: url), bundle.bundleIdentifier == ourBundleID { return true }
@@ -171,7 +177,7 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         guard let url = pendingOwner(row) else { return "" }
         if Self.isOurs(url, ourURL: Bundle.main.bundleURL) { return "7-Zip" }
         if Self.isOther7Zip(url) { return "[7-Zip]" }
-        return FileManager.default.displayName(atPath: url.path)
+        return Self.displayName(url)
     }
 
     /// Who would own the type after Apply.
@@ -226,7 +232,7 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
             }
         default:
             if let url = row.ownerURL {
-                text.stringValue = FileManager.default.displayName(atPath: url.path)
+                text.stringValue = Self.displayName(url)
                 text.toolTip = url.path
             } else {
                 text.stringValue = "\u{2014}"

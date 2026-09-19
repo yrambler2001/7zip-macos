@@ -46,3 +46,58 @@ source the app does. Both files are Foundation-only for that reason. The tests w
 Finding: `NWorkDir::CInfo::Load` falls back to `kSystem` only when `Options.WorkDirPath` is
 **absent**; an empty stored string keeps `kSpecified` (`ZipRegistry.cpp:526-533`). 01b section 4.8
 says "missing/empty", which is slightly off.
+
+## Phase 5b (verification in the running app) — stopped mid-way (usage limits)
+
+Verified live (screenshots in `Mac/docs/reports/screenshots/options-1..7-*.png`, one per page):
+
+- Tools > Options opens a single window; tabs are **System, 7-Zip, Folders, Editor, Settings,
+  Language, Plugins** (Windows order + the macOS-only Plugins page).
+- System page lists all 40 types with icon, `<EXT> Archive`, the state column named after the
+  user, and the current default application; the per-user note replaces the Windows "All users"
+  column. Types macOS has no UTI for (e.g. `bzip2`) show `—` until the `finder` scope adds the
+  imported type declarations.
+- 7-Zip page: Finder-integration status read from `pluginkit`, the three checkboxes, the zone
+  combo (`* No` / `Yes` / `For Office files`) and the 14-row context-menu check-list.
+- Settings page: seven CFmSettings checkboxes, the disabled large-pages row with its reason, the
+  memory-limit row showing `GB / 64 GB (RAM)`.
+- Language page: 94 rows (System default, built-in English, 92 lang files) with English/native
+  name, code and `444 / 444 = 100%`. Plugins page lists the 61 loaded handlers.
+- Persistence through OK, quit, relaunch: `FM.ShowGrid=1`, `FM.ShowDots=1`, `FM.Viewer=
+  /Applications/TextEdit.app`, `Options.CascadedMenu=0`, `Options.WriteZoneIdExtract=1`,
+  `Options.ContextMenu=0xC0003F67` (all items except `kTest 1<<4`), `Options.WorkDirType=2` +
+  `Options.WorkDirPath=/tmp/7z-work` + `Options.TempRemovableOnly=0`.
+- Cancel discards: toggling "Show real file icons" enables Apply, Cancel closes the window and
+  `FM.ShowRealFileIcons` stays `0`; reopening restores the control and the last page.
+- Live language switch works: selecting a row relabels the menu bar, the window title and the tab
+  titles without a restart (observed with Irish and Kabyle).
+
+Bugs found and fixed during verification (all committed): pages were initialised before
+`NSTabView` loaded their views (crash), the tab-view delegate overwrote the stored last page while
+the tabs were being added, the page root view was constraint-driven so content overflowed, the
+Plugins table had no delegate, the zone combo used lang 406/407 swapped (01b §4.13 has them
+backwards — upstream `MenuPage.cpp:213-216` is authoritative), the context-menu list needed a real
+table, and the Options window was released on close so it could not reopen.
+
+### Half-done / next steps
+
+1. **Language switch screenshot + switch back**: the switch is verified live but the
+   `options-8-language-<code>.png` shot and the "select English again, OK, menus back in English"
+   pass were not finished. The Options window title is localised, so AppleScript must find the
+   window by "the one that has a tab group", not by the title `Options`.
+2. `Mac/docs/api/options.md` (key → property table, `FileTypes` shape for the `finder` scope) is
+   **not written yet** — this is the main remaining deliverable.
+3. `Mac/docs/PROGRESS.md` section 7 boxes are **not ticked** yet.
+4. A final clean `rm -rf Mac/build && Mac/scripts/build.sh && Mac/scripts/test.sh` has not been
+   run (the incremental build and the 28 tests passed at the previous commit; the four fixes after
+   that were each built successfully but not re-tested).
+5. Icons: the System page uses `NSWorkspace.icon(for:)`; converting `CPP/7zip/Archive/Icons/*.ico`
+   to bundled assets is still open (needs a resource added by the packaging/finder scope).
+
+### Note for the orchestrator
+
+All agents' app instances share the preference domain `com.yrambler2001.7zip`, and XCUITest
+launches terminate other instances of the same bundle id. During this verification the `opsinfra`
+app repeatedly reset `Options.WorkDirType` / `Options.TempRemovableOnly` to their defaults, and the
+`harness` UI-test runner killed running instances. Values were re-checked immediately after each
+Apply to work around it.

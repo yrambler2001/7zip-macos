@@ -11,7 +11,7 @@
 import Cocoa
 import SevenZipKit
 
-final class OptionsMenuPage: OptionsPageBase {
+final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableViewDelegate {
 
     override var pageID: UInt32 { 2300 }                      // IDD_MENU
     override var fallbackTitle: String { "7-Zip" }
@@ -59,8 +59,8 @@ final class OptionsMenuPage: OptionsPageBase {
     private let zoneCombo = NSPopUpButton(frame: .zero, pullsDown: false)        // IDC_SYSTEM_ZONE 101
     private let zoneNote = OptionsUI.note("")
     private let itemsLabel = OptionsUI.label(2303, "Context menu items:")        // IDT_SYSTEM_CONTEXT_MENU_ITEMS 2303
-    private let itemsStack = NSStackView()                                        // IDL_SYSTEM_OPTIONS 100
-    private var itemCheckboxes: [NSButton] = []
+    private let itemsTable = NSTableView()                                        // IDL_SYSTEM_OPTIONS 100
+    private var itemChecked = [Bool](repeating: true, count: OptionsMenuPage.menuItems.count)
     private var zoneRawValue = -1
     // Per-control change flags: CMenuPage keeps one _*_Changed per control and
     // CContextMenuInfo::Save writes a bool pair only when its CBoolPair::Def is set
@@ -96,25 +96,14 @@ final class OptionsMenuPage: OptionsPageBase {
         zoneCombo.translatesAutoresizingMaskIntoConstraints = false
         zoneCombo.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
 
-        itemsStack.orientation = .vertical
-        itemsStack.alignment = .leading
-        itemsStack.spacing = 2
-        itemCheckboxes = Self.menuItems.map { row in
-            let b = NSButton(checkboxWithTitle: Self.title(for: row), target: self, action: #selector(optionClicked(_:)))
-            itemsStack.addView(b, in: .top)
-            return b
-        }
-        let itemsScroll = NSScrollView()
-        itemsScroll.documentView = itemsStack
-        itemsScroll.hasVerticalScroller = true
-        itemsScroll.borderType = .bezelBorder
-        itemsScroll.translatesAutoresizingMaskIntoConstraints = false
-        itemsScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150).isActive = true
-        itemsStack.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            itemsStack.topAnchor.constraint(equalTo: itemsScroll.contentView.topAnchor, constant: 4),
-            itemsStack.leadingAnchor.constraint(equalTo: itemsScroll.contentView.leadingAnchor, constant: 6),
-        ])
+        // LVS_SINGLESEL | LVS_NOCOLUMNHEADER with LVS_EX_CHECKBOXES (MenuPage.cpp:232-236).
+        itemsTable.addTableColumn(OptionsUI.column("item", "", width: 420))
+        itemsTable.headerView = nil
+        itemsTable.rowHeight = 20
+        itemsTable.style = .plain
+        itemsTable.dataSource = self
+        itemsTable.delegate = self
+        let itemsScroll = OptionsUI.scrollTable(itemsTable, minHeight: 170)
 
         let zoneRow = OptionsUI.hstack([zoneLabel, zoneCombo])
         let stack = OptionsUI.vstack([
@@ -166,9 +155,8 @@ final class OptionsMenuPage: OptionsPageBase {
         iconsWasDefined = Settings.menuIcons != nil
         elimDupWasDefined = Settings.elimDupExtract != nil
         let flags = Settings.contextMenuFlags
-        for (i, box) in itemCheckboxes.enumerated() {
-            box.state = flags.contains(Self.menuItems[i].flag) ? .on : .off
-        }
+        itemChecked = Self.menuItems.map { flags.contains($0.flag) }
+        itemsTable.reloadData()
         refreshIntegrationState()
     }
 
@@ -181,7 +169,7 @@ final class OptionsMenuPage: OptionsPageBase {
         itemsLabel.stringValue = Lang.text(2303, "Context menu items:")
         zoneNote.stringValue = "On macOS this propagates the com.apple.quarantine attribute to "
             + "extracted files instead of the Windows Zone.Identifier stream."
-        for (i, box) in itemCheckboxes.enumerated() { box.title = Self.title(for: Self.menuItems[i]) }
+        itemsTable.reloadData()
         rebuildZoneCombo()
     }
 
@@ -195,8 +183,9 @@ final class OptionsMenuPage: OptionsPageBase {
         for value in values {
             let title: String
             switch value {
-            case 0: title = "* " + Lang.text(406, "No")
-            case 1: title = Lang.text(407, "Yes")
+            // MenuPage.cpp:213-216: MY_IDNO is lang id 407, MY_IDYES is 406 (kLangPairs).
+            case 0: title = "* " + Lang.text(407, "No")
+            case 1: title = Lang.text(406, "Yes")
             case 2: title = Lang.text(3441, "For Office files")
             default: title = String(value)
             }
@@ -293,7 +282,7 @@ final class OptionsMenuPage: OptionsPageBase {
         Settings.writeZoneIdExtract = zoneRawValue <= 0 ? -1 : zoneRawValue
         if flagsChanged || Settings.contextMenuFlagsDefined {
             var flags: Settings.ContextMenuFlags = []
-            for (i, box) in itemCheckboxes.enumerated() where box.state == .on {
+            for (i, checked) in itemChecked.enumerated() where checked {
                 flags.insert(Self.menuItems[i].flag)
             }
             Settings.contextMenuFlags = flags
@@ -306,5 +295,31 @@ final class OptionsMenuPage: OptionsPageBase {
         iconsWasDefined = Settings.menuIcons != nil
         elimDupWasDefined = Settings.elimDupExtract != nil
         return true
+    }
+
+    // MARK: The context-menu item check-list
+
+    func numberOfRows(in tableView: NSTableView) -> Int { Self.menuItems.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let box = NSButton(checkboxWithTitle: Self.title(for: Self.menuItems[row]),
+                           target: self, action: #selector(itemToggled(_:)))
+        box.tag = row
+        box.state = itemChecked[row] ? .on : .off
+        let cell = NSTableCellView()
+        box.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(box)
+        NSLayoutConstraint.activate([
+            box.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            box.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
+    }
+
+    @objc private func itemToggled(_ sender: NSButton) {
+        guard itemChecked.indices.contains(sender.tag) else { return }
+        itemChecked[sender.tag] = sender.state == .on
+        flagsChanged = true
+        changed()
     }
 }

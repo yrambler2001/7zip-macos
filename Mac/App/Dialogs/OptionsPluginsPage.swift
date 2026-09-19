@@ -10,7 +10,7 @@
 import Cocoa
 import SevenZipKit
 
-final class OptionsPluginsPage: OptionsPageBase, NSTableViewDataSource {
+final class OptionsPluginsPage: OptionsPageBase, NSTableViewDataSource, NSTableViewDelegate {
 
     override var pageID: UInt32 { 0 }                        // no IDD_* : macOS-only page
     override var fallbackTitle: String { "Plugins" }
@@ -30,6 +30,7 @@ final class OptionsPluginsPage: OptionsPageBase, NSTableViewDataSource {
         table.style = .fullWidth
         table.rowHeight = 18
         table.dataSource = self
+        table.delegate = self
 
         headerLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         headerLabel.textColor = .secondaryLabelColor
