@@ -3,7 +3,7 @@
 This repository is upstream 7-Zip 26.03 (`C/`, `CPP/`, `Asm/`, `DOC/`) plus a native macOS
 port under `Mac/`. Work happens on branch `macos` and on `mac/<scope>` worktree branches.
 
-**Read `Mac/docs/00-orchestration.md` before doing anything.** It is the contract: goal,
+**Read `Mac/docs/00-orchestration.md` and `Mac/docs/requests.md` before doing anything.** It is the contract: goal,
 locked decisions, repository layout, branching, file ownership, and the deliverables every
 agent owes. `Mac/docs/architecture.md` describes the design and, in its "As built" section,
 the real bridge API and app layout to code against.
