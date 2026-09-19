@@ -22,6 +22,7 @@ Rules for implementation agents:
 | 7 | `options` | `mac/options` | review | Options window + all pages + settings facade done; 2 boxes left (lang ID lists, `FM.AutoRefresh` is persisted here) |
 | 8 | `finder` | `mac/finder` | not started | depends on extract, compress, tools for the command handlers |
 | 9 | `packaging` | `mac/packaging` | not started | last; needs every other scope merged |
+| 10 | `icons` | `mac/icons` | review | app icon + 27 document icons generated from the upstream `.ico` resources |
 
 States: `not started`, `in progress`, `review` (branch pushed, orchestrator merging), `done` (merged into `macos`, boxes ticked), `blocked (<reason>)`.
 
@@ -674,6 +675,37 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [ ] Threading audit: no engine call on the main thread, one queue per `SZFolder`, no `SZFolder` shared across queues (architecture "Threading")
 - [ ] Settings audit: every key in 01b §5.7 read and written through `SZSettings` / `Settings` with the Windows defaults (01b §5)
 - [ ] Windows-only items below verified as hidden or mapped, with no dead menu items or empty dialogs (01 §9, 03 §6.2)
+
+## 10. icons — app icon, document icons, and the generator
+
+### 10.1 Generator (`Mac/scripts/make-icons.{sh,py,swift}`)
+
+- [x] `.ico` decoder handling PNG-compressed frames, 32/24-bit BMP frames with or without a real alpha channel, and 8/4/1-bit paletted BMP frames whose transparency is the trailing 1-bit AND mask; every frame of every upstream icon decodes and keeps its alpha (03 §3.1)
+- [x] Extension → icon index read from `CPP/7zip/Bundles/Format7zF/resource.rc` STRINGTABLE 100 **and** `Mac/App/Support/FileTypes.swift`, cross-checked, hard error on disagreement: 40 extensions → 27 icons (03 §3.1, `requests.md` spec correction)
+- [x] Index → `.ico` file read from `resource.rc` lines `<index> ICON "<name>.ico"` (0–26), not hand-copied (`resource.rc:6-32`)
+- [x] Shared archive-body palette and each format's exact badge colour derived from the decoded 32×32 frames, not eyeballed
+- [x] Every asset re-drawn per pixel size with CoreGraphics (strokes, insets, radii, fold, type size are functions of the size); no asset is a downscale of one big bitmap
+- [x] No third-party dependency: `python3` + `swift` + `iconutil` only, all from a stock macOS + Xcode install
+- [x] Self-verification stage: all 196 emitted PNGs re-read and checked for pixel size, a live alpha channel, non-blank / non-single-colour content and clear corners
+
+### 10.2 App icon (`AppIcon.appiconset`)
+
+- [x] Ten slots (16/32/128/256/512 pt at 1× and 2×), one file per slot, 7 distinct pixel sizes 16…1024
+- [x] Apple's rounded square: 824/1024 of the canvas, centred, continuous corner as the superellipse `|x/a|^5 + |y/a|^5 = 1`
+- [x] 7-Zip's own colours: the `#0000ff` → `#000080` brand blues, the `#ffff99` manila sheet with its `#999900` border, and the `7z` mark from `CPP/7zip/UI/FileManager/FM.ico`
+- [x] Small sizes are separate compositions so they stay legible: 16 px shows `7`, 32 px shows `7z`, 64 px and up add the sheet
+- [x] All ten slots present in the compiled `Assets.car` up to 1024 px; `actool` emits no warnings
+
+### 10.3 Document icons (27 sets for 40 extensions)
+
+- [x] One icon per upstream format icon, shared by the extensions that share it; no duplicated assets (03 §3.1)
+- [x] macOS page shape: 704×900 in a 1024 canvas, centred, top-right corner folded by 190/1024, with the 7-Zip manila + badge bands at the foot
+- [x] Badge painted in the format's exact upstream badge colour, carrying the format label the Windows badge spells (full name instead of upstream's two-glyph truncation; `split.ico` keeps `001`)
+- [x] Label dropped below 64 px where no type size is legible; the bands carry the identity there
+- [x] `Mac/Resources/Icons/doc-<name>.icns`, full 16…1024 pyramid, copied flat into `Contents/Resources` for `CFBundleTypeIconFile` and `NSImage`
+- [x] `doc-<name>.imageset` in the asset catalogue (mac 1× 256 px / 2× 512 px) so the Options ▸ System rows can show real format icons instead of system ones (01b §4.21, 03 §3.4)
+- [x] Every one of the 40 extensions in `FileTypes.swift` has artwork; no extension needs a fallback
+- [x] `CFBundleDocumentTypes` wiring documented for the `finder` scope in `Mac/docs/api/icons.md` (03 §6.1) — the plist itself is `finder`-owned and still to do
 
 ## Not applicable on macOS — agreed mappings
 

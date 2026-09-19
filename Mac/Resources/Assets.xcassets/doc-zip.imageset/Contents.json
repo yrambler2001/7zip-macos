@@ -1,0 +1,18 @@
+{
+  "images": [
+    {
+      "filename": "doc-zip_256.png",
+      "idiom": "mac",
+      "scale": "1x"
+    },
+    {
+      "filename": "doc-zip_512.png",
+      "idiom": "mac",
+      "scale": "2x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

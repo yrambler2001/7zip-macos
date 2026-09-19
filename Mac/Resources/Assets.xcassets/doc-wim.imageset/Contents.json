@@ -1,0 +1,18 @@
+{
+  "images": [
+    {
+      "filename": "doc-wim_256.png",
+      "idiom": "mac",
+      "scale": "1x"
+    },
+    {
+      "filename": "doc-wim_512.png",
+      "idiom": "mac",
+      "scale": "2x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}
