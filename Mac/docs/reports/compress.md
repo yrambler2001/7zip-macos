@@ -26,3 +26,34 @@ Design decisions taken:
 - The work-directory policy is applied inside the bridge from `NWorkDir::CInfo::Load()`
   (same preferences domain as the Swift `Settings` facade) unless a working directory is
   passed explicitly.
+
+## Phase 1 — update bridge (done)
+
+`Mac/Core/include/SZUpdater.h` + `Mac/Core/SZUpdater.mm`, added to the umbrella header
+(`SevenZipKit.h`, alphabetical, additive). Builds clean; `Mac/scripts/test.sh` green
+(71 tests, 4 new).
+
+- `SZUpdateProperty` (one `-m` pair = `CProperty`), `SZUpdateOptions` (one-to-one with
+  `CUpdateOptions` + the dialog's option set), `SZUpdateResult` (`CFinishArchiveStat` plus the
+  callback counters, the failed-file list and the `-sdel` list).
+- `+[SZUpdater updateWithOptions:sourcePaths:progress:error:]` is `UpdateGUI` minus the dialog.
+  `+addPaths:toArchiveAtPath:…` updates an existing archive in place (format from its name,
+  exact name mode, no volumes), `+deleteItemsNamed:fromArchiveAtPath:…` is the console `d`.
+- `CSZUpdateUICallback` (in the .mm, anonymous namespace) implements `IUpdateCallbackUI2` +
+  `IOpenCallbackUI` and forwards to `id<SZProgressDelegate>`, mirroring
+  `CUpdateCallbackGUI`/`CUpdateCallbackGUI2` call for call, including the
+  `NUpdateNotifyOp` -> lang-ID status mapping (3320-3327), `DeletingAfterArchiving` ->
+  `Removing` (3305), `MoveArc_*`, `ScanError`/`OpenFileError`/`ReadingFileError` ->
+  `FailedFiles`, `ReportExtractResult` -> `SetExtractErrorMessage`, and
+  `CryptoGetTextPassword2` -> `progressAskPasswordForEncryptionCancelled:`.
+- SFX: `+defaultSFXModulePath` finds `7z.sfx` in the app bundle's `Resources/SFX`, with a
+  `SEVENZIP_SFX_DIR` override so the unit tests (no app bundle) find the stubs.
+  `BaseExtension` is forced to `"exe"` because `Update.cpp`'s own `kSFXExtension` is `""`
+  off Windows.
+- Work dir: `NWorkDir::CInfo::Load()` + `GetWorkDir` + `CreateComplexDir` when
+  `workingDirectory` is nil, exactly like `UpdateGUI.cpp:527-539`.
+- `+archiveBaseNameForItemPaths:isHash:baseName:` wraps the engine's own
+  `CreateArchiveName` (03 section 1.6), so the `_2` collision rule is upstream's.
+
+Next: the rest of the bridge tests (encryption, volumes, SFX bytes, delete-after, cancel,
+in-place update, entry deletion, timestamps), then the Compress dialog.
