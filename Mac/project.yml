@@ -520,6 +520,37 @@ targets:
         SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
 
+  # ---------------------------------------------------------------------------
+  # 7-ZipUITests: XCUITest bundle driving the 7-Zip app (harness scope).
+  # Runs in the generated 7-ZipUITests-Runner.app; TEST_TARGET_NAME names the app
+  # under test so XCUIApplication() picks it up with no bundle id. The Fixtures
+  # folder is copied into the bundle so tests find archives without the repo.
+  # ---------------------------------------------------------------------------
+  7-ZipUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: Tests/UITests
+        excludes:
+          - "Info.plist"
+      - path: Tests/Fixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: 7-Zip
+    settings:
+      base:
+        PRODUCT_NAME: 7-ZipUITests
+        PRODUCT_MODULE_NAME: SevenZipUITests
+        PRODUCT_BUNDLE_IDENTIFIER: com.yrambler2001.7zip.UITests
+        INFOPLIST_FILE: Tests/UITests/Info.plist
+        TEST_TARGET_NAME: 7-Zip
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        # No entitlements file: Xcode signs the generated 7-ZipUITests-Runner.app with its own
+        # (app-sandboxed) entitlements and ignores CODE_SIGN_ENTITLEMENTS here -- verified, see
+        # Mac/docs/reports/harness.md section 1.
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
+
 schemes:
   7-Zip:
     build:
@@ -531,6 +562,7 @@ schemes:
       config: Debug
       targets:
         - SevenZipKitTests
+        - 7-ZipUITests
   SevenZipKitTests:
     build:
       targets:
@@ -539,3 +571,12 @@ schemes:
       config: Debug
       targets:
         - SevenZipKitTests
+  7-ZipUITests:
+    build:
+      targets:
+        7-ZipUITests: all
+        7-Zip: [run, test]
+    test:
+      config: Debug
+      targets:
+        - 7-ZipUITests
