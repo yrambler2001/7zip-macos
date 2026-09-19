@@ -13,6 +13,7 @@ FOUNDATION_EXPORT const unsigned char SevenZipKitVersionString[];
 #import <SevenZipKit/SZError.h>
 #import <SevenZipKit/SZCodecs.h>
 #import <SevenZipKit/SZFolder.h>
+#import <SevenZipKit/SZFolderOperations.h>
 #import <SevenZipKit/SZFileSystemFolder.h>
 #import <SevenZipKit/SZRootFolder.h>
 #import <SevenZipKit/SZArchiveOpener.h>
