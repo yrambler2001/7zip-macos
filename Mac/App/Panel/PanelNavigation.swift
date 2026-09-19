@@ -71,6 +71,9 @@ extension PanelViewController {
                 if let failure, !silent, failure.code != SZError.Code.cancelled.rawValue {
                     self.showError(failure)
                 }
+                if snap == nil {
+                    self.setPendingFocus(name: nil)      // a failed bind must not arm the next apply
+                }
                 if let snap {
                     self.apply(snap, selectNames: name.map { [$0] } ?? [])
                     if focusListOnSuccess && failure == nil { self.focusList() }
@@ -155,8 +158,17 @@ extension PanelViewController {
             showError(message: Lang.text(3016, "Too many items"))     // IDS_TOO_MANY_ITEMS
             return
         }
+        // A folder (or an archive) replaces the listing, so only the first one is entered and the
+        // rest of the operated items are ignored -- upstream's dirIsStarted guard. With more than
+        // one item every file is started externally: binding several archives in a row would each
+        // rebind the panel and use the indices of a listing that is already gone.
+        if let folderIndex = indices.first(where: { rows[$0].isDirectory }) {
+            openRow(rows[folderIndex], insideOnly: false, formatHint: nil, tryInternal: tryInternal)
+            return
+        }
         for index in indices {
-            openRow(rows[index], insideOnly: false, formatHint: nil, tryInternal: tryInternal)
+            openRow(rows[index], insideOnly: false, formatHint: nil,
+                    tryInternal: tryInternal && indices.count == 1)
         }
     }
 
@@ -272,32 +284,40 @@ extension PanelViewController {
     /// CBN_DROPDOWN (OnComboBoxCommand, PanelFolderChange.cpp:627-837): one entry per path
     /// component with the current path first, then Documents and Computer with the volumes.
     func rebuildAddressDropdown() {
-        var entries: [String] = []
+        // (indent, path): the indent mirrors AddComboBoxItem's per-level indentation. The icons
+        // Windows draws next to each entry have no NSComboBox equivalent (a plain string list).
+        var entries: [(Int, String)] = []
         let current = currentPath
         if !current.isEmpty {
-            entries.append(current)
+            var chain: [String] = [current]
             var path = current
             if path.hasSuffix("/") { path.removeLast() }
             while !path.isEmpty, path != "/" {
                 path = (path as NSString).deletingLastPathComponent
                 if path.isEmpty { break }
-                entries.append(path == "/" ? "/" : path + "/")
+                chain.append(path == "/" ? "/" : path + "/")
                 if path == "/" { break }
             }
+            // the current path first, then its parents, indentation growing with the level
+            let deepest = chain.count - 1
+            entries.append((deepest, chain[0]))
+            for (level, ancestor) in chain.dropFirst().enumerated().reversed() {
+                entries.append((deepest - level - 1, ancestor))
+            }
         }
-        entries.append(NSHomeDirectory() + "/Documents/")            // IDS_DOCUMENTS 7102
-        entries.append("/")                                          // IDS_COMPUTER 7100
+        entries.append((0, NSHomeDirectory() + "/Documents/"))       // IDS_DOCUMENTS 7102
+        entries.append((0, "/"))                                    // IDS_COMPUTER 7100
         for url in FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil,
                                                         options: [.skipHiddenVolumes]) ?? [] {
-            entries.append(url.path.hasSuffix("/") ? url.path : url.path + "/")
+            entries.append((1, url.path.hasSuffix("/") ? url.path : url.path + "/"))
         }
-        for path in Settings.folderHistory.prefix(20) where !entries.contains(path) {
-            entries.append(path)
+        for path in Settings.folderHistory.prefix(20) where !entries.contains(where: { $0.1 == path }) {
+            entries.append((0, path))
         }
         pathCombo.removeAllItems()
         var seen = Set<String>()
-        for entry in entries where !entry.isEmpty && seen.insert(entry).inserted {
-            pathCombo.addItem(withObjectValue: entry)
+        for (indent, path) in entries where !path.isEmpty && seen.insert(path).inserted {
+            pathCombo.addItem(withObjectValue: String(repeating: "   ", count: max(0, indent)) + path)
         }
     }
 

@@ -232,6 +232,7 @@ extension PanelViewController {
 
     func makeColumnsContextMenu() -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false        // so the Name item stays grayed, as on Windows
         for column in columnsModel.columns {
             let item = NSMenuItem(title: column.title, action: #selector(toggleColumn(_:)), keyEquivalent: "")
             item.target = self

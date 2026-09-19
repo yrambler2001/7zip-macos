@@ -19,6 +19,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
 
     var focusedPanel: PanelViewController { panels[min(focusedPanelIndex, panels.count - 1)] }
 
+    /// The panels whose view is in the split view (one-panel mode hides the other one).
+    var visiblePanels: [PanelViewController] {
+        panels.filter { splitView.arrangedSubviews.contains($0.view) }
+    }
+
     // Toolbar identifiers (App.cpp g_ArchiveButtons / g_StandardButtons)
     private static let archiveItems: [NSToolbarItem.Identifier] = [.szAdd, .szExtract, .szTest]
     private static let standardItems: [NSToolbarItem.Identifier] = [.szCopy, .szMove, .szDelete, .szInfo]
@@ -62,7 +67,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         splitView.dividerStyle = .thin
         splitView.delegate = self
         splitView.translatesAutoresizingMaskIntoConstraints = false
-        let content = NSView()
+        let content = MainWindowContentView()
+        content.controller = self
         content.addSubview(splitView)
         NSLayoutConstraint.activate([
             splitView.topAnchor.constraint(equalTo: content.topAnchor),
@@ -179,10 +185,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
             panels.append(panel)
             panel.navigate(to: Settings.panelPath(1) ?? NSHomeDirectory())
         }
-        if !splitView.arrangedSubviews.contains(panels[1].view) {
-            splitView.addArrangedSubview(panels[1].view)
+        // Either panel may be the one that was closed last time, so both views are put back in
+        // their index order (SwitchOnOffOnePanel only ever hides the non-focused one).
+        for (index, panel) in panels.enumerated() where !splitView.arrangedSubviews.contains(panel.view) {
+            let position = min(index, splitView.arrangedSubviews.count)
+            splitView.insertArrangedSubview(panel.view, at: position)
         }
-        panels[1].view.isHidden = false
+        for panel in panels { panel.view.isHidden = false }
         numPanels = 2
         DispatchQueue.main.async { [self] in
             if let ratio = pendingSplitterRatio {
@@ -275,7 +284,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self, self.autoRefresh else { return }
-            for panel in self.panels.prefix(self.numPanels) { panel.refreshIfChanged() }
+            for panel in self.visiblePanels { panel.refreshIfChanged() }
         }
     }
 
@@ -429,6 +438,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         default: break
         }
         return true
+    }
+}
+
+/// Dropping files on the window background (or the toolbar) is "Add to archive..."
+/// (CompressDropFiles, PanelDrag.cpp:2817-2981, 01 §3.15).
+final class MainWindowContentView: NSView {
+
+    weak var controller: MainWindowController?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        controller?.focusedPanel.compressDroppedFiles(info: sender) ?? false
     }
 }
 

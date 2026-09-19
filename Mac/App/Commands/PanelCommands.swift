@@ -111,7 +111,8 @@ extension MainWindowController {
         let paths = names.map { (temp as NSString).appendingPathComponent($0) }
         guard destination.copyItemsIn(paths: paths, move: false) else { return }
         if move {
-            source.deleteItems(toTrash: false)
+            // copyItemsOut killed the selection, so the rows captured before the copy are used.
+            source.deleteItems(rowIndices: rowIndices, toTrash: false, confirm: false)
         }
     }
 

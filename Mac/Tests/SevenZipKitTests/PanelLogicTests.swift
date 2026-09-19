@@ -129,11 +129,11 @@ final class PanelLogicTests: XCTestCase {
         XCTAssertFalse(PanelMask.containsWildcard("plain.txt"))
     }
 
-    func testSelectByTypeMask() {
-        XCTAssertNil(PanelMask.maskForSelectByType(name: "folder", isDirectory: true), "a folder selects folders")
-        XCTAssertEqual(PanelMask.maskForSelectByType(name: "notes.md", isDirectory: false), "*.md")
-        XCTAssertEqual(PanelMask.maskForSelectByType(name: "Makefile", isDirectory: false), "*",
-                       "no extension selects the extension-less files")
+    func testSelectByTypeRule() {
+        XCTAssertEqual(PanelMask.selectByTypeRule(name: "folder", isDirectory: true), .allFolders)
+        XCTAssertEqual(PanelMask.selectByTypeRule(name: "notes.md", isDirectory: false), .mask("*.md"))
+        XCTAssertEqual(PanelMask.selectByTypeRule(name: "Makefile", isDirectory: false), .filesWithoutExtension,
+                       "a name without an extension selects only the extension-less files, not every file")
     }
 
     // MARK: - Operated items (01 conventions)

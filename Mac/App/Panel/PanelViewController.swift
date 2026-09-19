@@ -45,7 +45,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     // MARK: main-thread state
     private(set) var snapshot: PanelSnapshot?
-    private(set) var rows: [PanelRow] = []
+    var rows: [PanelRow] = []
     var columnsModel = PanelColumnsModel(properties: [], folderType: "", isFileSystem: false,
                                                       hiddenByDefault: [], layout: nil)
     private var folderTypeOfColumns = ""
@@ -68,6 +68,15 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     /// Row whose name cell is being edited in place (OnBeginLabelEdit / OnEndLabelEdit).
     var renamingRow: Int?
     private var isApplyingSettings = false
+    /// Sort parameters the panel queue may read while the main thread changes them (01 §3.3).
+    let sortState = PanelSortState()
+    /// Incremented by every apply(): a queued sort whose generation is stale is dropped.
+    private(set) var loadGeneration = 0
+    private var needsQueueResort = false
+    /// Tag chosen in the Control-drag menu (NDragMenu) and the files a dropped
+    /// "Add to archive..." applies to, read by the `compress` scope through this scope's API.
+    var dragMenuTag = -1
+    var pendingCompressTarget: PanelContextTarget?
     private var pendingFocusName: String?
     private var pendingSelectionMask: String?
 
@@ -250,6 +259,16 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                            name: Settings.Group.fm.notificationName, object: nil)
         center.addObserver(self, selector: #selector(settingsDidChange(_:)),
                            name: Settings.Group.view.notificationName, object: nil)
+        center.addObserver(self, selector: #selector(languageDidChange(_:)),
+                           name: Settings.Group.language.notificationName, object: nil)
+    }
+
+    /// ReloadLangItems (01 §1.1, 01b §4.22): the column titles and the status-bar template come
+    /// from the lang file, so a language switch re-creates the columns and reloads.
+    @objc private func languageDidChange(_ note: Notification) {
+        upButton.toolTip = Lang.text(735, "Up One Level")
+        folderTypeOfColumns = ""
+        reload(keepScroll: true)
     }
 
     /// Only the settings that change what a panel shows are acted on. The panel itself writes
@@ -305,14 +324,23 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     func runFolderOperation<T>(_ options: OperationRunner.Options,
                                work: @escaping (SZFolder, OperationRunner) throws -> T) -> Result<T, Error>? {
         guard let folder else { return nil }
-        let gate = DispatchSemaphore(value: 0)
-        queue.async { gate.wait() }                         // CDisableTimerProcessing equivalent
+        // The park block only *enqueues* behind whatever the panel queue is already running, so
+        // the worker waits until it is actually parked before it touches the folder.
+        let parked = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        queue.async {                                       // CDisableTimerProcessing equivalent
+            parked.signal()
+            release.wait()
+        }
         isOperating = true
         var opts = options
         if opts.parentWindow == nil { opts.parentWindow = view.window }
-        let result = OperationRunner.run(opts) { runner in try work(folder, runner) }
+        let result = OperationRunner.run(opts) { runner in
+            parked.wait()
+            return try work(folder, runner)
+        }
         isOperating = false
-        gate.signal()
+        release.signal()
         return result
     }
 
@@ -363,6 +391,15 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             outer = next
             chainReadOnly = chainReadOnly || outer.isReadOnly
         }
+        // Sorting happens here, on the queue, so IFolderCompare (which archive folders implement)
+        // can be used; the main thread only re-sorts when its parameters changed meanwhile.
+        let params = sortState.value
+        let supportsCompare = folder.supportsCompare
+        let compare: ((Int, Int, SZPropID) -> Int)? = supportsCompare
+            ? { i, j, pid in folder.compareItem(at: i, with: j, propID: pid) }
+            : nil
+        rows = PanelSorting.sorted(rows: rows, sortID: params.sortID, ascending: params.ascending,
+                                   flatMode: params.flatMode, folderCompare: compare)
         let isHash = (folder.folderProperty(forID: .isHash) as? NSNumber)?.boolValue ?? false
         let hidden: Set<UInt32> = isFS
             ? Set(SZFileSystemFolder.defaultHiddenPropIDs.map { $0.uint32Value })
@@ -380,7 +417,9 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                              supportsChangeNotification: folder.supportsChangeNotification,
                              archivePath: archivePath,
                              isVolumesFolder: folder.folderType == "FSDrives",
-                             hiddenByDefault: hidden)
+                             hiddenByDefault: hidden,
+                             supportsCompare: supportsCompare,
+                             sortParams: params)
     }
 
     // MARK: - Applying a snapshot (RefreshListCtrl, PanelItems.cpp:467-960)
@@ -391,6 +430,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     func apply(_ snap: PanelSnapshot, selectNames: [String], focusName: String? = nil, keepScroll: Bool = false) {
         let previousPath = snapshot?.fullPath
+        loadGeneration += 1
         let scroll = scrollView.contentView.bounds.origin
         snapshot = snap
         rows = snap.rows
@@ -403,6 +443,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                                              layout: Settings.columnLayout(forFolderType: snap.folderType))
             folderTypeOfColumns = snap.folderType
             rebuildColumns()
+            sortState.set(PanelSortParams(sortID: columnsModel.sortID, ascending: columnsModel.ascending,
+                                          flatMode: flatMode))
         } else if columnsModel.columns.count != snap.columns.filter({ $0.propID != .isDir }).count {
             // flat mode adds/removes kpidPrefix (fsfolder api §2)
             columnsModel = PanelColumnsModel(properties: snap.columns, folderType: snap.folderType,
@@ -411,7 +453,14 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                                              layout: columnsModel.layout())
             rebuildColumns()
         }
-        resortRows()
+        if snap.sortParams != currentSortParams() {
+            if snap.supportsCompare {
+                resortRows()                          // a value-only pass now; the queue re-sorts below
+                needsQueueResort = true
+            } else {
+                resortRows()
+            }
+        }
         var names = selectNames
         if let mask = pendingSelectionMask {                 // wildcard in the bound path (01 §3.8)
             pendingSelectionMask = nil
@@ -433,6 +482,10 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         updateSortIndicator()
         refreshStatusBar()
         delegate?.panelDidChangeFolder(self)
+        if needsQueueResort {
+            needsQueueResort = false
+            sort(by: columnsModel.sortID, toggle: false)   // re-sort with IFolderCompare
+        }
     }
 
     /// Reloads whichever view mode is on screen.
@@ -479,21 +532,47 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     // MARK: - Sorting (PanelSort.cpp)
 
+    func currentSortParams() -> PanelSortParams {
+        PanelSortParams(sortID: columnsModel.sortID, ascending: columnsModel.ascending, flatMode: flatMode)
+    }
+
+    /// Main-thread sort (no IFolderCompare -- only the value comparison).
     func resortRows() {
         rows = PanelSorting.sorted(rows: rows, sortID: columnsModel.sortID, ascending: columnsModel.ascending,
                                    flatMode: flatMode, folderCompare: nil)
     }
 
-    /// SortItemsWithPropID (PanelSort.cpp:256-279)
-    func sort(by propID: SZPropID) {
+    /// SortItemsWithPropID (PanelSort.cpp:256-279). A folder that implements IFolderCompare is
+    /// asked on the panel queue; everything else is ordered from the snapshot's values.
+    func sort(by propID: SZPropID, toggle: Bool = true) {
         let names = selectedNames()
         let focus = focusedRow()?.name
-        columnsModel.sort(by: propID)
+        if toggle { columnsModel.sort(by: propID) }
+        let params = currentSortParams()
+        sortState.set(params)
+        updateSortIndicator()
+        Settings.setColumnLayout(columnsModel.layout(), forFolderType: folderTypeOfColumns)
+        if snapshot?.supportsCompare == true {
+            let unsorted = rows                       // a value copy: the queue never sees `rows`
+            let generation = loadGeneration
+            runOnQueue { [self] in
+                guard let folder = self.folder, folder.itemCount >= unsorted.count else { return }
+                let sorted = PanelSorting.sorted(rows: unsorted, sortID: params.sortID,
+                                                 ascending: params.ascending, flatMode: params.flatMode) { i, j, pid in
+                    folder.compareItem(at: i, with: j, propID: pid)
+                }
+                DispatchQueue.main.async {
+                    guard generation == self.loadGeneration else { return }   // the folder moved on
+                    self.rows = sorted
+                    self.reloadList()
+                    self.restoreSelection(names: names, focusName: focus)
+                }
+            }
+            return
+        }
         resortRows()
         reloadList()
         restoreSelection(names: names, focusName: focus)
-        updateSortIndicator()
-        Settings.setColumnLayout(columnsModel.layout(), forFolderType: folderTypeOfColumns)
     }
 
     private func updateSortIndicator() {
@@ -539,6 +618,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     func setFlatMode(_ flat: Bool) {
         let isArchive = snapshot?.isArchive ?? false
+        defer { sortState.set(PanelSortParams(sortID: columnsModel.sortID, ascending: columnsModel.ascending, flatMode: flat)) }
         if isArchive {
             flatModeForArc = flat
             Settings.setFlatView(flat, panelIndex)          // only the arc flag persists (01 §3.4)
@@ -608,7 +688,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     func setSelectedIndexes(_ indexes: IndexSet) {
         if alternativeSelection {
             mySelected = Set(indexes.filter { $0 >= 0 && $0 < rows.count && !rows[$0].isParentRow })
-            tableView.needsDisplay = true
+            refreshMySelectionHighlight()
             iconView.reloadData()
         } else {
             tableView.selectRowIndexes(indexes, byExtendingSelection: false)
@@ -661,6 +741,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             focus = index
         } else if let first = indexes.first {
             focus = first
+        } else if let firstItem = rows.firstIndex(where: { !$0.isParentRow }) {
+            focus = firstItem                       // the ".." row is never the default focus
         } else if !rows.isEmpty {
             focus = 0
         }
@@ -684,9 +766,18 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     func toggleMySelection(_ index: Int) {
         guard index >= 0, index < rows.count, !rows[index].isParentRow else { return }
         if mySelected.contains(index) { mySelected.remove(index) } else { mySelected.insert(index) }
-        tableView.needsDisplay = true
+        refreshMySelectionHighlight()
         iconView.reloadData()
         refreshStatusBar()
+    }
+
+    /// Row views keep their own copy of the flag, so they are updated in place (01 §3.6).
+    private func refreshMySelectionHighlight() {
+        tableView.enumerateAvailableRowViews { view, row in
+            guard let rowView = view as? PanelRowView else { return }
+            rowView.isMySelected = mySelected.contains(row)
+            rowView.needsDisplay = true
+        }
     }
 
     // MARK: - Status bar (Refresh_StatusBar, PanelListNotify.cpp:759-820)

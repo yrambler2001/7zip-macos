@@ -63,7 +63,9 @@ extension PanelViewController {
             invertSelection()
             return true
         case PanelKey.plus:                                         // Num +
-            if option { selectByType(true) } else if shift { selectAll(true) } else { selectSpec(true) }
+            // "+" on the main keyboard is Shift+"=", so only a real keypad key can mean Shift+Num+.
+            let plusShift = shift && mods.contains(.numericPad)
+            if option { selectByType(true) } else if plusShift { selectAll(true) } else { selectSpec(true) }
             return true
         case PanelKey.minus:                                        // Num -
             if option { selectByType(false) } else if shift { selectAll(false) } else { selectSpec(false) }
@@ -195,16 +197,22 @@ extension PanelViewController {
     /// SelectByType (PanelSelect.cpp:169-204): Alt+Num+ / Alt+Num-.
     func selectByType(_ select: Bool) {
         guard let focused = focusedRow(), !focused.isParentRow else { return }
-        guard let mask = PanelMask.maskForSelectByType(name: focused.name, isDirectory: focused.isDirectory) else {
-            // a folder is focused: every folder
-            var set = selectedIndexes
-            for (i, row) in rows.enumerated() where !row.isParentRow && row.isDirectory {
-                if select { set.insert(i) } else { set.remove(i) }
-            }
-            setSelectedIndexes(set)
-            return
+        switch PanelMask.selectByTypeRule(name: focused.name, isDirectory: focused.isDirectory) {
+        case .allFolders:
+            applyPredicate(select: select) { $0.isDirectory }
+        case .filesWithoutExtension:
+            applyPredicate(select: select) { !$0.isDirectory && $0.pathExtension.isEmpty }
+        case .mask(let mask):
+            applyMask(mask, select: select, filesOnly: true)
         }
-        applyMask(mask, select: select, filesOnly: true)
+    }
+
+    private func applyPredicate(select: Bool, _ matches: (PanelRow) -> Bool) {
+        var set = selectedIndexes
+        for (i, row) in rows.enumerated() where !row.isParentRow && matches(row) {
+            if select { set.insert(i) } else { set.remove(i) }
+        }
+        setSelectedIndexes(set)
     }
 
     private func applyMask(_ mask: String, select: Bool, filesOnly: Bool = false) {

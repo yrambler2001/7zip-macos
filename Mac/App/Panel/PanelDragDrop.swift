@@ -11,6 +11,29 @@ import Cocoa
 import UniformTypeIdentifiers
 import SevenZipKit
 
+/// The answer of the Control-drag menu (NDragMenu's g_Pairs).
+enum PanelDropChoice {
+    case copy, move, addToArchive, cancel
+
+    var tag: Int {
+        switch self {
+        case .copy: return 1
+        case .move: return 2
+        case .addToArchive: return 3
+        case .cancel: return 4
+        }
+    }
+
+    init(tag: Int) {
+        switch tag {
+        case 1: self = .copy
+        case 2: self = .move
+        case 3: self = .addToArchive
+        default: self = .cancel
+        }
+    }
+}
+
 enum PanelDragDrop {
 
     /// Private type that identifies a drag started in one of our own panels
@@ -61,7 +84,7 @@ extension PanelViewController {
 
     /// LVN_BEGINDRAG -> OnDrag: FS items go as file URLs, archive items as file promises whose
     /// extraction is deferred to the drop (01 §3.15).
-    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+    @objc func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
         guard let snap = snapshot, snap.supportsOperations, row < rows.count else { return nil }
         let item = rows[row]
         guard !item.isParentRow else { return nil }
@@ -76,8 +99,8 @@ extension PanelViewController {
         return provider
     }
 
-    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
-                   willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
+    @objc func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
+                         willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
         let indices = rowIndexes.filter { $0 < rows.count && !rows[$0].isParentRow }
         PanelDragDrop.current = PanelDragDrop.Session(panel: self, rowIndices: indices,
                                                      isArchiveSource: snapshot?.isArchive ?? false,
@@ -85,8 +108,8 @@ extension PanelViewController {
         session.draggingFormation = .list
     }
 
-    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
-                   endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+    @objc func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
+                         endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         PanelDragDrop.current = nil
         if operation == .move { refreshAfterOperation() }
     }
@@ -94,8 +117,8 @@ extension PanelViewController {
     /// CDropTarget::DragOver + GetEffect (PanelDrag.cpp:1927, :2066): a folder row under the
     /// cursor is the target sub-folder, otherwise the panel's folder; ".." and the source panel's
     /// own folder are refused. Option = copy, Command = move, otherwise move on the same volume.
-    func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo,
-                   proposedRow row: Int, proposedDropOperation dropOperation: NSTableView.DropOperation)
+    @objc func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo,
+                         proposedRow row: Int, proposedDropOperation dropOperation: NSTableView.DropOperation)
     -> NSDragOperation {
         guard let snap = snapshot, snap.supportsOperations, !snap.chainIsReadOnly else { return [] }
         var targetRow = row
@@ -112,8 +135,8 @@ extension PanelViewController {
         return dropEffect(info: info, targetPath: dropTargetPath(row: targetRow))
     }
 
-    func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
-                   dropOperation: NSTableView.DropOperation) -> Bool {
+    @objc func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
+                         dropOperation: NSTableView.DropOperation) -> Bool {
         var targetRow = row
         if dropOperation == .above { targetRow = -1 }
         if targetRow >= 0, targetRow < rows.count, !rows[targetRow].isDirectory || rows[targetRow].isParentRow {
@@ -168,9 +191,45 @@ extension PanelViewController {
         return "?"
     }
 
+    /// NDragMenu (PanelDrag.cpp:340-385): the right-button drag menu. macOS drags have no right
+    /// button, so it is offered on a Control-drag (01 §9 #12).
+    private func askDragMenu(isArchiveTarget: Bool) -> PanelDropChoice {
+        let menu = NSMenu()
+        func add(_ title: String, _ choice: PanelDropChoice) {
+            let item = NSMenuItem(title: title, action: #selector(dragMenuChoice(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = choice.tag
+            menu.addItem(item)
+        }
+        add(Lang.text(6000, "Copy"), .copy)                              // k_Copy_Base
+        add(Lang.text(6001, "Move"), .move)
+        if isArchiveTarget { add(Lang.text(6002, "Copy to"), .copy) }    // k_Copy_ToArc
+        add(Lang.text(2324, "Add to archive..."), .addToArchive)         // IDS_CONTEXT_COMPRESS
+        menu.addItem(.separator())
+        add(Lang.text(402, "Cancel"), .cancel)                           // k_Cancel
+        dragMenuTag = PanelDropChoice.cancel.tag
+        let location = view.window?.mouseLocationOutsideOfEventStream ?? .zero
+        menu.popUp(positioning: nil, at: view.convert(location, from: nil), in: view)
+        return PanelDropChoice(tag: dragMenuTag)
+    }
+
+    @objc private func dragMenuChoice(_ sender: Any?) {
+        dragMenuTag = (sender as? NSMenuItem)?.tag ?? -1
+    }
+
     /// CDropTarget::Drop (PanelDrag.cpp:2400+).
     private func performDrop(info: NSDraggingInfo, targetRow: Int, targetPath: String, move: Bool) -> Bool {
         guard let snap = snapshot else { return false }
+        var move = move
+        if NSEvent.modifierFlags.contains(.control) {
+            switch askDragMenu(isArchiveTarget: snap.isArchive) {
+            case .copy: move = false
+            case .move: move = true
+            case .addToArchive:
+                return compressDroppedFiles(info: info)
+            case .cancel: return false
+            }
+        }
         // A drop from one of our panels: the source does the work, because only it can extract
         // from its archive and show the progress (SendToSource_TargetPath_enable).
         if let session = PanelDragDrop.current, let source = session.panel, source !== self || targetRow >= 0 {
@@ -258,6 +317,35 @@ extension PanelViewController: NSFilePromiseProviderDelegate {
             return true
         }
         if case .success = result { return true }
+        return false
+    }
+}
+
+// MARK: - "Add to archive..." from a drop (CompressDropFiles, PanelDrag.cpp:2817-2981)
+
+extension PanelViewController {
+
+    /// The dropped names are handed to the `compress` scope's entry point (the same selector as
+    /// the Add toolbar button). While that scope is not on this branch, nothing responds to it and
+    /// the drop is reported as unsupported -- see Mac/docs/api/panel.md.
+    func compressDroppedFiles(info: NSDraggingInfo) -> Bool {
+        let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                      options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        let paths = urls.map { $0.path }
+        guard !paths.isEmpty else { return false }
+        // Names that live in a 7zE / 7zO temp folder must not be archived into temp: the
+        // destination becomes this panel's folder (AreThereNamesFromTemp).
+        let temp = NSTemporaryDirectory()
+        let destination = paths.contains { $0.hasPrefix(temp) } ? (snapshot?.fullPath ?? temp)
+                                                               : ((paths[0] as NSString).deletingLastPathComponent + "/")
+        let target = PanelContextTarget(paths: paths, folderPath: destination,
+                                        names: paths.map { ($0 as NSString).lastPathComponent })
+        pendingCompressTarget = target
+        if NSApp.sendAction(#selector(MenuActions.toolbarAddToArchive(_:)), to: nil, from: self) {
+            return true
+        }
+        pendingCompressTarget = nil
+        showUnsupportedOperation()
         return false
     }
 }

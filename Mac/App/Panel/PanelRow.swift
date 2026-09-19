@@ -50,6 +50,28 @@ struct PanelRow {
     var pathExtension: String { (name as NSString).pathExtension }
 }
 
+/// The sort the rows of a snapshot were built with.
+struct PanelSortParams: Equatable {
+    var sortID: SZPropID = .name
+    var ascending = true
+    var flatMode = false
+}
+
+/// The panel's sort parameters, read on the panel queue while the main thread may change them.
+final class PanelSortState {
+    private let lock = NSLock()
+    private var params = PanelSortParams()
+
+    var value: PanelSortParams {
+        lock.lock(); defer { lock.unlock() }
+        return params
+    }
+
+    func set(_ new: PanelSortParams) {
+        lock.lock(); params = new; lock.unlock()
+    }
+}
+
 /// Snapshot of a loaded folder handed from the panel queue to the main thread.
 struct PanelSnapshot {
     let fullPath: String
@@ -78,6 +100,11 @@ struct PanelSnapshot {
     let isVolumesFolder: Bool
     /// PROPIDs hidden by default for this folder type (GetColumnVisible, 01 §3.2).
     let hiddenByDefault: Set<UInt32>
+    /// True when the folder implements IFolderCompare (archive folders do), so the rows were
+    /// sorted on the panel queue with the folder's own comparison (01 §3.3).
+    let supportsCompare: Bool
+    /// (sortID, ascending, flatMode) the rows were sorted with.
+    let sortParams: PanelSortParams
 
     /// Number of items excluding the ".." row (the Windows "total" of the status bar).
     var itemCount: Int { rows.reduce(0) { $1.isParentRow ? $0 : $0 + 1 } }

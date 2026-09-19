@@ -16,15 +16,20 @@ extension PanelViewController {
     // MARK: - Delete (PanelOperations.cpp:112-262)
 
     func deleteItems(toTrash: Bool) {
+        deleteItems(rowIndices: operatedRowIndices(), toTrash: toTrash, confirm: true)
+    }
+
+    /// The same with the rows captured by the caller (a move that already killed the selection).
+    func deleteItems(rowIndices: [Int], toTrash: Bool, confirm: Bool) {
         guard let snap = snapshot else { return }
         guard snap.supportsOperations else { showUnsupportedOperation(); return }
         guard checkBeforeUpdate() else { return }
-        let indices = operatedRowIndices()
+        let indices = rowIndices.filter { $0 >= 0 && $0 < rows.count && !rows[$0].isParentRow }
         guard !indices.isEmpty else { return }
         let targets = indices.map { rows[$0] }
         // A file-system delete to the Trash is undoable, so 7zFM asks nothing there
         // (SHFileOperation FOF_ALLOWUNDO); everything else is confirmed (01 §3.11).
-        if !(snap.isFileSystem && toTrash), !confirmDelete(targets) { return }
+        if confirm, !(snap.isFileSystem && toTrash), !confirmDelete(targets) { return }
 
         let engineIndices = targets.map { NSNumber(value: $0.engineIndex) }
         let firstRow = indices.min() ?? 0

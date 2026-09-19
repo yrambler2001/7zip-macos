@@ -18,18 +18,47 @@ extension PanelViewController: NSUserInterfaceValidations {
     @objc func fileOpenInside(_ sender: Any?) { openSelection(insideOnly: true) }                    // IDM_OPEN_INSIDE 541
     @objc func fileOpenInsideOne(_ sender: Any?) { openSelection(insideOnly: true, formatHint: "*") } // IDM_OPEN_INSIDE_ONE 590
     @objc func fileOpenInsideParser(_ sender: Any?) { openSelection(insideOnly: true, formatHint: "#") } // IDM_OPEN_INSIDE_PARSER 591
-    @objc func fileOpenOutside(_ sender: Any?) { openSelectionOutside() }                           // IDM_OPEN_OUTSIDE 542
+    @objc func fileOpenOutside(_ sender: Any?) {                                                    // IDM_OPEN_OUTSIDE 542
+        // Inside an archive this needs the temp-file open flow of the `extract` scope
+        // (PROGRESS §4.6). The panel sits earlier in the responder chain, so it hands the very
+        // same selector to the next responder that implements it instead of shadowing it.
+        if snapshot?.isArchive == true, forwardToNextResponder(#selector(fileOpenOutside(_:)), sender: sender) {
+            return
+        }
+        openSelectionOutside()
+    }
+
+    /// Sends `action` to the first responder *after* this panel that implements it (the window
+    /// controller, then the app delegate). Returns false when nobody does.
+    @discardableResult
+    func forwardToNextResponder(_ action: Selector, sender: Any?) -> Bool {
+        var responder: NSResponder? = nextResponder
+        while let current = responder {
+            if current !== self, current.responds(to: action) {
+                _ = current.perform(action, with: sender)
+                return true
+            }
+            responder = current.nextResponder
+        }
+        if let delegate = NSApp.delegate as? NSObject, delegate.responds(to: action) {
+            _ = delegate.perform(action, with: sender)
+            return true
+        }
+        return false
+    }
 
     /// EditItem(false) (PanelItems.cpp:1043): F3 on a folder calculates its full size instead of
     /// opening it; a file goes to the configured Viewer, else to the default application.
     @objc func fileView(_ sender: Any?) {                                                            // IDM_FILE_VIEW 543
         guard let focused = focusedRow(), !focused.isParentRow else { return }
-        if focused.isDirectory { calcFocusedItemSize(); return }
+        if focused.isDirectory { calcFocusedItemSize(); return }     // F3 on a folder = CalcItemFullSize
+        if focused.fullPath.isEmpty, forwardToNextResponder(#selector(fileView(_:)), sender: sender) { return }
         openWithExternalTool(path: focused.fullPath, tool: Settings.viewerPath)
     }
 
     @objc func fileEdit(_ sender: Any?) {                                                            // IDM_FILE_EDIT 544
         guard let focused = focusedRow(), !focused.isParentRow, !focused.isDirectory else { return }
+        if focused.fullPath.isEmpty, forwardToNextResponder(#selector(fileEdit(_:)), sender: sender) { return }
         openWithExternalTool(path: focused.fullPath, tool: Settings.editorPath)
     }
 
@@ -103,7 +132,7 @@ extension PanelViewController: NSUserInterfaceValidations {
         case #selector(fileOpenInside(_:)), #selector(fileOpenInsideOne(_:)), #selector(fileOpenInsideParser(_:)):
             return operated.count == 1 && allAreFiles && !hash
         case #selector(fileOpenOutside(_:)):
-            return snap.isFileSystem && !operated.isEmpty && !hash
+            return !operated.isEmpty && !hash
         case #selector(fileView(_:)):
             return !operated.isEmpty && !hash
         case #selector(fileEdit(_:)):
@@ -158,7 +187,7 @@ extension PanelViewController: NSUserInterfaceValidations {
 
     // MARK: - In-place rename commit (NSTextFieldDelegate)
 
-    func controlTextDidEndEditing(_ obj: Notification) {
+    @objc func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField, field !== pathCombo, let index = renamingRow else { return }
         renamingRow = nil
         field.isEditable = false

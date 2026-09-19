@@ -162,8 +162,8 @@ final class PanelIconView: NSView {
         collectionView.allowsMultipleSelection = true
         collectionView.allowsEmptySelection = true
         collectionView.backgroundColors = [.controlBackgroundColor]
-        collectionView.register(PanelCollectionItem.self,
-                                forItemWithIdentifier: PanelCollectionItem.identifier)
+        collectionView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+        collectionView.autoresizingMask = [.width]
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
@@ -200,15 +200,42 @@ final class PanelIconView: NSView {
         layout.minimumInteritemSpacing = 2
         layout.minimumLineSpacing = 2
         layout.sectionInset = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        // A vertically scrolling layout follows the clip view's width, a horizontal one (List
+        // mode, LVS_LIST) its height.
+        collectionView.autoresizingMask = layout.scrollDirection == .vertical ? [.width] : [.height]
+        if let clip = scrollView.contentView.bounds.size as NSSize?, clip.width > 0, clip.height > 0 {
+            collectionView.frame = NSRect(origin: .zero, size: clip)
+        }
         collectionView.collectionViewLayout = layout
         collectionView.reloadData()
     }
 
     var isLargeIcons: Bool { mode == 0 }
 
+    /// The document view must follow the clip view in the non-scrolling axis; an NSCollectionView
+    /// added as a document view in code does not do that on its own.
+    override func layout() {
+        super.layout()
+        let clip = scrollView.contentView.bounds.size
+        guard clip.width > 1, clip.height > 1 else { return }
+        var frame = collectionView.frame
+        if mode == 2 {                                  // List: columns, horizontal scrolling
+            frame.size.height = clip.height
+            frame.size.width = max(frame.size.width, clip.width)
+        } else {
+            frame.size.width = clip.width
+            frame.size.height = max(frame.size.height, clip.height)
+        }
+        if frame != collectionView.frame {
+            collectionView.frame = frame
+            collectionView.collectionViewLayout?.invalidateLayout()
+        }
+    }
+
     func reloadData() {
         guard !isHidden else { return }
         collectionView.reloadData()
+        needsLayout = true
     }
 
     var selectionIndexes: IndexSet {
@@ -234,8 +261,11 @@ extension PanelIconView: NSCollectionViewDataSource, NSCollectionViewDelegate {
 
     func collectionView(_ collectionView: NSCollectionView,
                         itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
-        let item = collectionView.makeItem(withIdentifier: PanelCollectionItem.identifier, for: indexPath)
-        guard let cell = item as? PanelCollectionItem, let panel, indexPath.item < panel.rows.count else { return item }
+        // Items are created directly instead of dequeued: NSCollectionView's reuse pool raises an
+        // uncatchable ObjC exception when the first dequeue happens before the view was laid out,
+        // and a panel never shows more than a screenful of items at a time.
+        let cell = PanelCollectionItem()
+        guard let panel, indexPath.item < panel.rows.count else { return cell }
         let row = panel.rows[indexPath.item]
         cell.configure(name: row.displayName,
                        icon: isLargeIcons ? panel.largeIcon(for: row) : panel.icon(for: row),
@@ -306,7 +336,9 @@ final class PanelCollectionItem: NSCollectionViewItem {
     override func loadView() {
         let root = ItemBackgroundView()
         root.owner = self
-        root.translatesAutoresizingMaskIntoConstraints = false
+        // The collection view positions the item by frame, so this view must keep its
+        // autoresizing translation (only its subviews use constraints).
+        root.frame = NSRect(x: 0, y: 0, width: 104, height: 76)
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.imageScaling = .scaleProportionallyDown
         icon.setAccessibilityElement(false)

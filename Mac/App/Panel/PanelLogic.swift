@@ -138,11 +138,17 @@ enum PanelMask {
     }
 
     /// SelectByType (PanelSelect.cpp:169-204): a folder selects every folder, a name without an
-    /// extension every extension-less file, otherwise `*.ext`. `nil` = "every folder".
-    static func maskForSelectByType(name: String, isDirectory: Bool) -> String? {
-        if isDirectory { return nil }
+    /// extension every extension-less file, otherwise `*.ext`.
+    enum SelectByTypeRule: Equatable {
+        case allFolders                 // the focused item is a folder
+        case filesWithoutExtension      // its name has no extension
+        case mask(String)               // "*.ext"
+    }
+
+    static func selectByTypeRule(name: String, isDirectory: Bool) -> SelectByTypeRule {
+        if isDirectory { return .allFolders }
         let ext = (name as NSString).pathExtension
-        return ext.isEmpty ? "*" : "*." + ext
+        return ext.isEmpty ? .filesWithoutExtension : .mask("*." + ext)
     }
 }
 
