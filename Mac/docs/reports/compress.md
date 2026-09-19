@@ -123,3 +123,58 @@ Known gap recorded in `Mac/docs/requests.md`: the bridge's archive *opener* has 
 
 Next: unit tests for the model (item lists, auto values, memory, property order), then the
 running-app verification.
+
+## Phase 4 — verification in the running app (done)
+
+Launched `Mac/build/Debug/7-Zip.app` with `SEVENZIP_DEFAULTS_SUITE=7zip-compress` and
+`SZ_COMPRESS_DEMO`, under the shared `.worktrees/.app-lock` (acquired before the burst,
+released immediately after).
+
+Two 7-Zip processes were on screen (the `panel` scope's and mine) and AppleScript's
+`application process "7-Zip"` cannot tell them apart, so the verification ran against a copy
+of **my own build** at `Mac/build/Debug/7-Zip-verify.app` whose `CFBundleName` is
+`SevenZipCompressVerify` (re-signed ad hoc, deleted afterwards). Only that copy and my own
+worktree build were ever terminated.
+
+What the running app showed:
+
+| Format | level | method | dictionary | word | solid | threads | memory / decompression | groups |
+|---|---|---|---|---|---|---|---|---|
+| 7z | 5 - Normal | `*  LZMA2` | `*  32 MB` | `*  32` | `*  8 GB` | `*  10` | 3048 MB / 52 GB / 64 GB, 34 MB | SFX on, Encryption on (AES-256), Encrypt names on |
+| zip | 5 - Normal | `*  Deflate` | `*  32 KB` (disabled) | `*  32` | — (disabled) | `*  10` | 680 MB, 2 MB | SFX off, Encryption on (ZipCrypto), Encrypt names hidden |
+| tar | 0 - Store (disabled) | `*  GNU` | — | — | — | — (disabled) | rows hidden | everything off |
+| wim | 0 - Store (disabled) | — | — | — | — | — | rows hidden | everything off |
+| gzip¹ | 5 - Normal | `*  Deflate` | `*  32 KB` (disabled) | `*  32` | — | — (disabled) | 4 MB, 2 MB | name `payload.txt.gz` (KeepName) |
+| bzip2¹ | 5 - Normal | `*  BZip2` | `*  900 KB` | — | — | `*  10` | 100 MB, 7 MB | name `payload.txt.bz2` |
+| xz¹ | 5 - Normal | `*  LZMA2` | `*  32 MB` | `*  32` | `*  128 MB` | `*  10` | 3048 MB, 34 MB | name `payload.txt.xz` |
+
+¹ only offered when exactly one regular file is selected; with three items the format combo
+holds exactly `7z, tar, wim, zip` (sorted), which is `UpdateGUI.cpp:398-419` verbatim.
+
+Also confirmed live:
+
+- Switching 7z → zip rebuilt every dependent control in one step (method list, dictionary,
+  solid combo gone, encryption group enabled with ZipCrypto, SFX disabled, "Encrypt file
+  names" hidden, memory 3048 MB → 680 MB, decompression 34 MB → 2 MB, name `.7z` → `.zip`).
+- The Options sheet: `Type: zip`, the precision combo disabled until the ":" box is ticked,
+  then enabled at `100 ns : Windows`; "Store modification time" checked-but-disabled with its
+  ":" box hidden (multi-file format); ticking the creation-time ":" box enabled its checkbox.
+  The parent's summary label then read exactly **`tp0 tc`**.
+- OK created a real `compress-demo.zip` (874 B, 4 files, `7zz t` clean) whose entries carry a
+  `Created` timestamp — i.e. `tc=on` + `tp=0` reached the handler.
+- The settings written were `Compression.Archiver = zip`,
+  `Compression.ArcHistory = ("/tmp/compress-demo/compress-demo.zip")`,
+  `Compression.Options.zip.CTime = 1`, `.Level = 5`, `.TimePrec = 0`.
+- Ticking "Create SFX archive" swapped the name to `compress-demo.exe` and kept LZMA2; OK
+  produced a 215873-byte file whose first 215552 bytes hash-match `Mac/Resources/SFX/7z.sfx`
+  exactly, starts with `MZ`, and whose payload lists as a normal 7z archive.
+- `SZ_COMPRESS_DEMO=quick` created `compress-demo.7z` with no dialog, named by
+  `CreateArchiveName`, and called `refreshAllPanels` afterwards.
+
+Screenshots: `Mac/docs/reports/screenshots/compress-dialog-{7z,zip,tar,wim,gzip,bzip2,xz,sfx}.png`
+and `compress-options-sheet.png`.
+
+Layout fixes the run produced: text fields and combos need explicit minimum widths inside an
+`NSGridView` (their intrinsic width is 0), the password row swaps the secure and plain fields
+inside one cell, hidden grid *rows* replace hidden views for `ShowItem_Bool`, and the Options
+sheet is sized after `reload()` with required vertical hugging so its rows cannot overlap.

@@ -113,7 +113,7 @@ enum CompressCommands {
         guard let context = ActiveContext.current() else { return }
         guard let paths = operatedFileSystemPaths(context) else { return }
         guard let format = SZCodecs.format(named: formatName), format.updateEnabled else {
-            showError(Lang.text(4090, "Unsupported archive type"), parent: context.window)
+            showError(Lang.text(3007, "Unsupported archive type"), parent: context.window)  // IDS_UNSUPPORTED_ARCHIVE_TYPE
             return
         }
         var directory = context.folderPath
@@ -271,7 +271,7 @@ enum CompressCommands {
             try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
             return path
         } catch {
-            showError(Lang.format(Lang.text(3403, "Cannot create folder '{0}'"), path), parent: nil)
+            showError(Lang.format(Lang.text(3003, "Cannot create folder '{0}'"), path), parent: nil)  // IDS_CANNOT_CREATE_FOLDER
             return nil
         }
     }
@@ -304,7 +304,7 @@ enum CompressCommands {
         }
         let paths = context.paths.filter { !$0.isEmpty }
         guard !paths.isEmpty else {
-            showError(Lang.text(3008, "Select files"), parent: context.window)
+            showError(Lang.text(3015, "Select files"), parent: context.window)   // IDS_SELECT_FILES
             return nil
         }
         return paths

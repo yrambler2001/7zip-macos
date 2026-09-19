@@ -54,6 +54,7 @@ final class CompressOptionsSheet: NSObject {
         let sheet = CompressOptionsSheet(state: state)
         sheet.build()
         sheet.reload()
+        sheet.sizeToFit()      // after reload: hidden rows must not reserve space
         if let parent {
             parent.beginSheet(sheet.window) { _ in }
             NSApp.runModal(for: sheet.window)
@@ -126,6 +127,8 @@ final class CompressOptionsSheet: NSObject {
         ntfsStack.orientation = .vertical
         ntfsStack.alignment = .leading
         ntfsStack.spacing = 4
+        ntfsStack.setHuggingPriority(.required, for: .vertical)
+        ntfsStack.setContentCompressionResistancePriority(.required, for: .vertical)
         ntfsGroup = NSBox()
         ntfsGroup.title = Lang.text(115, "NTFS")
         ntfsGroup.contentView = wrap(ntfsStack)
@@ -169,27 +172,44 @@ final class CompressOptionsSheet: NSObject {
         timeStack.orientation = .vertical
         timeStack.alignment = .leading
         timeStack.spacing = 6
+        // Without this an NSBox can squash the stack and the rows draw on top of each other.
+        timeStack.setHuggingPriority(.required, for: .vertical)
+        timeStack.setContentCompressionResistancePriority(.required, for: .vertical)
+        for row in [precRow, mTimeRow, cTimeRow, aTimeRow, zRow] as [NSStackView] {
+            row.setHuggingPriority(.required, for: .vertical)
+            row.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
         timeGroup = NSBox()
         timeGroup.title = Lang.text(4080, "Time")
         timeGroup.contentView = wrap(timeStack)
 
-        let okButton = DialogKit.button(Lang.text(2, "OK"), target: self, action: #selector(okPressed(_:)), key: "\r")
-        let cancelButton = DialogKit.button(Lang.text(1, "Cancel"), target: self,
+        let okButton = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okPressed(_:)), key: "\r")
+        let cancelButton = DialogKit.button(Lang.text(402, "Cancel"), target: self,
                                             action: #selector(cancelPressed(_:)), key: "\u{1b}")
-        let helpButton = DialogKit.button(Lang.text(3, "Help"), target: self, action: #selector(helpPressed(_:)))
+        let helpButton = DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(helpPressed(_:)))
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let buttons = NSStackView(views: [helpButton, spacer, cancelButton, okButton])
         buttons.orientation = .horizontal
         buttons.spacing = 10
 
-        let content = NSStackView(views: [ntfsGroup, typeInfoLabel, timeGroup, preserveATimeBox, buttons])
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 10
+        let stack = NSStackView(views: [ntfsGroup, typeInfoLabel, timeGroup, preserveATimeBox, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
         for v in [ntfsGroup, timeGroup, buttons] as [NSView] {
-            v.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+            v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
+        stack.widthAnchor.constraint(greaterThanOrEqualToConstant: 380).isActive = true
+        stack.setHuggingPriority(.required, for: .vertical)
+        stack.setContentCompressionResistancePriority(.required, for: .vertical)
+        content = stack
+    }
+
+    private var content: NSStackView!
+
+    /// Lays out and sizes the window once the rows' visibility is final.
+    private func sizeToFit() {
         DialogKit.install(content, in: window, parent: nil, minimumWidth: 420)
     }
 
@@ -229,7 +249,8 @@ final class CompressOptionsSheet: NSObject {
     /// `SetPrec` (:3482-3582).
     private func setPrec() {
         // IDT_COMPRESS_TIME_INFO 191: "Type: <format>" (+ ":GNU" / ":POSIX" for tar).
-        var info = Lang.text(1, "Type") + ": " + state.formatName
+        // GetNameOfProperty(kpidType) = LangString(1000 + kpidType) (PropertyName.cpp:10-23)
+        var info = Lang.text(1020, "Type") + ": " + state.formatName
         if state.isTar, !state.tarMethodName.isEmpty { info += ":" + state.tarMethodName }
         typeInfoLabel.stringValue = info
 
@@ -313,6 +334,8 @@ final class CompressOptionsSheet: NSObject {
     private func configure(row: NSStackView, setBox: NSButton, box: NSButton,
                            supported: Bool, enabled: Bool, setVisible: Bool,
                            value: Bool?, defaultValue: Bool) {
+        // NSStackView keeps an arranged subview's slot when it is hidden, so the row itself is
+        // hidden through the stack (ShowItem_Bool on Windows).
         row.isHidden = !supported
         setBox.isHidden = !setVisible
         setBox.state = value != nil ? .on : .off

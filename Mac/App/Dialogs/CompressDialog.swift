@@ -121,7 +121,11 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
     private let encryptNamesBox = NSButton()                          // IDX_COMPRESS_ENCRYPT_FILE_NAMES 4016
     private var encryptionGroupViews: [NSView] = []
     private var encryptionGroupBox: NSBox!
-    private var memoryRowViews: [NSView] = []
+    /// Grid rows that are shown / hidden as a whole, like Windows' ShowItem_Bool.
+    private var reenterRow: NSGridRow!
+    private var encryptNamesRow: NSGridRow!
+    private var memoryRow: NSGridRow!
+    private var memoryDeRow: NSGridRow!
 
     // Labels that need enabling/hiding with their control.
     private let methodLabel = DialogKit.label("")                     // IDT_COMPRESS_METHOD 4005
@@ -259,6 +263,26 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         memoryLabel.stringValue = Lang.text(4017, "Memory usage for Compressing:")
         memoryDeLabel.stringValue = Lang.text(4018, "Memory usage for Decompressing:")
 
+        // NSGridView sizes a cell to its view's intrinsic width, and a text field's is 0, so
+        // every editable control gets a minimum width (the .rc gives the left column 192 du).
+        for control in [formatCombo, levelCombo, methodCombo, dictionaryCombo, orderCombo,
+                        solidCombo, memUseCombo, updateModeCombo, pathModeCombo] as [NSControl] {
+            control.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
+            control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+        threadsCombo.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
+        encryptionMethodCombo.widthAnchor.constraint(greaterThanOrEqualToConstant: 150).isActive = true
+        for field in [volumeCombo, parametersField] as [NSControl] {
+            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+        for field in [password1Field, password1Plain, password2Field] as [NSControl] {
+            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 170).isActive = true
+            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+        memoryValueLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        optionsSummary.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
         let content = NSStackView()
         content.orientation = .vertical
         content.alignment = .leading
@@ -288,10 +312,10 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         content.addArrangedSubview(columns)
 
         // --- bottom: buttons
-        let okButton = DialogKit.button(Lang.text(2, "OK"), target: self, action: #selector(okPressed(_:)), key: "\r")
-        let cancelButton = DialogKit.button(Lang.text(1, "Cancel"), target: self,
+        let okButton = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okPressed(_:)), key: "\r")
+        let cancelButton = DialogKit.button(Lang.text(402, "Cancel"), target: self,
                                             action: #selector(cancelPressed(_:)), key: "\u{1b}")
-        let helpButton = DialogKit.button(Lang.text(3, "Help"), target: self, action: #selector(helpPressed(_:)))
+        let helpButton = DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(helpPressed(_:)))
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let buttons = NSStackView(views: [helpButton, spacer, cancelButton, okButton])
@@ -331,7 +355,8 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         grid.columnSpacing = 8
         grid.column(at: 0).xPlacement = .trailing
         grid.column(at: 1).xPlacement = .fill
-        memoryRowViews = [memoryLabel, memUseCombo, memoryValueLabel, memoryDeLabel, memoryDeValueLabel]
+        memoryRow = grid.row(at: 7)
+        memoryDeRow = grid.row(at: 8)
 
         let optionsRow = NSStackView(views: [optionsButton, optionsSummary])
         optionsRow.orientation = .horizontal
@@ -367,10 +392,22 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         // IDG_COMPRESS_ENCRYPTION 4014
         let enterLabel = DialogKit.label(Lang.text(3801, "Enter password:"))       // IDT_PASSWORD_ENTER 3801
         password2Label.stringValue = Lang.text(3802, "Reenter password:")
+        // The secure field and the plain one occupy the same cell; "Show Password" swaps them
+        // (UpdatePasswordControl clears the password char on Windows).
         password1Plain.isHidden = true
+        let passwordCell = NSView()
+        for field in [password1Field, password1Plain] as [NSTextField] {
+            field.translatesAutoresizingMaskIntoConstraints = false
+            passwordCell.addSubview(field)
+            NSLayoutConstraint.activate([
+                field.leadingAnchor.constraint(equalTo: passwordCell.leadingAnchor),
+                field.trailingAnchor.constraint(equalTo: passwordCell.trailingAnchor),
+                field.topAnchor.constraint(equalTo: passwordCell.topAnchor),
+                field.bottomAnchor.constraint(equalTo: passwordCell.bottomAnchor),
+            ])
+        }
         let passwordGrid = NSGridView(views: [
-            [enterLabel, password1Field],
-            [DialogKit.label(""), password1Plain],
+            [enterLabel, passwordCell],
             [password2Label, password2Field],
             [DialogKit.label(""), showPasswordBox],
             [DialogKit.label(Lang.text(4015, "Encryption method:")), encryptionMethodCombo],  // IDT_COMPRESS_ENCRYPTION_METHOD 4015
@@ -379,7 +416,8 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         passwordGrid.rowSpacing = 6
         passwordGrid.columnSpacing = 8
         passwordGrid.column(at: 0).xPlacement = .trailing
-        passwordGrid.row(at: 1).isHidden = true
+        reenterRow = passwordGrid.row(at: 1)
+        encryptNamesRow = passwordGrid.row(at: 4)
         encryptionGroupBox = NSBox()
         encryptionGroupBox.title = Lang.text(4014, "Encryption")
         encryptionGroupBox.contentView = wrap(passwordGrid)
@@ -425,8 +463,9 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
 
         // Path mode combo: k_PathMode_IDs (:396-401)
         pathModeCombo.removeAllItems()
-        for (id, fallback) in [(UInt32(3411), "Relative pathnames"), (3405, "Full pathnames"),
-                               (3406, "Absolute pathnames")] {
+        for (id, fallback) in [(UInt32(3414), "Relative pathnames"),   // IDS_PATH_MODE_RELAT
+                               (3411, "Full pathnames"),               // IDS_EXTRACT_PATHS_FULL
+                               (3413, "Absolute pathnames")] {         // IDS_EXTRACT_PATHS_ABS
             pathModeCombo.addItem(withTitle: Lang.text(id, fallback))
         }
         pathModeCombo.selectItem(at: min(max(input.pathMode.rawValue, 0), 2))
@@ -583,7 +622,8 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         memUseCombo.removeAllItems()
         for item in result.items { memUseCombo.addItem(withTitle: item.title) }
         let show = !result.items.isEmpty
-        for v in memoryRowViews { v.isHidden = !show }
+        memoryRow.isHidden = !show
+        memoryDeRow.isHidden = !show
         memUseCombo.isEnabled = show
         if show, result.selection >= 0 {
             memUseCombo.selectItem(at: result.selection)
@@ -620,12 +660,12 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         password2Label.textColor = encrypt ? .labelColor : .disabledControlTextColor
         let namesAllowed = model.staticFormat.flags.contains(.encryptFileNames)
         encryptNamesBox.isEnabled = namesAllowed
-        encryptNamesBox.isHidden = !namesAllowed
+        encryptNamesRow.isHidden = !namesAllowed
 
         let e = model.encryptionMethodItems(stored: storedMethod)
         encryptionMethodCombo.removeAllItems()
         for item in e.items { encryptionMethodCombo.addItem(withTitle: item) }
-        encryptionMethodCombo.isEnabled = encrypt && e.items.count > 1
+        encryptionMethodCombo.isEnabled = encrypt        // EnableItem(..., encrypt) on Windows
         if e.selection >= 0 { encryptionMethodCombo.selectItem(at: e.selection) }
         encryptionDefaultIndex = e.defaultIndex
         updatePasswordControl()
@@ -644,8 +684,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         }
         password1Field.isHidden = show
         password1Plain.isHidden = !show
-        password2Field.isHidden = show
-        password2Label.isHidden = show
+        reenterRow.isHidden = show
     }
 
     private var currentPassword: String {
@@ -1014,9 +1053,9 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
                 alert.alertStyle = .warning
                 alert.messageText = "7-Zip"
                 alert.informativeText = Lang.format(template, "\(last)")
-                alert.addButton(withTitle: Lang.text(4, "Yes"))
-                alert.addButton(withTitle: Lang.text(5, "No"))
-                alert.addButton(withTitle: Lang.text(1, "Cancel"))
+                alert.addButton(withTitle: Lang.text(406, "Yes"))      // MY_IDYES
+                alert.addButton(withTitle: Lang.text(407, "No"))       // MY_IDNO
+                alert.addButton(withTitle: Lang.text(402, "Cancel"))
                 if alert.runModal() != .alertFirstButtonReturn { return }
             }
         }
