@@ -4,10 +4,12 @@
 import Cocoa
 import SevenZipKit
 
-final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate, NSMenuItemValidation, PanelDelegate {
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate,
+                                 NSMenuItemValidation, NSUserInterfaceValidations, PanelDelegate {
 
     private let splitView = NSSplitView()
-    private var panels: [PanelViewController] = []   // index 0 always exists; 1 created on demand
+    /// index 0 always exists; 1 is created on demand (SwitchOnOffOnePanel).
+    private(set) var panels: [PanelViewController] = []
     private(set) var numPanels = 1
     private(set) var focusedPanelIndex = 0             // LastFocusedPanel
     private var refreshTimer: Timer?
@@ -33,9 +35,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         buildContent()
         buildToolbar()
         restoreState()
+        ActiveContext.register(self)            // frozen contract: the command scopes read this
+        NotificationCenter.default.addObserver(self, selector: #selector(viewSettingsDidChange(_:)),
+                                               name: Settings.Group.view.notificationName, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    /// A change on the Options pages takes effect immediately (SetListSettings, 01b §4.19): the
+    /// timestamp level and the auto-refresh flag live in the window, the seven list booleans in
+    /// the panels (they observe the same notification themselves).
+    @objc private func viewSettingsDidChange(_ note: Notification) {
+        let key = note.userInfo?[Settings.keyUserInfoKey] as? String
+        if key == nil || key == "FM.AutoRefresh" {
+            autoRefresh = Settings.autoRefresh
+        }
+    }
 
     // MARK: - Layout (CApp::Create / MoveSubWindows)
 
@@ -123,6 +140,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         }
         for (i, panel) in panels.enumerated() {
             Settings.setPanelPath(panel.pathToPersist, i)
+            Settings.setListMode(panel.listViewMode, i)
+            panel.saveColumnLayout()            // SaveListViewInfo (Panel.cpp:598-602)
         }
         Settings.autoRefresh = autoRefresh
         Settings.toolbarsMask = toolbarsMask
@@ -131,6 +150,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     func windowWillClose(_ notification: Notification) {
         refreshTimer?.invalidate()
         saveState()
+    }
+
+    func windowDidBecomeMain(_ notification: Notification) {
+        ActiveContext.register(self)
     }
 
     override func showWindow(_ sender: Any?) {
@@ -189,7 +212,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         focusedPanel.focusList()
     }
 
-    private func setFocusedPanel(_ index: Int) {
+    func setFocusedPanel(_ index: Int) {
         focusedPanelIndex = index
         for (i, panel) in panels.enumerated() { panel.isActive = i == index }
         refreshTitle()
@@ -211,6 +234,39 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
 
     func panelDidChangeFolder(_ panel: PanelViewController) {
         if panel === focusedPanel { refreshTitle() }
+    }
+
+    /// OnTab: switch the focused panel in two-panel mode.
+    func panelWantsNextPanel(_ panel: PanelViewController) {
+        guard numPanels == 2, panels.count == 2 else { return }
+        let next = panel === panels[0] ? 1 : 0
+        setFocusedPanel(next)
+        panels[next].focusList()
+    }
+
+    func panelWantsOnePanelToggle(_ panel: PanelViewController) { switchOnOffOnePanel() }
+
+    func panelWantsWindowClose(_ panel: PanelViewController) { window?.performClose(nil) }
+
+    /// OnSetSameFolder / OnSetSubFolder (App.cpp:858-912).
+    func panel(_ panel: PanelViewController, setOtherPanelPath path: String) {
+        guard numPanels == 2, let other = otherPanel(of: panel) else { return }
+        other.navigate(to: path, fallbackToRoot: false)
+    }
+
+    func panel(_ panel: PanelViewController, focusAddressBarOfPanel index: Int) {
+        guard index >= 0, index < panels.count, index < numPanels else { return }
+        setFocusedPanel(index)
+        panels[index].focusPathBar()
+    }
+
+    func panel(_ panel: PanelViewController, copyOrMove move: Bool, copyToSame: Bool) {
+        if let index = panels.firstIndex(where: { $0 === panel }) { setFocusedPanel(index) }
+        performCopyOrMove(move: move, copyToSame: copyToSame)
+    }
+
+    func panel(_ panel: PanelViewController, bookmark index: Int, set: Bool) {
+        if set { panel.setBookmark(index) } else { panel.openBookmark(index) }
     }
 
     // MARK: - Auto refresh (kTimerElapse polling of IFolderWasChanged)
@@ -311,18 +367,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         guard let tag = (sender as? NSMenuItem)?.tag else { return }
         let i = tag - MainMenu.kMenuIDSetBookmark
         guard (0..<10).contains(i) else { return }
-        var list = Settings.folderShortcuts
-        list[i] = focusedPanel.currentPath
-        Settings.folderShortcuts = list
+        focusedPanel.setBookmark(i)
     }
 
     @objc func favoritesOpenBookmark(_ sender: Any?) {                                      // CPanel::OpenBookmark
         guard let tag = (sender as? NSMenuItem)?.tag else { return }
         let i = tag - MainMenu.kMenuIDOpenBookmark
         guard (0..<10).contains(i) else { return }
-        let path = Settings.folderShortcuts[i]
-        guard !path.isEmpty else { return }
-        focusedPanel.navigate(to: path, fallbackToRoot: false)
+        focusedPanel.openBookmark(i)
     }
 
     @objc func fileExit(_ sender: Any?) {                                                   // IDCLOSE -> WM_CLOSE
@@ -339,8 +391,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         ])
     }
 
+    func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        windowActionIsEnabled(item.action)
+    }
+
+    /// The toolbar Copy / Move buttons follow the File-menu rules of 01 §2.1.
+    private func windowActionIsEnabled(_ action: Selector?) -> Bool {
+        switch action {
+        case #selector(fileCopyTo(_:)):
+            guard let snap = focusedPanel.snapshot else { return false }
+            return snap.supportsOperations && !focusedPanel.operatedRowIndices().isEmpty && !snap.isHashFolder
+        case #selector(fileMoveTo(_:)):
+            guard let snap = focusedPanel.snapshot else { return false }
+            return snap.supportsOperations && !snap.chainIsReadOnly
+                && !focusedPanel.operatedRowIndices().isEmpty && !snap.isHashFolder
+        default:
+            return true
+        }
+    }
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
+        case #selector(fileCopyTo(_:)), #selector(fileMoveTo(_:)):
+            return windowActionIsEnabled(item.action)
         case #selector(viewTwoPanels(_:)): item.state = numPanels == 2 ? .on : .off
         case #selector(viewAutoRefresh(_:)): item.state = autoRefresh ? .on : .off
         case #selector(viewArchiveToolbar(_:)): item.state = (toolbarsMask & 8) != 0 ? .on : .off

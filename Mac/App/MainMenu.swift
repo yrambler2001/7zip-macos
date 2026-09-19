@@ -152,6 +152,16 @@ enum MainMenu {
         menu.addItem(.separator())   // MY_MFT_MENUBARBREAK column break in the .rc
         item(menu, 605, lang: 605, "Select by Type\tAlt+[Grey +]", key: "+", mods: [.option, .numericPad], action: #selector(a.editSelectByType(_:)))     // IDM_SELECT_BY_TYPE
         item(menu, 606, lang: 606, "Deselect by Type\tAlt+[Grey -]", key: "-", mods: [.option, .numericPad], action: #selector(a.editDeselectByType(_:))) // IDM_DESELECT_BY_TYPE
+        // Clipboard: 7zFM binds Ctrl+C / Ctrl+X / Ctrl+V in the panel key handler and has no menu
+        // items for them (PanelMenu.cpp:427-489). macOS expects them in the Edit menu, so they are
+        // added here with the standard selectors -- a text field in focus keeps its own behaviour.
+        menu.addItem(.separator())
+        let copyItem = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        menu.addItem(copyItem)
+        let cutItem = NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        menu.addItem(cutItem)
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        menu.addItem(pasteItem)
         let top = NSMenuItem()
         top.submenu = menu
         return top
@@ -194,6 +204,9 @@ enum MainMenu {
         item(toolbarsMenu, 753, lang: 753, "Show Buttons Text", action: #selector(a.viewToolbarsShowButtonsText(_:)))         // IDM_VIEW_TOOLBARS_SHOW_BUTTONS_TEXT
         toolbars.submenu = toolbarsMenu
         menu.addItem(toolbars)
+        // Back / Forward: not in 7zFM (which has no navigation stack), added for macOS.
+        item(menu, 0, lang: 0, "Back", key: "[", mods: [.command], action: #selector(a.viewGoBack(_:)), tag: 780)
+        item(menu, 0, lang: 0, "Forward", key: "]", mods: [.command], action: #selector(a.viewGoForward(_:)), tag: 781)
         item(menu, 734, lang: 734, "Open Root Folder\t\\", action: #selector(a.viewOpenRootFolder(_:)))                       // IDM_OPEN_ROOT_FOLDER ("\" or "/" typed in the list)
         item(menu, 735, lang: 735, "Up One Level\tBackspace", key: String(UnicodeScalar(NSUpArrowFunctionKey)!), mods: [.command], action: #selector(a.viewOpenParentFolder(_:)))   // IDM_OPEN_PARENT_FOLDER (Backspace in the list; Cmd+Up here)
         item(menu, 736, lang: 736, "Folders History...\tAlt+F12", key: fkey(12), mods: [.option], action: #selector(a.viewFoldersHistory(_:)))   // IDM_FOLDERS_HISTORY
@@ -405,6 +418,8 @@ final class FavoritesMenuDelegate: NSObject, NSMenuDelegate {
     func viewOpenParentFolder(_ sender: Any?)     // IDM_OPEN_PARENT_FOLDER 735
     func viewFoldersHistory(_ sender: Any?)       // IDM_FOLDERS_HISTORY 736
     func viewRefresh(_ sender: Any?)              // IDM_VIEW_REFRESH 737
+    func viewGoBack(_ sender: Any?)               // macOS addition: the panel's folder history
+    func viewGoForward(_ sender: Any?)            // macOS addition: the panel's folder history
     func viewAutoRefresh(_ sender: Any?)          // IDM_VIEW_AUTO_REFRESH 738
     // Favorites
     func favoritesSetBookmark(_ sender: Any?)     // k_MenuID_SetBookmark 810 + i
