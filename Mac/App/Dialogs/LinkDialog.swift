@@ -33,10 +33,16 @@ final class LinkDialog: NSObject {
     private init(currentDirPrefix: String, filePath: String, anotherPath: String, parent: NSWindow?) {
         self.currentDirPrefix = currentDirPrefix
         window = DialogKit.window(title: Lang.text(7700, "Link"), resizable: true)
-        hardRadio = DialogKit.radio(Lang.text(7711, "Hard Link"), target: nil, action: nil)
-        symFileRadio = DialogKit.radio(Lang.text(7712, "File Symbolic Link"), target: nil, action: nil)
-        symDirRadio = DialogKit.radio(Lang.text(7713, "Directory Symbolic Link"), target: nil, action: nil)
+        // AppKit groups radio buttons that share a superview AND an action; without an
+        // action they would all stay selectable at once (WS_GROUP equivalent).
+        hardRadio = DialogKit.radio(Lang.text(7711, "Hard Link"), target: nil,
+                                    action: #selector(linkTypeChanged))
+        symFileRadio = DialogKit.radio(Lang.text(7712, "File Symbolic Link"), target: nil,
+                                       action: #selector(linkTypeChanged))
+        symDirRadio = DialogKit.radio(Lang.text(7713, "Directory Symbolic Link"), target: nil,
+                                      action: #selector(linkTypeChanged))
         super.init()
+        for radio in [hardRadio, symFileRadio, symDirRadio] { radio.target = self }
 
         let fm = FileManager.default
         var isDirectory = false
@@ -67,6 +73,7 @@ final class LinkDialog: NSObject {
             toCombo.stringValue = filePath
             currentTarget.stringValue = ""
         }
+        for radio in [hardRadio, symFileRadio, symDirRadio] { radio.state = .off }
         if exists, !isLink, !isDirectory {
             hardRadio.state = .on                 // default for a plain file (:171)
         } else if isDirectory {
@@ -141,6 +148,8 @@ final class LinkDialog: NSObject {
         DialogKit.install(stack, in: window, parent: parent, minimumWidth: 540)
         window.initialFirstResponder = fromCombo
     }
+
+    @objc private func linkTypeChanged(_ sender: Any?) {}
 
     private var selectedType: LinkType {
         if hardRadio.state == .on { return .hard }

@@ -38,7 +38,7 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
     private var entries: [Entry] = []
     private var sortKey: SortKey = .name
 
-    private let tableView = NSTableView()
+    private let tableView = ToolsTempFilesTableView()
     private let folderLabel = NSTextField(string: "")     // IDT_BROWSE2_FOLDER 101 (read-only)
     private let parentButton: NSButton                    // IDB_BROWSE2_PARENT 110 "<--"
     private let deleteButton: NSButton                    // IDS_BUTTON_DELETE 7205
@@ -94,6 +94,40 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         tableView.target = self
         tableView.doubleAction = #selector(openSelection)
         tableView.menu = contextMenu()
+        // Keys of CBrowseDialog2 (:640-680, :1803-1835): Enter opens, Shift+Enter reveals in
+        // the Finder, Alt+Enter shows the properties box, Backspace goes up, Del deletes,
+        // Cmd+A selects all, Cmd+F3/F5/F6 sort by name / mtime / size.
+        tableView.keyHandler = { [weak self] event in
+            guard let self else { return false }
+            let flags = event.modifierFlags
+            if flags.contains(.command), let key = event.charactersIgnoringModifiers {
+                if key.lowercased() == "a" { self.tableView.selectAll(nil); return true }
+                if let scalar = key.unicodeScalars.first {
+                    switch Int(scalar.value) {
+                    case NSF3FunctionKey: self.sortKey = .name; self.applySort(); return true
+                    case NSF5FunctionKey: self.sortKey = .modified; self.applySort(); return true
+                    case NSF6FunctionKey: self.sortKey = .size; self.applySort(); return true
+                    default: break
+                    }
+                }
+                if key == "\u{7F}" { self.deleteClicked(); return true }
+            }
+            guard let scalar = (event.charactersIgnoringModifiers ?? "").unicodeScalars.first else { return false }
+            switch scalar {
+            case "\r", "\u{3}":
+                if flags.contains(.shift) { self.openOutside() }
+                else if flags.contains(.option) { self.showProperties() }
+                else { self.openSelection() }
+                return true
+            case "\u{7F}", "\u{8}":
+                self.parentClicked()
+                return true
+            case UnicodeScalar(NSDeleteFunctionKey)!:
+                self.deleteClicked()
+                return true
+            default: return false
+            }
+        }
 
         let scroll = NSScrollView()
         scroll.documentView = tableView
@@ -407,5 +441,17 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         let dialog = ToolsTempFilesDialog(title: title, tempRoot: NSTemporaryDirectory(), parent: parent)
         NSApp.runModal(for: dialog.window)
         dialog.window.orderOut(nil)
+    }
+}
+
+
+/// The list of the temp browser; CBrowseDialog2 handles its keys itself.
+final class ToolsTempFilesTableView: NSTableView {
+    /// Return true from the handler when the key was consumed.
+    var keyHandler: ((NSEvent) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        if keyHandler?(event) == true { return }
+        super.keyDown(with: event)
     }
 }

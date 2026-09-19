@@ -144,6 +144,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (class, nonatomic, readonly) NSString *versionWithCPUText;
 /// MY_DATE, for the About dialog's date line (IDT_ABOUT_DATE 102).
 @property (class, nonatomic, readonly) NSString *engineDateText;
+/// MY_COPYRIGHT with USE_COPYRIGHT_CR, i.e. "Copyright (c) 1999-2026 Igor Pavlov" -- the
+/// static LTEXT of IDD_ABOUT. (SZEngineCopyrightString() is built without USE_COPYRIGHT_CR
+/// and therefore reads "Igor Pavlov : Public domain : <date>".)
+@property (class, nonatomic, readonly) NSString *engineCopyrightText;
 
 @end
 

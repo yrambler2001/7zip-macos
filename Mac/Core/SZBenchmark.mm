@@ -826,5 +826,6 @@ static NSString *SZRatingsLine(const CSZTotalRes &enc, const CSZTotalRes &dec)
 
 + (NSString *)versionWithCPUText { return @"7-Zip " MY_VERSION_CPU; }
 + (NSString *)engineDateText { return @MY_DATE; }
++ (NSString *)engineCopyrightText { return @MY_COPYRIGHT; }
 
 @end

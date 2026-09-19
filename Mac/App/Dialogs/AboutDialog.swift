@@ -29,7 +29,7 @@ final class AboutDialog: NSObject {
         let version = DialogKit.label(SZBenchmark.versionWithCPUText, bold: true)
         let date = DialogKit.label(SZBenchmark.engineDateText)
         // static LTEXT MY_COPYRIGHT
-        let copyright = DialogKit.label(Self.copyrightLine)
+        let copyright = DialogKit.label(SZBenchmark.engineCopyrightText)
         // IDT_ABOUT_INFO 2901 (the only localized item, kLangIDs)
         let info = DialogKit.label(Lang.text(2901, "7-Zip is free software"))
         info.maximumNumberOfLines = 4
@@ -60,14 +60,6 @@ final class AboutDialog: NSObject {
         stack.addConstraint(NSLayoutConstraint(item: buttons, attribute: .width, relatedBy: .equal,
                                                toItem: stack, attribute: .width, multiplier: 1, constant: 0))
         DialogKit.install(stack, in: window, parent: parent, minimumWidth: 420)
-    }
-
-    /// SZEngineCopyrightString() is `MY_COPYRIGHT " : " MY_DATE`; the .rc shows only the
-    /// copyright on its own line (the date is IDT_ABOUT_DATE).
-    private static var copyrightLine: String {
-        let full = SZEngineCopyrightString()
-        if let range = full.range(of: " : ") { return String(full[full.startIndex..<range.lowerBound]) }
-        return full
     }
 
     @objc private func homePageClicked() {
