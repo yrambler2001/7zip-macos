@@ -28,3 +28,21 @@ Branch `mac/options`. Worktree `.worktrees/options`. Files owned: `Mac/App/Dialo
 `Mac/scripts/build.sh` succeeds, no warnings in `Mac/` code. No file outside the owned set touched.
 
 Next: unit tests for the settings layer, then verification in the running app with screenshots.
+
+## Phase 5a (unit tests) — 28 tests pass
+
+`Mac/Tests/SevenZipKitTests/SettingsTests.swift` (11 tests): defaults when unset for every group,
+`CBoolPair` tri-state round trips (absent / false / true, including the default-true keys), the
+`-1` removal sentinel and the `-2` dictionary sentinel, the log2 `BlockSize`, per-format option
+enumeration and removal, string-list trimming (100 / 20 / 16 / 10 slots), `FM.Columns.<ID>`,
+change notifications (global + per group), the Finder export, the `FileTypes` table, and that a
+value written through the facade is visible through `SZSettings` under the Windows-style key.
+
+`Settings.swift` and `FileTypes.swift` are symlinked into `Mac/Tests/SevenZipKitTests/` (the test
+target globs that directory and does not depend on the app target), so the tests compile the same
+source the app does. Both files are Foundation-only for that reason. The tests write into the real
+`com.yrambler2001.7zip` domain and snapshot/restore every key they touch with CFPreferences.
+
+Finding: `NWorkDir::CInfo::Load` falls back to `kSystem` only when `Options.WorkDirPath` is
+**absent**; an empty stored string keeps `kSpecified` (`ZipRegistry.cpp:526-533`). 01b section 4.8
+says "missing/empty", which is slightly off.
