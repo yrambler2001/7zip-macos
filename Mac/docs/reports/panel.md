@@ -113,6 +113,7 @@ touched) plus synthesized mouse events for the right-click and the drag, launche
 | Address drop-down | current path first, then every ancestor indented per level, Documents, Computer, the four mounted volumes indented by one, then the history (`panel-19-address-dropdown.png`) |
 | Drag between panels | dragging `beta.txt` to the other panel moved it (same volume ⇒ move), both listings refreshed |
 | Clipboard | Cmd+C puts the name on the pasteboard and the file URL with it; Cmd+V in the other panel copies the file |
+| AlternativeSelection mode | single-selection list with the internal vector: Space toggles and moves down, the "my-selected" rows are painted RGB(255,192,192) and the status bar counts them (`panel-21-alternative-selection.png`) |
 
 Three bugs were found this way and fixed: the icon views rendered nothing (`NSCollectionView`
 reuse raised an uncatchable ObjC exception and the document view was never resized), the menu
