@@ -178,3 +178,61 @@ Layout fixes the run produced: text fields and combos need explicit minimum widt
 `NSGridView` (their intrinsic width is 0), the password row swaps the secure and plain fields
 inside one cell, hidden grid *rows* replace hidden views for `ShowItem_Bool`, and the Options
 sheet is sized after `reload()` with required vertical hugging so its rows cannot overlap.
+
+## Phase 5 — summary
+
+### What was implemented
+
+| Area | Files | Windows source it ports |
+|---|---|---|
+| Update bridge | `Mac/Core/include/SZUpdater.h`, `Mac/Core/SZUpdater.mm` | `GUI/UpdateGUI.cpp` + `UpdateCallbackGUI(2).cpp` over `UI/Common/Update.cpp` (01 §8.5, 02 §2.3) |
+| Dialog model | `Mac/App/Dialogs/CompressModel.swift` | the computation half of `GUI/CompressDialog.cpp` (01b §4.23) |
+| Compress dialog | `Mac/App/Dialogs/CompressDialog.swift` | `IDD_COMPRESS 4000` (01b §4.23) |
+| Compress Options | `Mac/App/Dialogs/CompressOptionsSheet.swift` | `IDD_COMPRESS_OPTIONS 14001` (01b §4.24) |
+| Commands | `Mac/App/Commands/CompressCommands.swift` | `CPanel::AddToArchive` (01 §8.1), `CompressCall.cpp`/`CompressCall2.cpp`, `ContextMenu.cpp` quick commands (03 §1.6, §2.5) |
+| Verification hook | `Mac/App/Dialogs/CompressDemo.swift` | — (harness, inert without `SZ_COMPRESS_DEMO`) |
+| Tests | `Mac/Tests/SevenZipKitTests/UpdaterTests.swift`, `CompressModelTests.swift`, `CompressModel.swift` (symlink) | — |
+| API doc | `Mac/docs/api/compress.md` | — |
+
+Additive-only edits in shared files: one `CompressDemo.installIfRequested()` line and six
+selectors in `Mac/App/MainMenu.swift`, one `#import` in `Mac/Core/include/SevenZipKit.h`,
+section 5 ticks in `Mac/docs/PROGRESS.md`, one request row plus three spec corrections in
+`Mac/docs/requests.md`, one row in `Mac/docs/upstream-patches.md`.
+
+One upstream patch: `CPP/7zip/UI/Common/LoadCodecs.cpp` copies `CArcInfo::TimeFlags` in the
+static `CCodecs::Load()` under `#ifdef __APPLE__` (7 lines). Without it every handler reports
+no timestamp precision and the Options sheet's precision combo is always empty; the Windows
+build takes the 7z.dll path, which already reads the same value.
+
+### How it was verified
+
+- `Mac/scripts/build.sh` from a clean `Mac/build`: succeeds with no warnings in `Mac/` code.
+- `Mac/scripts/test.sh`: **138 tests, 0 failures** (64 of them new here).
+- Every archive the bridge tests create is checked twice: re-opened through `SZFolder` and
+  tested/listed with the console `7zz` built from this tree.
+- One archive is cross-checked byte-for-byte in size against `7zz a -t7z -mx=9 -m0=LZMA2
+  -m0d=16777216b -m0fb=64 -mmt=1 -ms=16777216b` built from the model's own property list
+  (`CompressModelTests.testModelPropertiesMatchTheConsole`): identical.
+- The running app: see Phase 4 above and the nine screenshots.
+
+### Known gaps and follow-ups
+
+1. **Multi-volume archives cannot be re-opened through the bridge.** `SZFolder.folder(forPath:)`
+   has no `IArchiveOpenVolumeCallback`, so `x.7z.001` fails with `SZErrorCodeNotArchive` while
+   the console opens it. Creating volumes works; `testSplitVolumes` verifies the set by
+   concatenating it. Filed for the `extract` scope in `Mac/docs/requests.md`.
+2. **Browse (`IDB_COMPRESS_SET_ARCHIVE 101`) has no per-format filter combo.** `NSSavePanel`
+   has no equivalent of a filter list whose selection switches the archive type, so the format
+   follows the extension the user types or picks. PROGRESS item left unticked.
+3. **Archive-to-archive re-pack** (panel copy between two archive panels) belongs to the panel
+   scope; only the "add files to the open archive" direction is implemented here. Left unticked.
+4. `Mac/Resources/SFX` is an app-target resource, so the unit tests locate the stubs through
+   `SEVENZIP_SFX_DIR`. Request filed for `harness` to add the folder to the framework target.
+5. Alternate data streams and Windows file security are hidden in the Options sheet (01 §9
+   #6, #7); their settings keys still round-trip so a Windows profile survives.
+6. `WriteSfx` has no lang ID, so the port shows the stub as the current file instead of the
+   literal status text Windows shows.
+7. External `Codecs\` DLL methods do not exist on macOS, so `CompressModel.externalMethods` is
+   always empty and the 7z method combo never grows.
+8. `EMailRemoveAfter` cannot be honoured synchronously (the mail app still needs the file), so
+   `7zE-*` temp folders older than a day are purged on the next compress-and-email.
