@@ -34,3 +34,25 @@ Touched outside ownership: two assertions in
 old 6-column list.
 
 Next: Swift unit tests for every operation (new file), then `Mac/docs/api/fsfolder.md`.
+
+## Phase 5 (verification)
+
+`Mac/Tests/SevenZipKitTests/FSFolderTests.swift` (new, 23 tests) with its own
+`FSProgressStub: SZProgressDelegate` — no dependency on the `opsinfra` runner. Everything runs
+against a per-test temporary tree. Covers: all columns and item properties, folders showing no
+size until calculated, symlink listing (file / directory / broken, target as Link), hidden-file
+filtering, packages, create folder / file (incl. collisions), rename (incl. collision and
+`sub/name`), copy to a directory and to an exact path, xattr preservation, move within the
+volume, "cannot move onto itself", CopyFrom + the drag & drop class method, all five overwrite
+answers plus auto-rename, cancellation of an 8 MiB copy through the stub (partial destination
+removed), delete to Trash and permanent delete (incl. a locked / read-only file), calc size on a
+known tree (60 bytes / 2 dirs / 3 files) and its cancellation, flat mode with prefixes,
+descript.ion comments, the volumes root with every column and mount path, change notification
+for the current directory only, the watched directory disappearing, and a RAM-disk test for
+cross-volume copy + move (EXDEV) and for the volumes folder noticing a mount and an unmount.
+
+Two real bugs were found by the tests and fixed: `-stringByExpandingTildeInPath` silently
+dropped the trailing "/" that `CopyTo` uses to distinguish "into this directory" from "to this
+exact name", and a cancelled copy left a truncated destination file behind.
+
+`Mac/scripts/build.sh` clean, `Mac/scripts/test.sh` 40/40.

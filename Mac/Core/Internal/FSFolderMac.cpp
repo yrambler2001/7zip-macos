@@ -357,6 +357,9 @@ static HRESULT CopySymLink(CCopyStateMac &state, const FString &srcPath, const F
 static HRESULT CopyFileData(CCopyStateMac &state, const FString &srcPath, const FString &destPath,
     const struct stat &st)
 {
+  HRESULT failure = S_OK;
+  FString errorPath;
+  bool errorIsErrno = true;
   {
     NIO::CInFile inFile;
     if (!inFile.Open((const char *)srcPath))
@@ -380,21 +383,40 @@ static HRESULT CopyFileData(CCopyStateMac &state, const FString &srcPath, const 
         break;
       if (num < 0)
       {
-        RINOK(SendLastErrorMessage(state.Callback, srcPath))
-        return E_ABORT;
+        failure = E_ABORT;
+        errorPath = srcPath;
+        break;
       }
       size_t processed = 0;
       const ssize_t written = outFile.write_full(buf, (size_t)num, processed);
       if (written != num || processed != (size_t)num)
       {
-        RINOK(SendLastErrorMessage(state.Callback, destPath))
-        return E_ABORT;
+        failure = E_ABORT;
+        errorPath = destPath;
+        break;
       }
       done += (UInt64)num;
       const UInt64 completed = state.StartPos + done;
       // The only cancellation channel: a callback returning != S_OK means "break".
-      RINOK(state.Callback->SetCompleted(&completed))
+      const HRESULT hr = state.Callback->SetCompleted(&completed);
+      if (hr != S_OK)
+      {
+        failure = hr;
+        errorIsErrno = false;
+        break;
+      }
     }
+  }
+  if (failure != S_OK)
+  {
+    // Never leave a truncated destination behind (CopyFileEx does the same on
+    // PROGRESS_CANCEL / error).
+    remove(destPath);
+    if (errorIsErrno)
+    {
+      RINOK(SendLastErrorMessage(state.Callback, errorPath))
+    }
+    return failure;
   }
   CopyAttributes(srcPath, destPath, st);
   return S_OK;

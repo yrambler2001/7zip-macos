@@ -14,6 +14,18 @@ bool AutoRenamePath(FString &fullProcessedPath);
 
 NSString * const SZFileSystemFolderShowHiddenFilesKey = @"FM.ShowHiddenFiles";
 
+// -stringByExpandingTildeInPath also normalizes the path and drops a trailing "/", which is
+// exactly the character CopyTo() uses to tell "into this directory" from "to this name".
+static NSString *SZExpandTildeKeepingSeparator(NSString *path)
+{
+  if (![path hasPrefix:@"~"])
+    return path;
+  NSString *expanded = [path stringByExpandingTildeInPath];
+  if ([path hasSuffix:@"/"] && ![expanded hasSuffix:@"/"])
+    expanded = [expanded stringByAppendingString:@"/"];
+  return expanded;
+}
+
 // ---------------------------------------------------------------------------------------
 // The IFolderOperationsExtractCallback the copy engine needs, backed by an SZProgressDelegate.
 // AskWrite mirrors CExtractCallbackImp::AskWrite (ExtractCallback.cpp:710-807): it only asks
@@ -202,7 +214,7 @@ Z7_COM7F_IMF(CDelegateCopyCallback::AskWrite(
 
 + (SZFileSystemFolder *)folderWithPath:(NSString *)directoryPath error:(NSError **)error
 {
-  const FString path = SZFStringFromNSString([directoryPath stringByExpandingTildeInPath]);
+  const FString path = SZFStringFromNSString(SZExpandTildeKeepingSeparator(directoryPath));
   CFSFolderMac *spec = new CFSFolderMac;
   CMyComPtr<IFolderFolder> raw = spec;
   spec->SetShowHidden([SZSettings boolForKey:SZFileSystemFolderShowHiddenFilesKey defaultValue:YES] ? true : false);
@@ -345,7 +357,7 @@ static CRecordVector<UInt32> SZIndexVector(NSArray<NSNumber *> *indexes)
   CRecordVector<UInt32> v = SZIndexVector(indexes);
   if (v.IsEmpty())
     return YES;
-  const UString dest = SZUStringFromNSString([destinationPath stringByExpandingTildeInPath]);
+  const UString dest = SZUStringFromNSString(SZExpandTildeKeepingSeparator(destinationPath));
   CMyComPtr<IFolderOperationsExtractCallback> callback = new CDelegateCopyCallback(delegate);
   NSString *msg = nil;
   const HRESULT hr = SZRunCatching(&msg, [&]() {
@@ -380,8 +392,8 @@ static CRecordVector<UInt32> SZIndexVector(NSArray<NSNumber *> *indexes)
     return YES;
   UStringVector paths;
   for (NSString *p in sourcePaths)
-    paths.Add(SZUStringFromNSString([p stringByExpandingTildeInPath]));
-  FString destPrefix = SZFStringFromNSString([destinationDirectory stringByExpandingTildeInPath]);
+    paths.Add(SZUStringFromNSString(SZExpandTildeKeepingSeparator(p)));
+  FString destPrefix = SZFStringFromNSString(SZExpandTildeKeepingSeparator(destinationDirectory));
   NWindows::NFile::NName::NormalizeDirPathPrefix(destPrefix);
   CMyComPtr<IFolderOperationsExtractCallback> callback = new CDelegateCopyCallback(delegate);
   NSString *msg = nil;
