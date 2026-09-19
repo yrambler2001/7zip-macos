@@ -45,6 +45,7 @@ enum MainMenu {
         OpsInfraDemo.installIfRequested()   // SZ_OPSINFRA_DEMO: opsinfra scope verification hook
         ToolsCommands.install()             // tools scope: real About dialog on the IDM_ABOUT items
         ExtractVerificationContext.installIfRequested()   // SZ_EXTRACT_CONTEXT: extract scope verification hook
+        CompressDemo.installIfRequested()   // SZ_COMPRESS_DEMO: compress scope verification hook
         let bar = NSMenu(title: "MainMenu")
         bar.addItem(appMenu())
         bar.addItem(fileMenu())
@@ -440,4 +441,12 @@ final class FavoritesMenuDelegate: NSObject, NSMenuDelegate {
     // 7-Zip Explorer commands (kSevenZipStartMenuID 1100 + kExtractHere / kExtractTo, 01 §2.9)
     func extractHere(_ sender: Any?)
     func extractToSubfolder(_ sender: Any?)
+    // Explorer context-menu compress commands (ContextMenu.cpp:278-283); 7zFM itself has no
+    // menu items for these, the `finder` scope wires them into the Finder menu.
+    func compressToSevenZip(_ sender: Any?)          // kCompressTo7z
+    func compressToZip(_ sender: Any?)               // kCompressToZip
+    func compressAndEmail(_ sender: Any?)            // kCompressEmail
+    func compressToSevenZipAndEmail(_ sender: Any?)  // kCompressTo7zEmail
+    func compressToZipAndEmail(_ sender: Any?)       // kCompressToZipEmail
+    func compressAddToOpenArchive(_ sender: Any?)    // add files to the open archive (01 3.10)
 }

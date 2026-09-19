@@ -23,6 +23,8 @@ agent. Add a line, never rewrite someone else's.
 | `extract` | `panel` | `PanelViewController` implements `fileOpenOutside(_:)` and disables it unless the folder is a file system, so Open Outside never reaches the archive branch. Call `ItemOpenCommands.openOutside()` (or let the command scope own the selector) so an item inside an archive is extracted to a `7zO` temp folder and opened. | open |
 | `extract` | `panel` | Drag-out of archive members: use `ArchiveDragOut.promisedNames(indices:from:)` / `.extract(indices:from:to:...)` / `.removeTemporaryDirectory(_:)` from `Mac/App/Support/TempOpenCommands.swift` (documented in `Mac/docs/api/extract.md` §5) instead of calling the folder directly. | open |
 | `extract` | `tools` | Extraction can hash on the fly (`-scrc<method>`, `Extract()`'s `IHashCalc*`). `SZArchiveExtractor` passes NULL; wire it to the hash-results dialog when that exists. | open |
+| `compress` | `extract` / `SZArchiveOpener` owner | `SZFolder.folder(forPath:)` / `SZArchiveOpener.openArchive(atPath:)` cannot open a multi-volume set: opening `x.7z.001` fails with `SZErrorCodeNotArchive` because no `IArchiveOpenVolumeCallback` (`COpenCallbackImp`) is supplied. The console `7zz` opens the same file fine. `UpdaterOptionsTests.testSplitVolumes` works around it by concatenating the volumes. | open |
+| `compress` | `harness` (`project.yml`) | Add `Resources/SFX` to the **SevenZipKit** framework's resources (it is an app-target resource today), so `SZUpdater.defaultSFXModulePath` finds `7z.sfx` from the unit-test bundle without the `SEVENZIP_SFX_DIR` override. | open |
 
 ## Spec corrections found during implementation
 
@@ -51,3 +53,6 @@ These override the inventory documents. Trust this list over the inventory when 
 - Retroactive tick needed: the `scaffold` section of `PROGRESS.md` is 0/57 because the checklist
 - `mac/harness` (4 commits, work staged): needs its `verify.sh` run, which waits on the shared
 - `mac/tools` in progress.
+- `AddMemSize` (CompressDialog.cpp:2717) switches to GB only at **>= 2 GB** (`size >= 1 << 31`), so the memory-use combo shows `1024 MB`, not `1 GB`, and its top 64-bit item is `2 << 43` = `16384 MB`, not `3 << 43`; `01b-fm-dialogs-settings.md` section 4.23 says `3 << 43`.
+- `AddMemUsage` (CompressDialog.cpp:3072) uses MB up to **and including** 16 GB, so the memory line reads `16384 MB / … / 16384 MB` on a 16 GB machine.
+- The static `CCodecs::Load()` (`LoadCodecs.cpp:808-...`) never copied `CArcInfo::TimeFlags`, so `Get_TimePrecFlags()` / `Get_DefaultTimePrec()` were 0 in this build and the Compress Options timestamp-precision combo was empty. Patched under `#ifdef __APPLE__` (`Mac/docs/upstream-patches.md`). Windows uses the 7z.dll path, which reads the same value from `NHandlerPropID::kTimeFlags`.

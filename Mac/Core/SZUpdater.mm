@@ -1,0 +1,853 @@
+// SZUpdater.mm -- see include/SZUpdater.h.
+//
+// The port of CPP/7zip/UI/GUI/UpdateGUI.cpp (+ UpdateCallbackGUI.cpp,
+// UpdateCallbackGUI2.cpp) on top of the engine's own UpdateArchive()
+// (CPP/7zip/UI/Common/Update.cpp). Everything the Windows product does after the Compress
+// dialog closes happens here; the dialog itself is Swift (Mac/App/Dialogs/Compress*.swift).
+
+#import "SZUpdater.h"
+
+#import "Internal/SZBridgeUtils.h"
+#import "Internal/SZCallbackAdapters.h"
+#import "SZCodecs.h"
+#import "SZError.h"
+
+// Engine headers this file needs beyond Internal/SZEngine.h, with the same BOOL rename
+// discipline (MyWindows.h `typedef int BOOL` clashes with Objective-C's BOOL).
+#pragma push_macro("BOOL")
+#undef BOOL
+#define BOOL SZ_ENGINE_BOOL
+#include "../../CPP/Common/Wildcard.h"
+#include "../../CPP/7zip/UI/Common/ArchiveName.h"
+#include "../../CPP/7zip/UI/Common/DirItem.h"
+#include "../../CPP/7zip/UI/Common/Update.h"
+#include "../../CPP/7zip/UI/Common/UpdateAction.h"
+#include "../../CPP/7zip/UI/Common/WorkDir.h"
+#pragma pop_macro("BOOL")
+
+using namespace NWindows;
+
+// ---------------------------------------------------------------------------
+#pragma mark - SZUpdateProperty
+
+@implementation SZUpdateProperty
+
++ (instancetype)propertyWithName:(NSString *)name value:(NSString *)value
+{
+  SZUpdateProperty *p = [[SZUpdateProperty alloc] init];
+  if (p)
+  {
+    p->_name = [name copy];
+    p->_value = [(value ?: @"") copy];
+  }
+  return p;
+}
+
+- (id)copyWithZone:(NSZone *)zone
+{
+  (void)zone;
+  return [SZUpdateProperty propertyWithName:_name value:_value];
+}
+
+- (NSString *)switchText
+{
+  return _value.length == 0 ? _name : [NSString stringWithFormat:@"%@=%@", _name, _value];
+}
+
+- (NSString *)description
+{
+  return [NSString stringWithFormat:@"<SZUpdateProperty %@>", self.switchText];
+}
+
+- (BOOL)isEqual:(id)object
+{
+  if (![object isKindOfClass:[SZUpdateProperty class]])
+    return NO;
+  SZUpdateProperty *o = object;
+  return [_name isEqualToString:o.name] && [_value isEqualToString:o.value];
+}
+
+- (NSUInteger)hash { return _name.hash ^ _value.hash; }
+
+@end
+
+// ---------------------------------------------------------------------------
+#pragma mark - SZUpdateOptions
+
+@implementation SZUpdateOptions
+
+- (instancetype)initWithArchivePath:(NSString *)archivePath
+{
+  if ((self = [super init]))
+  {
+    _archivePath = [archivePath copy];
+    _formatIndex = -1;
+    _properties = @[];
+    _volumeSizes = @[];
+    _updateMode = SZUpdateModeAdd;
+    _pathMode = SZCompressPathModeRelative;
+    _nameMode = SZArchiveNameModeSmart;
+  }
+  return self;
+}
+
+- (instancetype)init { return [self initWithArchivePath:@""]; }
+
++ (instancetype)optionsWithArchivePath:(NSString *)archivePath
+{
+  return [[self alloc] initWithArchivePath:archivePath];
+}
+
+- (id)copyWithZone:(NSZone *)zone
+{
+  (void)zone;
+  SZUpdateOptions *o = [[SZUpdateOptions alloc] initWithArchivePath:_archivePath];
+  o.formatName = _formatName;
+  o.formatIndex = _formatIndex;
+  o.properties = _properties;
+  o.updateMode = _updateMode;
+  o.pathMode = _pathMode;
+  o.nameMode = _nameMode;
+  o.sfxMode = _sfxMode;
+  o.sfxModulePath = _sfxModulePath;
+  o.volumeSizes = _volumeSizes;
+  o.password = _password;
+  o.asksPassword = _asksPassword;
+  o.deleteAfterCompressing = _deleteAfterCompressing;
+  o.setArchiveMTime = _setArchiveMTime;
+  o.openShareForWrite = _openShareForWrite;
+  o.stopAfterOpenError = _stopAfterOpenError;
+  o.preserveATime = _preserveATime;
+  o.storeSymLinks = _storeSymLinks;
+  o.storeHardLinks = _storeHardLinks;
+  o.storeAltStreams = _storeAltStreams;
+  o.storeNtSecurity = _storeNtSecurity;
+  o.workingDirectory = _workingDirectory;
+  o.emailMode = _emailMode;
+  o.emailRemoveAfter = _emailRemoveAfter;
+  o.emailAddress = _emailAddress;
+  return o;
+}
+
+@end
+
+// ---------------------------------------------------------------------------
+#pragma mark - SZUpdateResult
+
+@interface SZUpdateResult ()
+@property (nonatomic, copy) NSString *archivePath;
+@property (nonatomic) uint64_t archiveSize;
+@property (nonatomic) NSUInteger volumeCount;
+@property (nonatomic) BOOL isMultiVolume;
+@property (nonatomic) uint64_t filesProcessed;
+@property (nonatomic) uint64_t scannedFileCount;
+@property (nonatomic) uint64_t scannedTotalSize;
+@property (nonatomic) NSUInteger errorCount;
+@property (nonatomic, copy) NSArray<NSString *> *failedPaths;
+@property (nonatomic) BOOL passwordWasAsked;
+@property (nonatomic, copy, nullable) NSString *password;
+@property (nonatomic, copy) NSArray<NSString *> *deletedPaths;
+@end
+
+@implementation SZUpdateResult
+
+- (NSString *)description
+{
+  return [NSString stringWithFormat:@"<SZUpdateResult %@ size=%llu volumes=%lu files=%llu errors=%lu>",
+                                    _archivePath, (unsigned long long)_archiveSize,
+                                    (unsigned long)_volumeCount, (unsigned long long)_filesProcessed,
+                                    (unsigned long)_errorCount];
+}
+
+@end
+
+// ---------------------------------------------------------------------------
+#pragma mark - The IUpdateCallbackUI2 adapter
+
+/// CUpdateCallbackGUI / CUpdateCallbackGUI2 (7zG) forwarding to an id<SZProgressDelegate>.
+/// Plain C++ object, not COM: IUpdateCallbackUI2 and IOpenCallbackUI are non-COM pure
+/// interfaces. Lives on the worker thread only, like every other adapter
+/// (Internal/SZCallbackAdapters.h "OWNERSHIP RULE").
+namespace {
+
+// The status IDs k_UpdNotifyLangs maps NUpdateNotifyOp onto (UpdateCallbackGUI2.cpp:17-27).
+const SZProgressStatus kUpdateNotifyStatus[] =
+{
+  SZProgressStatusAdd,        // NUpdateNotifyOp::kAdd
+  SZProgressStatusUpdate,     // kUpdate
+  SZProgressStatusAnalyze,    // kAnalyze
+  SZProgressStatusReplicate,  // kReplicate
+  SZProgressStatusRepack,     // kRepack
+  SZProgressStatusSkipping,   // kSkip
+  SZProgressStatusDelete,     // kDelete
+  SZProgressStatusHeader      // kHeader
+};
+
+class CSZUpdateUICallback Z7_final:
+  public IOpenCallbackUI,
+  public IUpdateCallbackUI2,
+  public CSZCallbackBase
+{
+  Z7_IFACE_IMP(IOpenCallbackUI)
+  Z7_IFACE_IMP(IUpdateCallbackUI)
+  Z7_IFACE_IMP(IDirItemsCallback)
+  Z7_IFACE_IMP(IUpdateCallbackUI2)
+
+public:
+  /// `-p` without a value: ask the delegate for the encryption password
+  /// (CUpdateCallbackGUI::AskPassword -> ShowAskPasswordDialog). Named differently from the
+  /// base class's AskPassword(BSTR*) helper so the helper stays reachable.
+  bool AskPasswordForEncryption = false;
+  UInt64 NumFiles = 0;
+  UInt32 NumErrors = 0;
+  /// CUpdateCallbackGUI::FailedFiles: scan / open / read failures (7zG exit code 1).
+  __strong NSMutableArray<NSString *> *FailedFiles = [NSMutableArray array];
+  /// The sources `-sdel` removed, in order.
+  __strong NSMutableArray<NSString *> *DeletedFiles = [NSMutableArray array];
+  UInt64 ScannedFiles = 0;
+  UInt64 ScannedBytes = 0;
+  CFinishArchiveStat FinishStat;
+
+private:
+  // MoveArc_* status line (CUpdateCallbackGUI2::MoveArc_UpdateStatus).
+  UInt64 _moveTotal = 0;
+  UInt64 _moveCurrent = 0;
+  UInt64 _movePercents = 0;
+
+  HRESULT SetOperationStatus(UInt32 notifyOp, const wchar_t *name, bool isDir)
+  {
+    if (notifyOp < Z7_ARRAY_SIZE(kUpdateNotifyStatus))
+      SetStatus(kUpdateNotifyStatus[notifyOp]);
+    SetCurrentFile(name, isDir);
+    return CheckBreak();
+  }
+};
+
+// ---- IUpdateCallbackUI ----
+
+HRESULT CSZUpdateUICallback::WriteSfx(const wchar_t *name, UInt64 size)
+{
+  (void)size;
+  // CUpdateCallbackGUI::WriteSfx sets the literal (unlocalized) status "WriteSfx"; there is no
+  // lang ID for it, so the port shows the stub as the current file instead.
+  SetCurrentFile(name, false);
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::SetTotal(UInt64 size)
+{
+  if (Delegate)
+    [Delegate progressSetTotal:size];
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::SetCompleted(const UInt64 *completeValue)
+{
+  if (completeValue && Delegate)
+    [Delegate progressSetCompleted:*completeValue];
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::SetRatioInfo(const UInt64 *inSize, const UInt64 *outSize)
+{
+  if (Delegate)
+    [Delegate progressSetRatioInfoInSize:(inSize ? *inSize : 0) outSize:(outSize ? *outSize : 0)];
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::CheckBreak()
+{
+  return CSZCallbackBase::CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::SetNumItems(const CArcToDoStat &stat)
+{
+  SetTotalFiles(stat.Get_NumDataItems_Total());
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::GetStream(const wchar_t *name, bool isDir, bool /* isAnti */, UInt32 mode)
+{
+  return SetOperationStatus(mode, name, isDir);
+}
+
+HRESULT CSZUpdateUICallback::OpenFileError(const FString &path, DWORD systemError)
+{
+  // CUpdateCallbackGUI::OpenFileError returns S_FALSE: list the error and skip the file.
+  [FailedFiles addObject:SZStringFromFString(path)];
+  NumErrors++;
+  ShowErrorCodeWithName(HRESULT_FROM_WIN32(systemError), fs2us(path).Ptr());
+  return S_FALSE;
+}
+
+HRESULT CSZUpdateUICallback::ReadingFileError(const FString &path, DWORD systemError)
+{
+  [FailedFiles addObject:SZStringFromFString(path)];
+  NumErrors++;
+  ShowErrorCodeWithName(HRESULT_FROM_WIN32(systemError), fs2us(path).Ptr());
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::SetOperationResult(Int32 /* operationResult */)
+{
+  NumFiles++;
+  if (Delegate)
+    [Delegate progressSetNumFilesProcessed:NumFiles];
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::ReportExtractResult(Int32 opRes, Int32 isEncrypted, const wchar_t *name)
+{
+  // Re-packing existing items: SetExtractErrorMessage + the error list.
+  if (opRes != NArchive::NExtract::NOperationResult::kOK)
+    NumErrors++;
+  ReportOperationResult(opRes, isEncrypted, name);
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::ReportUpdateOperation(UInt32 op, const wchar_t *name, bool isDir)
+{
+  return SetOperationStatus(op, name, isDir);
+}
+
+HRESULT CSZUpdateUICallback::CryptoGetTextPassword2(Int32 *passwordIsDefined, BSTR *password)
+{
+  *password = NULL;
+  if (passwordIsDefined)
+    *passwordIsDefined = BoolToInt(PasswordIsDefined);
+  if (!PasswordIsDefined && AskPasswordForEncryption)
+  {
+    // CUpdateCallbackGUI2::ShowAskPasswordDialog: ICryptoGetTextPassword2 semantics —
+    // nil + cancelled == false means "no password", cancelled == YES means E_ABORT.
+    BOOL cancelled = NO;
+    NSString *answer = nil;
+    if (Delegate && [Delegate respondsToSelector:@selector(progressAskPasswordForEncryptionCancelled:)])
+      answer = [Delegate progressAskPasswordForEncryptionCancelled:&cancelled];
+    if (cancelled)
+      return E_ABORT;
+    PasswordWasAsked = true;
+    if (answer)
+    {
+      Password = SZUStringFromNSString(answer);
+      PasswordIsDefined = true;
+    }
+  }
+  if (passwordIsDefined)
+    *passwordIsDefined = BoolToInt(PasswordIsDefined);
+  return StringToBstr(Password, password);
+}
+
+HRESULT CSZUpdateUICallback::CryptoGetTextPassword(BSTR *password)
+{
+  return CryptoGetTextPassword2(NULL, password);
+}
+
+HRESULT CSZUpdateUICallback::ShowDeleteFile(const wchar_t *name, bool isDir)
+{
+  return SetOperationStatus(NUpdateNotifyOp::kDelete, name, isDir);
+}
+
+// ---- IDirItemsCallback ----
+
+HRESULT CSZUpdateUICallback::ScanError(const FString &path, DWORD systemError)
+{
+  [FailedFiles addObject:SZStringFromFString(path)];
+  NumErrors++;
+  ShowErrorCodeWithName(HRESULT_FROM_WIN32(systemError), fs2us(path).Ptr());
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::ScanProgress(const CDirItemsStat &st, const FString &path, bool isDir)
+{
+  if (Delegate && [Delegate respondsToSelector:@selector(progressScanFolders:files:totalSize:path:isDirectory:)])
+    [Delegate progressScanFolders:st.NumDirs
+                            files:st.NumFiles + st.NumAltStreams
+                        totalSize:st.GetTotalBytes()
+                             path:SZStringFromFString(path)
+                      isDirectory:isDir ? YES : NO];
+  return CheckBreak();
+}
+
+// ---- IUpdateCallbackUI2 ----
+
+HRESULT CSZUpdateUICallback::OpenResult(const CCodecs *codecs, const CArchiveLink &arcLink,
+                                        const wchar_t *name, HRESULT result)
+{
+  // OpenResult_GUI lives in the Windows FileManager; what matters for the port is the
+  // IDS_CANT_OPEN_ARCHIVE 3002 / IDS_UPDATE_NOT_SUPPORTED case when an existing archive is
+  // being updated (01 8.5 step 3).
+  (void)codecs;
+  (void)arcLink;
+  if (result == S_OK)
+    return S_OK;
+  NSString *text = (result == S_FALSE) ? @"Cannot open file as archive"
+                                       : [SZErrors messageForHRESULT:(uint32_t)result];
+  NumErrors++;
+  ShowMessageWithName(text, name);
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::StartScanning()
+{
+  SetStatus(SZProgressStatusScanning);
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::FinishScanning(const CDirItemsStat &st)
+{
+  ScannedFiles = st.NumFiles + st.NumAltStreams;
+  ScannedBytes = st.GetTotalBytes();
+  if (Delegate && [Delegate respondsToSelector:@selector(progressScanFolders:files:totalSize:path:isDirectory:)])
+    [Delegate progressScanFolders:st.NumDirs
+                            files:ScannedFiles
+                        totalSize:ScannedBytes
+                             path:@""
+                      isDirectory:YES];
+  SetStatus(SZProgressStatusNone);
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::StartOpenArchive(const wchar_t * /* name */) { return S_OK; }
+
+HRESULT CSZUpdateUICallback::StartArchive(const wchar_t *name, bool /* updating */)
+{
+  SetStatus(SZProgressStatusCompressing);
+  if (Delegate && [Delegate respondsToSelector:@selector(progressSetTitleFileName:)])
+    [Delegate progressSetTitleFileName:SZStringFromWChars(name, name ? (unsigned)MyStringLen(name) : 0)];
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::FinishArchive(const CFinishArchiveStat &st)
+{
+  FinishStat = st;
+  SetStatus(SZProgressStatusNone);
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::DeletingAfterArchiving(const FString &path, bool isDir)
+{
+  [DeletedFiles addObject:SZStringFromFString(path)];
+  SetStatus(SZProgressStatusRemoving);
+  SetCurrentFile(fs2us(path).Ptr(), isDir);
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::FinishDeletingAfterArchiving()
+{
+  SetStatus(SZProgressStatusNone);
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::MoveArc_Start(const wchar_t *srcTempPath, const wchar_t *destFinalPath,
+                                           UInt64 totalSize, Int32 /* updateMode */)
+{
+  _movePercents = 0;
+  _moveTotal = totalSize;
+  _moveCurrent = 0;
+  if (Delegate && [Delegate respondsToSelector:@selector(progressMoveArchiveFrom:toPath:size:)])
+    [Delegate progressMoveArchiveFrom:SZStringFromWChars(srcTempPath, srcTempPath ? (unsigned)MyStringLen(srcTempPath) : 0)
+                              toPath:SZStringFromWChars(destFinalPath, destFinalPath ? (unsigned)MyStringLen(destFinalPath) : 0)
+                                size:totalSize];
+  SetStatus(SZProgressStatusMoving);
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::MoveArc_Progress(UInt64 totalSize, UInt64 currentSize)
+{
+  _moveTotal = totalSize;
+  _moveCurrent = currentSize;
+  UInt64 percents = 0;
+  if (totalSize != 0)
+    percents = (totalSize < ((UInt64)1 << 57)) ? currentSize * 100 / totalSize
+                                              : currentSize / (totalSize / 100);
+  if (percents == _movePercents)
+    return CheckBreak();
+  _movePercents = percents;
+  if (Delegate && [Delegate respondsToSelector:@selector(progressMoveArchiveCompleted:total:)])
+    [Delegate progressMoveArchiveCompleted:currentSize total:totalSize];
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::MoveArc_Finish()
+{
+  if (Delegate && [Delegate respondsToSelector:@selector(progressMoveArchiveFinished)])
+    [Delegate progressMoveArchiveFinished];
+  SetStatus(SZProgressStatusNone);
+  return S_OK;
+}
+
+// ---- IOpenCallbackUI (opening the archive that is being updated) ----
+
+HRESULT CSZUpdateUICallback::Open_CheckBreak() { return CheckBreak(); }
+
+HRESULT CSZUpdateUICallback::Open_SetTotal(const UInt64 * /* files */, const UInt64 * /* bytes */)
+{
+  return S_OK;
+}
+
+HRESULT CSZUpdateUICallback::Open_SetCompleted(const UInt64 * /* files */, const UInt64 * /* bytes */)
+{
+  return CheckBreak();
+}
+
+HRESULT CSZUpdateUICallback::Open_Finished() { return S_OK; }
+
+HRESULT CSZUpdateUICallback::Open_CryptoGetTextPassword(BSTR *password)
+{
+  // Re-opening an encrypted archive to update it: this is the *decryption* password, asked
+  // like everywhere else (ICryptoGetTextPassword).
+  PasswordWasAsked = true;
+  if (PasswordIsDefined)
+    return StringToBstr(Password, password);
+  return CSZCallbackBase::AskPassword(password);
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+#pragma mark - Option translation
+
+static const NUpdateArchive::CActionSet *SZActionSetForUpdateMode(SZUpdateMode mode)
+{
+  // g_UpdateMode_Pairs (UpdateGUI.cpp:290-296) + the console `d` command.
+  switch (mode)
+  {
+    case SZUpdateModeAdd:    return &NUpdateArchive::k_ActionSet_Add;
+    case SZUpdateModeUpdate: return &NUpdateArchive::k_ActionSet_Update;
+    case SZUpdateModeFresh:  return &NUpdateArchive::k_ActionSet_Fresh;
+    case SZUpdateModeSync:   return &NUpdateArchive::k_ActionSet_Sync;
+    case SZUpdateModeDelete: return &NUpdateArchive::k_ActionSet_Delete;
+  }
+  return &NUpdateArchive::k_ActionSet_Add;
+}
+
+static NWildcard::ECensorPathMode SZCensorPathMode(SZCompressPathMode mode)
+{
+  switch (mode)
+  {
+    case SZCompressPathModeRelative: return NWildcard::k_RelatPath;
+    case SZCompressPathModeFull:     return NWildcard::k_FullPath;
+    case SZCompressPathModeAbsolute: return NWildcard::k_AbsPath;
+  }
+  return NWildcard::k_RelatPath;
+}
+
+static EArcNameMode SZEngineArcNameMode(SZArchiveNameMode mode)
+{
+  switch (mode)
+  {
+    case SZArchiveNameModeSmart: return k_ArcNameMode_Smart;
+    case SZArchiveNameModeExact: return k_ArcNameMode_Exact;
+    case SZArchiveNameModeAdd:   return k_ArcNameMode_Add;
+  }
+  return k_ArcNameMode_Smart;
+}
+
+static void SZSetBoolPair(CBoolPair &pair, NSNumber *value)
+{
+  if (!value)
+  {
+    pair.Def = false;
+    pair.Val = false;
+    return;
+  }
+  pair.Def = true;
+  pair.Val = value.boolValue ? true : false;
+}
+
+/// The format index to compress with: explicit index, then the name, then the path
+/// (`CCodecs::FindFormatForArchiveName`, what `7z a x.zip` does). -1 when nothing matches.
+static int SZResolveFormatIndex(CCodecs *codecs, SZUpdateOptions *options)
+{
+  if (options.formatIndex >= 0 && options.formatIndex < (NSInteger)codecs->Formats.Size())
+    return (int)options.formatIndex;
+  if (options.formatName.length != 0)
+  {
+    const int i = codecs->FindFormatForArchiveType(SZUStringFromNSString(options.formatName));
+    if (i >= 0)
+      return i;
+  }
+  return codecs->FindFormatForArchiveName(SZUStringFromNSString(options.archivePath));
+}
+
+// ---------------------------------------------------------------------------
+#pragma mark - SZUpdater
+
+@implementation SZUpdater
+
++ (nullable NSString *)sfxModulePathNamed:(NSString *)fileName
+{
+  // The stubs live in the app bundle's Resources/SFX (Mac/project.yml). A dev/test override
+  // through SEVENZIP_SFX_DIR comes first so the unit tests can find them without the app.
+  NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+  const char *env = getenv("SEVENZIP_SFX_DIR");
+  if (env && *env)
+    [candidates addObject:[@(env) stringByAppendingPathComponent:fileName]];
+  NSString *rel = [@"SFX" stringByAppendingPathComponent:fileName];
+  for (NSBundle *bundle in @[ [NSBundle mainBundle], [NSBundle bundleForClass:[SZUpdater class]] ])
+  {
+    NSString *r = bundle.resourcePath;
+    if (r)
+    {
+      [candidates addObject:[r stringByAppendingPathComponent:rel]];
+      [candidates addObject:[r stringByAppendingPathComponent:fileName]];
+    }
+  }
+  NSFileManager *fm = [NSFileManager defaultManager];
+  for (NSString *candidate in candidates)
+    if ([fm fileExistsAtPath:candidate])
+      return candidate;
+  return nil;
+}
+
++ (nullable NSString *)defaultSFXModulePath
+{
+  // kDefaultSfxModule = "7z.sfx" (UpdateGUI.cpp:31).
+  return [self sfxModulePathNamed:@"7z.sfx"];
+}
+
++ (BOOL)formatSupportsUpdate:(NSString *)formatName
+{
+  SZFormatInfo *info = [SZCodecs formatNamed:formatName];
+  return info ? info.updateEnabled : NO;
+}
+
++ (NSString *)archiveBaseNameForItemPaths:(NSArray<NSString *> *)itemPaths
+                                   isHash:(BOOL)isHash
+                                 baseName:(NSString **)baseNameOut
+{
+  UStringVector paths;
+  for (NSString *p in itemPaths)
+    paths.Add(SZUStringFromNSString(p));
+  UString baseName;
+  UString name;
+  const HRESULT hr = SZRunCatching(NULL, [&]() -> HRESULT {
+    name = CreateArchiveName(paths, isHash ? true : false, NULL, baseName);
+    return S_OK;
+  });
+  NSString *result = (hr == S_OK) ? SZStringFromUString(name) : @"Archive";
+  if (baseNameOut)
+    *baseNameOut = (hr == S_OK) ? SZStringFromUString(baseName) : result;
+  return result;
+}
+
++ (nullable SZUpdateResult *)updateWithOptions:(SZUpdateOptions *)options
+                                   sourcePaths:(NSArray<NSString *> *)sourcePaths
+                                      progress:(nullable id<SZProgressDelegate>)progress
+                                         error:(NSError **)error
+{
+  if (![SZCodecs loadCodecs:error])
+    return nil;
+  if (options.archivePath.length == 0)
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeInvalidArgument message:@"No archive path given"];
+    return nil;
+  }
+  // Update.cpp:1164 rejects volumes + email; 01 8.5 step 4.
+  if (options.emailMode && options.volumeSizes.count > 0)
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeNotImplemented
+                              message:@"Splitting to volumes is not supported in email mode"];
+    return nil;
+  }
+
+  CCodecs *codecs = g_CodecsObj;
+  const int formatIndex = SZResolveFormatIndex(codecs, options);
+  if (formatIndex < 0 || !codecs->Formats[(unsigned)formatIndex].UpdateEnabled)
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeUnsupported
+                              message:@"Update operations are not supported for this archive."];
+    return nil;
+  }
+  const CArcInfoEx &arcInfo = codecs->Formats[(unsigned)formatIndex];
+
+  NSString *sfxModule = nil;
+  if (options.sfxMode)
+  {
+    sfxModule = options.sfxModulePath ?: [SZUpdater defaultSFXModulePath];
+    if (sfxModule.length == 0)
+    {
+      if (error)
+        *error = [SZErrors errorWithCode:SZErrorCodeFileNotFound
+                                message:@"SFX file is not specified"];
+      return nil;
+    }
+  }
+
+  SZUpdateResult *result = [[SZUpdateResult alloc] init];
+  NSString *finalPath = options.archivePath;
+  NSString *engineMessage = nil;
+
+  const HRESULT hr = SZRunCatching(&engineMessage, [&]() -> HRESULT {
+    CUpdateOptions uo;
+
+    // ---- the action set (the "Update mode:" combo) ----
+    uo.Commands.Clear();
+    {
+      CUpdateArchiveCommand command;
+      command.ActionSet = *SZActionSetForUpdateMode(options.updateMode);
+      uo.Commands.Add(command);
+    }
+
+    // ---- format + -m properties (already in the documented emission order) ----
+    uo.MethodMode.Type = COpenType();
+    uo.MethodMode.Type.FormatIndex = formatIndex;
+    uo.MethodMode.Type_Defined = true;
+    for (SZUpdateProperty *p in options.properties)
+    {
+      CProperty property;
+      property.Name = SZUStringFromNSString(p.name);
+      property.Value = SZUStringFromNSString(p.value);
+      uo.MethodMode.Properties.Add(property);
+    }
+
+    // ---- archive path (UpdateGUI.cpp:519-525) ----
+    uo.ArcNameMode = SZEngineArcNameMode(options.nameMode);
+    uo.ArchivePath.VolExtension = arcInfo.GetMainExt();
+    // kSFXExtension is "" in Update.cpp on non-Windows; the port keeps the Windows stubs and
+    // therefore the Windows ".exe" name (00-orchestration "Windows-only").
+    uo.ArchivePath.BaseExtension = options.sfxMode ? UString("exe") : uo.ArchivePath.VolExtension;
+    uo.ArchivePath.ParseFromPath(SZUStringFromNSString(options.archivePath), uo.ArcNameMode);
+
+    uo.PathMode = SZCensorPathMode(options.pathMode);
+    uo.SfxMode = options.sfxMode ? true : false;
+    if (options.sfxMode)
+      uo.SfxModule = SZFStringFromNSString(sfxModule);
+
+    for (NSNumber *size in options.volumeSizes)
+      uo.VolumesSizes.Add(size.unsignedLongLongValue);
+
+    uo.DeleteAfterCompressing = options.deleteAfterCompressing ? true : false;
+    uo.SetArcMTime = options.setArchiveMTime ? true : false;
+    uo.OpenShareForWrite = options.openShareForWrite ? true : false;
+    uo.StopAfterOpenError = options.stopAfterOpenError ? true : false;
+    if (options.preserveATime)
+      uo.PreserveATime = options.preserveATime.boolValue ? true : false;
+    SZSetBoolPair(uo.SymLinks, options.storeSymLinks);
+    SZSetBoolPair(uo.HardLinks, options.storeHardLinks);
+    SZSetBoolPair(uo.AltStreams, options.storeAltStreams);
+    SZSetBoolPair(uo.NtSecurity, options.storeNtSecurity);
+
+    uo.EMailMode = options.emailMode ? true : false;
+    uo.EMailRemoveAfter = options.emailRemoveAfter ? true : false;
+    uo.EMailAddress = SZUStringFromNSString(options.emailAddress);
+
+    // ---- working directory: the Options > Folders policy (01b 4.8), UpdateGUI.cpp:527-539 ----
+    if (options.workingDirectory)
+      uo.WorkingDir = SZFStringFromNSString(options.workingDirectory);
+    else
+    {
+      NWorkDir::CInfo workDirInfo;
+      workDirInfo.Load();
+      if (workDirInfo.Mode != NWorkDir::NMode::kCurrent)
+      {
+        FString fullPath;
+        NFile::NDir::MyGetFullPathName(SZFStringFromNSString(options.archivePath), fullPath);
+        FString namePart;
+        uo.WorkingDir = GetWorkDir(workDirInfo, fullPath, namePart);
+        NFile::NDir::CreateComplexDir(uo.WorkingDir);
+      }
+    }
+
+    // ---- the item list: 7zG's `-i#<map>` list, no wildcard expansion ----
+    NWildcard::CCensor censor;
+    for (NSString *path in sourcePaths)
+      censor.AddPreItem_NoWildcard(SZUStringFromNSString(path));
+    if (sourcePaths.count == 0)
+      censor.AddPreItem_Wildcard();
+
+    // ---- the callback ----
+    CSZUpdateUICallback callback;
+    callback.Delegate = progress;
+    callback.ArchivePath = options.archivePath;
+    callback.AskPasswordForEncryption = options.asksPassword ? true : false;
+    if (options.password.length != 0)
+    {
+      callback.Password = SZUStringFromNSString(options.password);
+      callback.PasswordIsDefined = true;
+    }
+
+    CObjectVector<COpenType> types;
+    types.Add(uo.MethodMode.Type);
+
+    CUpdateErrorInfo errorInfo;
+    const HRESULT res = UpdateArchive(codecs, types,
+                                      SZUStringFromNSString(options.archivePath),
+                                      censor, uo, errorInfo, &callback, &callback,
+                                      false);  // needSetPath: the path is already prepared
+
+    result.filesProcessed = callback.NumFiles;
+    result.errorCount = callback.NumErrors;
+    result.failedPaths = callback.FailedFiles;
+    result.deletedPaths = callback.DeletedFiles;
+    result.passwordWasAsked = callback.PasswordWasAsked ? YES : NO;
+    result.password = callback.PasswordIsDefined ? SZStringFromUString(callback.Password) : nil;
+    result.scannedFileCount = callback.ScannedFiles;
+    result.scannedTotalSize = callback.ScannedBytes;
+    result.archiveSize = callback.FinishStat.OutArcFileSize;
+    result.volumeCount = callback.FinishStat.NumVolumes;
+    result.isMultiVolume = callback.FinishStat.IsMultiVolMode ? YES : NO;
+    finalPath = SZStringFromUString(uo.VolumesSizes.IsEmpty() ? uo.ArchivePath.GetFinalPath()
+                                                             : uo.ArchivePath.GetFinalVolPath());
+
+    if (res != S_OK)
+      return res;
+    if (errorInfo.ThereIsError())
+    {
+      for (unsigned i = 0; i < errorInfo.FileNames.Size(); i++)
+        [callback.FailedFiles addObject:SZStringFromFString(errorInfo.FileNames[i])];
+      result.failedPaths = callback.FailedFiles;
+      if (!errorInfo.Message.IsEmpty())
+        engineMessage = [NSString stringWithUTF8String:errorInfo.Message.Ptr()];
+      return errorInfo.Get_HRESULT_Error();
+    }
+    return S_OK;
+  });
+
+  if (hr != S_OK)
+  {
+    if (error)
+      *error = [SZErrors errorWithHRESULT:(uint32_t)hr message:engineMessage];
+    return nil;
+  }
+  result.archivePath = finalPath;
+  return result;
+}
+
++ (nullable SZUpdateResult *)addPaths:(NSArray<NSString *> *)sourcePaths
+                      toArchiveAtPath:(NSString *)archivePath
+                              options:(nullable SZUpdateOptions *)options
+                             progress:(nullable id<SZProgressDelegate>)progress
+                                error:(NSError **)error
+{
+  SZUpdateOptions *o = [(options ?: [SZUpdateOptions optionsWithArchivePath:archivePath]) copy];
+  o.archivePath = archivePath;
+  o.formatIndex = -1;
+  o.formatName = nil;                    // taken from the existing archive's name
+  o.nameMode = SZArchiveNameModeExact;   // never rewrite the extension of an existing archive
+  o.updateMode = SZUpdateModeAdd;
+  o.volumeSizes = @[];                   // "Splitting to volumes is not supported" when updating
+  return [self updateWithOptions:o sourcePaths:sourcePaths progress:progress error:error];
+}
+
++ (nullable SZUpdateResult *)deleteItemsNamed:(NSArray<NSString *> *)itemNames
+                            fromArchiveAtPath:(NSString *)archivePath
+                                      options:(nullable SZUpdateOptions *)options
+                                     progress:(nullable id<SZProgressDelegate>)progress
+                                        error:(NSError **)error
+{
+  SZUpdateOptions *o = [(options ?: [SZUpdateOptions optionsWithArchivePath:archivePath]) copy];
+  o.archivePath = archivePath;
+  o.formatIndex = -1;
+  o.formatName = nil;
+  o.nameMode = SZArchiveNameModeExact;
+  o.updateMode = SZUpdateModeDelete;
+  o.deleteAfterCompressing = NO;
+  o.volumeSizes = @[];
+  return [self updateWithOptions:o sourcePaths:itemNames progress:progress error:error];
+}
+
+@end
