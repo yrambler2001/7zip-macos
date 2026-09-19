@@ -160,9 +160,9 @@ final class PanelTests: SevenZipUITestCase {
             return XCTFail("no Create Folder dialog")
         }
         screenshot("08-create-folder")
-        let field = dialog.comboBoxes.firstMatch
-        field.click()
-        app.typeKey("a", modifierFlags: .command)
+        // ComboDialog.swift:73 calls selectText(nil), so the default name is already selected
+        // and focused exactly as in 7zFM: typing replaces it. Clicking first would deselect it.
+        XCTAssertTrue(dialog.comboBoxes.firstMatch.exists, "the name combo is missing")
         app.typeText("made-by-test")
         XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "OK"))
         XCTAssertTrue(panel.waitForRow(named: "made-by-test"), "listing: \(panel.names)")
