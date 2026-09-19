@@ -14,8 +14,10 @@
 #
 # UI runs: the app saves its own settings when it quits, so the preferences domain
 # com.yrambler2001.7zip is exported to Mac/build/prefs-backup.plist, cleared (Lang forced to
-# English), and imported back when the run ends -- the developer's settings survive. Screenshot
-# attachments are exported from the result bundle into Mac/docs/reports/screenshots/.
+# English), and imported back when the run ends -- the developer's settings survive. If a 7-Zip
+# instance is already running (another worktree), the domain is left alone and a warning is
+# printed; XCUITest will still terminate that instance. Screenshot attachments are exported from
+# the result bundle into Mac/docs/reports/screenshots/. Only one UI run at a time.
 # Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA.
 # Logs: Mac/build/test-<target>.log. Exit: 0 when everything passed, else xcodebuild's code.
 set -euo pipefail
@@ -69,12 +71,20 @@ restore_prefs() {
   defaults import "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null || true
   echo "== preferences of $APP_DOMAIN restored from $PREFS_BACKUP"
 }
-if [ "$KEEP_PREFS" = 0 ] && printf '%s\n' $TARGETS | grep -q "$UI_TARGET"; then
-  defaults export "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null && PREFS_SAVED=1 || true
-  trap restore_prefs EXIT INT TERM
-  defaults delete "$APP_DOMAIN" >/dev/null 2>&1 || true
-  defaults write "$APP_DOMAIN" Lang -string -        # English resource strings for the assertions
-  echo "== preferences of $APP_DOMAIN backed up to $PREFS_BACKUP and cleared"
+if printf '%s\n' $TARGETS | grep -q "$UI_TARGET"; then
+  # The preferences domain is shared by every worktree's build. Another agent running the app
+  # would be disturbed by clearing it (and XCUITest terminates any running instance anyway).
+  OTHER="$(pgrep -f '7-Zip\.app/Contents/MacOS/7-Zip' | head -1 || true)"
+  if [ -n "$OTHER" ]; then
+    echo "== warning: 7-Zip is already running (pid $OTHER); the UI tests will terminate it"
+    echo "            and $APP_DOMAIN is left untouched"
+  elif [ "$KEEP_PREFS" = 0 ]; then
+    defaults export "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null && PREFS_SAVED=1 || true
+    trap restore_prefs EXIT INT TERM
+    defaults delete "$APP_DOMAIN" >/dev/null 2>&1 || true
+    defaults write "$APP_DOMAIN" Lang -string -      # English resource strings for the assertions
+    echo "== preferences of $APP_DOMAIN backed up to $PREFS_BACKUP and cleared"
+  fi
 fi
 
 echo "== xcodegen"
@@ -156,6 +166,9 @@ run_target() {
 }
 
 for t in $TARGETS; do run_target "$t"; done
+
+# A failing test case with a zero exit code means the log and xcodebuild disagree: treat as failure.
+if [ "$TOTAL_FAIL" -ne 0 ] && [ "$FAILED" -eq 0 ]; then FAILED=1; fi
 
 echo "== summary$SUMMARY"
 echo "   total: $TOTAL_PASS passed, $TOTAL_FAIL failed"

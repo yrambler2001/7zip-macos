@@ -119,9 +119,33 @@ final class SmokeTests: SevenZipUITestCase {
                       "after two Size clicks: \(panel.names) != \(ascending)")
     }
 
+    /// An encrypted archive asks for the password and lists its entries once it is given
+    /// (SZPasswordDelegate, IDD_PASSWORD 3800; `secret.7z` uses the password "secret").
+    func testPasswordPromptOpensEncryptedArchive() {
+        launch(seed: .values([SettingsDomain.Key.panelPath0: fixtures]))
+        let panel = sevenZip.panel(0)
+        XCTAssertTrue(panel.waitForRow(named: "secret.7z"))
+        panel.open("secret.7z")
+        guard let dialog = sevenZip.waitForDialog(title: "Enter password") else {
+            return XCTFail("no password dialog; dialogs: \(app.dialogs.count), sheets: \(app.sheets.count)")
+        }
+        screenshot("07-password")
+        let field = dialog.secureTextFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "no password field")
+        field.click()
+        field.typeText("secret")
+        XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "OK"))
+        XCTAssertTrue(panel.waitForRow(named: "readme.txt"), "listing after the password: \(panel.names)")
+    }
+
     /// The menu bar has the 7zFM menus with the expected items (MainMenu.swift, 01 section 2).
-    func testMenuBarStructure() {
+    func testMenuBarStructure() throws {
         launch()
+        // Titles come from the lang file, which a test cannot seed (Lang is read through
+        // CFPreferences); Mac/scripts/test.sh sets Lang = "-" for the run. If some other language
+        // is loaded the titles are not the English resource texts, so skip instead of failing.
+        try XCTSkipUnless(sevenZip.itemTitles(in: "Tools").contains("Benchmark"),
+                          "the app is not running with English strings (set Lang to \"-\")")
         XCTAssertEqual(Array(sevenZip.topLevelMenuTitles.dropFirst()),
                        ["7-Zip", "File", "Edit", "View", "Favorites", "Tools", "Window", "Help"],
                        "top level menus: \(sevenZip.topLevelMenuTitles)")
