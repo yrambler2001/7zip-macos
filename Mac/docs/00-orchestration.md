@@ -105,3 +105,20 @@ reorder or reformat, so merges stay trivial):
 
 Do **not** edit `Mac/docs/architecture.md`. Instead write your scope's public API and the
 hooks other scopes need to `Mac/docs/api/<scope>.md`; later waves read those files.
+
+## Frozen shared contract: `OperationContext`
+
+`Mac/App/Support/OperationContext.swift` is owned by the orchestrator and frozen. It defines how
+a command scope learns what the active panel has selected:
+
+- `OperationContext` — the folder, its display path, whether it is an archive or a file system,
+  the operated item indices, their names and file-system paths, the folder's own path, the other
+  panel's path, and the window to present sheets on.
+- `OperationContextProviding` — implemented by the `panel` scope on its window controller.
+- `ActiveContext.register(_:)` / `.current()` / `.refresh()` / `.refreshAll()` — the panel
+  registers, every command scope reads.
+
+`extract`, `compress` and `tools` get their selection only through `ActiveContext.current()`, so
+they never reach into panel internals and the four scopes can be built in parallel. Main thread
+only; the `folder` it hands you belongs to the panel's serial queue, so pass it to an off-main
+operation rather than calling it directly.
