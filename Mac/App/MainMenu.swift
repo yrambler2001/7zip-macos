@@ -133,6 +133,21 @@ enum MainMenu {
         item(menu, 582, lang: 582, "Ver Revert", action: #selector(a.fileVerRevert(_:)), hidden: true)
         item(menu, 583, lang: 583, "Ver Diff (&0)", action: #selector(a.fileVerDiff(_:)), hidden: true)
         menu.addItem(.separator())
+        // The 7-Zip Explorer commands 7zFM inserts into the item context menu, in the cascaded
+        // "7-Zip" submenu that CascadedMenu (default on) produces (01 §2.8-2.9,
+        // Explorer/ContextMenu.cpp:652-666; ids kSevenZipStartMenuID 1100 + enum_CommandInternalID).
+        let sevenZip = NSMenuItem(title: Lang.menuTitle(2301, "7-Zip"), action: nil, keyEquivalent: "")
+        let sevenZipMenu = NSMenu(title: sevenZip.title)
+        item(sevenZipMenu, 2323, lang: 2323, "Extract files...", action: #selector(a.toolbarExtractArchives(_:)))   // kExtract / IDS_CONTEXT_EXTRACT
+        item(sevenZipMenu, 2326, lang: 2326, "Extract Here", action: #selector(a.extractHere(_:)))                  // kExtractHere / IDS_CONTEXT_EXTRACT_HERE
+        item(sevenZipMenu, 2327, lang: 2327, "Extract to {0}", action: #selector(a.extractToSubfolder(_:)))  // kExtractTo / IDS_CONTEXT_EXTRACT_TO
+        item(sevenZipMenu, 2325, lang: 2325, "Test archive", action: #selector(a.toolbarTestArchives(_:)))          // kTest / IDS_CONTEXT_TEST
+        // "{0}" in IDS_CONTEXT_EXTRACT_TO is the sub-folder name of the current selection, which
+        // Windows computes while building the menu; here the delegate fills it in on open.
+        sevenZipMenu.delegate = ExtractMenuTitles.shared
+        sevenZip.submenu = sevenZipMenu
+        menu.addItem(sevenZip)
+        menu.addItem(.separator())
         item(menu, 8, lang: 557, "E&xit\tAlt+F4", key: "w", mods: [.command], action: #selector(a.fileExit(_:)))   // IDCLOSE (lang 557)
         let top = NSMenuItem()
         top.submenu = menu
@@ -420,4 +435,7 @@ final class FavoritesMenuDelegate: NSObject, NSMenuDelegate {
     func toolbarAddToArchive(_ sender: Any?)
     func toolbarExtractArchives(_ sender: Any?)
     func toolbarTestArchives(_ sender: Any?)
+    // 7-Zip Explorer commands (kSevenZipStartMenuID 1100 + kExtractHere / kExtractTo, 01 §2.9)
+    func extractHere(_ sender: Any?)
+    func extractToSubfolder(_ sender: Any?)
 }
