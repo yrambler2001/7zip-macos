@@ -47,7 +47,7 @@ Finding: `NWorkDir::CInfo::Load` falls back to `kSystem` only when `Options.Work
 **absent**; an empty stored string keeps `kSpecified` (`ZipRegistry.cpp:526-533`). 01b section 4.8
 says "missing/empty", which is slightly off.
 
-## Phase 5b (verification in the running app) — stopped mid-way (usage limits)
+## Phase 5b (verification in the running app)
 
 Verified live (screenshots in `Mac/docs/reports/screenshots/options-1..7-*.png`, one per page):
 
@@ -79,25 +79,93 @@ Plugins table had no delegate, the zone combo used lang 406/407 swapped (01b §4
 backwards — upstream `MenuPage.cpp:213-216` is authoritative), the context-menu list needed a real
 table, and the Options window was released on close so it could not reopen.
 
-### Half-done / next steps
+## Phase 6 — defaults-domain override, docs, final verification
 
-1. **Language switch screenshot + switch back**: the switch is verified live but the
-   `options-8-language-<code>.png` shot and the "select English again, OK, menus back in English"
-   pass were not finished. The Options window title is localised, so AppleScript must find the
-   window by "the one that has a tab group", not by the title `Options`.
-2. `Mac/docs/api/options.md` (key → property table, `FileTypes` shape for the `finder` scope) is
-   **not written yet** — this is the main remaining deliverable.
-3. `Mac/docs/PROGRESS.md` section 7 boxes are **not ticked** yet.
-4. A final clean `rm -rf Mac/build && Mac/scripts/build.sh && Mac/scripts/test.sh` has not been
-   run (the incremental build and the 28 tests passed at the previous commit; the four fixes after
-   that were each built successfully but not re-tested).
-5. Icons: the System page uses `NSWorkspace.icon(for:)`; converting `CPP/7zip/Archive/Icons/*.ico`
-   to bundled assets is still open (needs a resource added by the packaging/finder scope).
+**`SEVENZIP_DEFAULTS_SUITE`** (request from `harness`, `Mac/docs/requests.md`). The CFPreferences
+application ID is now resolved by `NMacPrefs::ApplicationID()` on every access
+(`Mac/Core/Platform/MacPrefs.cpp`): the variable when it is set and non-empty, otherwise
+`com.yrambler2001.7zip`. Because every settings path — `SZSettings`, the Swift `Settings` facade
+and the engine-side `ZipRegistry` accessors (`Extraction.*`, `Compression.*`, `Options.*`,
+`NWorkDir`) — goes through `NMacPrefs`, one variable isolates the whole process, engine included.
+`SZSettings.applicationID` reports the domain in use and `SZSettings.usesOverrideSuite` whether it
+is overridden; the two constants are `SZSettingsSuiteEnvironmentVariable` and
+`SZSettingsDefaultApplicationID`. The CFString is rebuilt only when the value changes, so a test
+can switch domains with `setenv()` mid-process (guarded by a critical section).
 
-### Note for the orchestrator
+Files touched outside the original ownership list: `Mac/Core/SZSettings.mm` and
+`Mac/Core/include/SZSettings.h` (granted for this change) plus `Mac/Core/Platform/MacPrefs.{h,cpp}`
+— the engine-side accessors read the domain from there, so the request could not be satisfied
+without it. The change is additive: without the variable nothing behaves differently.
 
-All agents' app instances share the preference domain `com.yrambler2001.7zip`, and XCUITest
-launches terminate other instances of the same bundle id. During this verification the `opsinfra`
-app repeatedly reset `Options.WorkDirType` / `Options.TempRemovableOnly` to their defaults, and the
-`harness` UI-test runner killed running instances. Values were re-checked immediately after each
-Apply to work around it.
+`Mac/docs/api/options.md` is written: the domain override, the key → property table for every key
+of 01b §5.1-5.5, the tri-state / sentinel / log2 encodings, the notification names and groups, the
+`FileTypes` shape for the `finder` scope (40 extensions) and how to add a page.
+
+### Verified in the running app (final binary, isolated domain)
+
+Held the shared app lock, launched with `SEVENZIP_DEFAULTS_SUITE=7zip-options`, and:
+
+- walked all seven pages twice (screenshots `options-1..7-*.png`, regenerated from the final
+  build) — no exceptions in the log;
+- the domain override end to end: everything the app stored landed in `7zip-options`
+  (`defaults read 7zip-options` shows `Lang`, `FM.*`), and `com.yrambler2001.7zip` kept its old
+  `Lang = -` throughout;
+- language: selecting Russian relabelled the window title (`Настройки`), the tab titles
+  (`Система 7-Zip Папки Редактор Настройки Язык Plugins`), the menu bar
+  (`Файл Правка Вид Избранное Сервис Справка`) and the buttons (`Помощь`, `Отмена`) **live**,
+  with no restart (screenshot `options-8-language-ru.png`); OK persisted `Lang = ru`, a relaunch
+  came up in Russian and reopened Options on the remembered page, and selecting the built-in
+  English entry (`-`) put everything back to English;
+- persistence (earlier pass, real domain): `FM.ShowGrid`, `FM.ShowDots`, `FM.Viewer`,
+  `Options.CascadedMenu`, `Options.WriteZoneIdExtract`, `Options.ContextMenu = 0xC0003F67`
+  (every context-menu item except `kTest 1<<4`), `Options.WorkDirType = 2` + `WorkDirPath` +
+  `TempRemovableOnly = 0` all survived quit + relaunch;
+- Cancel discards (`FM.ShowRealFileIcons` stayed `0` after a toggle + Cancel) and the window
+  reopens on the page it was left on.
+
+`rm -rf Mac/build && Mac/scripts/build.sh && Mac/scripts/test.sh` both exit 0; 29 unit tests pass
+(12 in `SettingsTests`), no warnings in `Mac/` code.
+
+### Mapping notes (where macOS deviates, and why)
+
+- **System page** (01b §4.21, 03 §3.4, 01 §9 #3): one per-user column instead of the Windows
+  current-user/all-users pair, with a note naming the dropped `IDS_SYSTEM_ALL_USERS 2202` column;
+  `NSWorkspace.setDefaultApplication(at:toOpen:)` shows the system's own confirmation and answers
+  asynchronously, so Apply refreshes the rows in the completion handler and reports only the first
+  error, as `SystemPage::OnApply` does. "Clear" hands the type back to the application that owned
+  it when the page was opened, because macOS has no API to remove a default handler.
+- **7-Zip page** (01b §4.13, 03 §6.2): the shell-handler checkbox becomes a live Finder Sync
+  status read from `pluginkit -m -p com.apple.FinderSync -v`, a button that opens Login Items &
+  Extensions and the `pluginkit -e use -i …` command, since only the user can enable an appex. The
+  bitness checkbox `2310` is dropped. The zone combo drives `com.apple.quarantine` propagation
+  (01 §9 #23) and keeps the Windows lang IDs (`406 = Yes`, `407 = No` — the inventory has them
+  swapped).
+- **Settings page** (01b §4.19): "Use large memory pages" is shown disabled with the reason
+  (01 §9 #16); "Show system menu" is kept and documented as the macOS Finder commands in the panel
+  context menu (01 §9 #2).
+- **Language page** (01b §4.9): a list instead of a combo, so the English name, the native name
+  and the completeness fit side by side; `***` / `+++` locale marks kept; switching applies live
+  (Windows applies on OK) and Cancel puts the previous language back.
+- **Plugins page**: macOS-only, informational. 26.03 has no plugin chooser (03 §3.4, 01 §6.8) and
+  this build links every codec statically (01 §9 #29), so the page lists the 61 loaded handlers.
+- `FM.Columns.<FolderTypeID>` is a JSON string rather than a `REG_BINARY` blob (same fields).
+
+### Known gaps / follow-ups
+
+1. The System page uses `NSWorkspace.icon(for:)` for the row icons; converting
+   `CPP/7zip/Archive/Icons/*.ico` into bundled assets needs a resource entry (packaging scope).
+2. Rows whose extension has no declared UTI (`bzip2`, `tbz`, `tzst`, `001`, `swm`, `esd`, `taz`,
+   `tpz`, …) show `—` and are not associable until the `finder` scope adds the imported type
+   declarations to `Mac/App/Info.plist`; `SevenZipFileType.utType` picks them up automatically.
+3. Help opens no book: each page carries its `.chm` topic and logs it (01 §9 #17).
+4. The Language page shows how many lines are missing or extra, not the full ID lists
+   (`PROGRESS.md` box left unticked).
+5. `FM.AutoRefresh` is persisted although Windows does not persist `AutoRefresh_Mode` (inherited
+   from the scaffold; box left unticked).
+6. The Language table's own column headers ("English name", "Native name", "Code", "Strings") are
+   not localizable — Windows has no such columns, so there are no lang IDs for them.
+7. `Mac/Tests/SevenZipKitTests/Settings.swift` and `FileTypes.swift` are **symlinks** to
+   `Mac/App/Support/*`: the test target globs its own directory and cannot depend on the app
+   target. The `harness` scope replaces them with proper `project.yml` entries after the merge
+   (request filed in `Mac/docs/requests.md`). Both files are Foundation-only so they compile
+   there; keep them that way.

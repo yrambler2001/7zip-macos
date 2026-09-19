@@ -299,7 +299,9 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
     /// Page titles come only from the lang file, with the .rc caption as fallback
     /// (LangString_OnlyFromLangFile(page.ID), OptionsDialog.cpp).
     private func pageTitle(_ page: OptionsPageBase) -> String {
-        if let translated = Lang.translated(page.pageID), !translated.isEmpty {
+        // pageID 0 means "no IDD_* resource" (the macOS-only Plugins page); lang id 0 is the
+        // product name, so it must not be used as a title.
+        if page.pageID != 0, let translated = Lang.translated(page.pageID), !translated.isEmpty {
             return Lang.stripMnemonic(Lang.dropAccelerator(translated))
         }
         return page.fallbackTitle
