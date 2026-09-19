@@ -814,6 +814,13 @@ HRESULT CCodecs::Load()
     item.CreateInArchive = arc.CreateInArchive;
     item.IsArcFunc = arc.IsArc;
     item.Flags = arc.Flags;
+   #ifdef __APPLE__
+    /* macOS port: the static registration path forgets to copy TimeFlags, so
+       CArcInfoEx::Get_TimePrecFlags()/Get_DefaultTimePrec() are always 0 in a build without
+       Z7_EXTERNAL_CODECS and the Compress Options dialog can offer no timestamp precision.
+       The DLL path above reads the same value from NHandlerPropID::kTimeFlags. */
+    item.TimeFlags = arc.TimeFlags;
+   #endif
   
     {
       UString e, ae;

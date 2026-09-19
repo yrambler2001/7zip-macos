@@ -110,11 +110,24 @@ class UpdaterTestCase: XCTestCase {
 
     static var sfxDirectory: String { (repoRoot as NSString).appendingPathComponent("Mac/Resources/SFX") }
 
-    /// The console 7zz built from this tree, or nil when it has not been built.
-    static var consoleTool: String? {
-        let p = (repoRoot as NSString).appendingPathComponent("CPP/7zip/Bundles/Alone2/b/m_arm64/7zz")
-        return FileManager.default.isExecutableFile(atPath: p) ? p : nil
-    }
+    /// The console 7zz built from this tree, or nil when it has not been built. The build
+    /// output is git-ignored, so in a worktree it lives in the main checkout: `<root>` and
+    /// `<root>/../..` (a worktree is `<main>/.worktrees/<scope>`) are both tried.
+    static let consoleTool: String? = {
+        let relative = "CPP/7zip/Bundles/Alone2/b/m_arm64/7zz"
+        var roots = [repoRoot]
+        var url = URL(fileURLWithPath: repoRoot)
+        for _ in 0..<2 {
+            url.deleteLastPathComponent()
+            roots.append(url.path)
+        }
+        if let env = ProcessInfo.processInfo.environment["SEVENZIP_CONSOLE_TOOL"] { return env }
+        for root in roots {
+            let p = (root as NSString).appendingPathComponent(relative)
+            if FileManager.default.isExecutableFile(atPath: p) { return p }
+        }
+        return nil
+    }()
 
     override class func setUp() {
         super.setUp()
@@ -216,6 +229,23 @@ class UpdaterTestCase: XCTestCase {
             } catch { return .failure(error) }
         }
         return try outcome.get()
+    }
+
+    /// The first `<name> = <value>` line of a `7zz l -slt` listing, or nil.
+    func property(_ name: String, in listing: String) -> String? {
+        values(name, in: listing).first
+    }
+
+    /// Every non-empty value of a `<name> = <value>` line of a `7zz l -slt` listing. The
+    /// console prints the key with an empty value when the property is absent, so the empty
+    /// ones are dropped.
+    func values(_ name: String, in listing: String) -> [String] {
+        listing.split(separator: "\n")
+            .compactMap { line -> String? in
+                guard line.hasPrefix(name + " = ") else { return nil }
+                let value = String(line.dropFirst(name.count + 3)).trimmingCharacters(in: .whitespaces)
+                return value.isEmpty ? nil : value
+            }
     }
 
     final class FixedPasswordDelegate: NSObject, SZPasswordDelegate {
@@ -428,18 +458,14 @@ final class UpdaterOptionsTests: UpdaterTestCase {
 
         guard let listSolid = runConsole(["l", "-slt", solidPath]),
               let listNonSolid = runConsole(["l", "-slt", nonSolidPath]) else { return }
-        // In a solid archive the three data files share one block, so only the first entry of
-        // the block carries a Block index change; a non-solid archive has one block each.
-        let blocksSolid = Set(blockIDs(in: listSolid.output))
-        let blocksNonSolid = Set(blockIDs(in: listNonSolid.output))
-        XCTAssertEqual(blocksSolid.count, 1, listSolid.output)
-        XCTAssertGreaterThan(blocksNonSolid.count, blocksSolid.count, listNonSolid.output)
-    }
-
-    private func blockIDs(in listing: String) -> [String] {
-        listing.split(separator: "\n")
-            .filter { $0.hasPrefix("Block = ") }
-            .map { String($0.dropFirst("Block = ".count)) }
+        // A fully solid archive packs the four files into one folder; a non-solid one gives
+        // each file its own. The console prints both as "Blocks = N" and per item "Block = i"
+        // (directories have no block).
+        XCTAssertEqual(property("Blocks", in: listSolid.output), "1", listSolid.output)
+        XCTAssertEqual(property("Blocks", in: listNonSolid.output), "4", listNonSolid.output)
+        XCTAssertEqual(Set(values("Block", in: listSolid.output)), ["0"], listSolid.output)
+        XCTAssertEqual(Set(values("Block", in: listNonSolid.output)), ["0", "1", "2", "3"],
+                       listNonSolid.output)
     }
 
     /// "Enter password" (IDE_COMPRESS_PASSWORD1 120): the archive lists without a password but
@@ -684,9 +710,12 @@ final class UpdaterOptionsTests: UpdaterTestCase {
 
         guard let plainList = runConsole(["l", "-slt", plain]),
               let timesList = runConsole(["l", "-slt", withTimes]) else { return }
-        XCTAssertFalse(plainList.output.contains("Created = "), plainList.output)
-        XCTAssertTrue(timesList.output.contains("Created = "), timesList.output)
-        XCTAssertTrue(timesList.output.contains("Accessed = "), timesList.output)
+        // The console always prints the key, with an empty value when the property is absent.
+        XCTAssertNil(property("Created", in: plainList.output), plainList.output)
+        XCTAssertNil(property("Accessed", in: plainList.output), plainList.output)
+        XCTAssertNotNil(property("Modified", in: plainList.output), plainList.output)
+        XCTAssertNotNil(property("Created", in: timesList.output), timesList.output)
+        XCTAssertNotNil(property("Accessed", in: timesList.output), timesList.output)
 
         // `tm=off` drops the modification time for a KeepName format (gzip stores it by default).
         let noMTime = (out as NSString).appendingPathComponent("nomtime.gz")
@@ -695,7 +724,15 @@ final class UpdaterOptionsTests: UpdaterTestCase {
         g.properties = [SZUpdateProperty(name: "tm", value: "off")]
         _ = try update(g, [one])
         if let gzList = runConsole(["l", "-slt", noMTime]) {
-            XCTAssertFalse(gzList.output.contains("Modified = "), gzList.output)
+            XCTAssertNil(property("Modified", in: gzList.output), gzList.output)
+        }
+        // Without tm=off gzip does store it.
+        let withMTime = (out as NSString).appendingPathComponent("mtime.gz")
+        let g2 = SZUpdateOptions(archivePath: withMTime)
+        g2.formatName = "gzip"
+        _ = try update(g2, [one])
+        if let gzList = runConsole(["l", "-slt", withMTime]) {
+            XCTAssertNotNil(property("Modified", in: gzList.output), gzList.output)
         }
     }
 
@@ -736,10 +773,14 @@ final class UpdaterOptionsTests: UpdaterTestCase {
             options.storeSymLinks = NSNumber(value: store)
             _ = try update(options, [target, link])
             guard let listing = runConsole(["l", "-slt", archive]) else { continue }
-            // A stored link has the symlink attribute bit; a followed link is a plain copy.
-            let hasLinkAttr = listing.output.contains("Attributes = ")
-                && listing.output.split(separator: "\n").contains { $0.hasPrefix("Attributes = ") && $0.contains("l") }
-            XCTAssertEqual(hasLinkAttr, store, "\(name): \(listing.output)")
+            // A stored link has the "l" mode character and a Symbolic Link property; a
+            // followed link is an ordinary copy of the target.
+            let hasLink = values("Attributes", in: listing.output).contains { $0.contains("l") }
+            XCTAssertEqual(hasLink, store, "\(name): \(listing.output)")
+            // A stored link's payload is the target path (10 B), a followed one is the
+            // target's content (8 B).
+            let sizes = Set(values("Size", in: listing.output))
+            XCTAssertEqual(sizes, store ? ["10", "8"] : ["8"], "\(name): \(listing.output)")
         }
     }
 }
