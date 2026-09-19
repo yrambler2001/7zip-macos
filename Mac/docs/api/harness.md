@@ -34,6 +34,41 @@ A UI run needs the real app, so `test.sh`/`verify.sh` **back up `com.yrambler200
 when the run ends** (`--keep-prefs` opts out). Do not use the app by hand while UI tests run.
 Screenshot attachments are exported from the result bundle into `Mac/docs/reports/screenshots/`.
 
+## 1a. App-launch lock (read this before running UI tests)
+
+Every worktree builds the same bundle id, and `XCUIApplication.launch()` attaches to an instance
+that is already running instead of replacing it. Two agents driving the app at the same time fail
+each other's tests with "Lost connection to the application" and scramble the shared preferences
+domain. So there is **one lock for the whole repository**:
+
+```
+~/things/a.noindex/7zip/.worktrees/.app-lock      # a directory; $SEVENZIP_APP_LOCK overrides
+```
+
+`Mac/scripts/test.sh --ui` (or `--all`) and `Mac/scripts/verify.sh` take it for you and release it
+on every exit path, including a failure or Ctrl-C:
+
+* acquire: `mkdir` in a loop, 180 tries five seconds apart (15 minutes), then the scope name and
+  pid go into `$LOCK/owner`;
+* a lock whose directory is **older than 30 minutes** is reported and broken, so a killed run never
+  blocks the repository;
+* the scripts print `== app lock acquired`, `== waiting for the app lock … (owner: …)` and
+  `== app lock released`; if the wait times out they exit 3 and name the owner;
+* `verify.sh` holds it for its whole run and exports `SEVENZIP_APP_LOCK_HELD=1`, so the `test.sh`
+  calls inside it do not deadlock on their own lock.
+
+If you drive the app **without** these scripts (`run.sh`, `osascript`, a manual launch), take the
+lock yourself:
+
+```sh
+LOCK=~/things/a.noindex/7zip/.worktrees/.app-lock
+for i in $(seq 1 180); do mkdir "$LOCK" 2>/dev/null && break || sleep 5; done
+echo "<scope>" > "$LOCK/owner"
+trap 'rm -rf "$LOCK"' EXIT INT TERM
+# ... launch, drive, screenshot the app ...
+rm -rf "$LOCK"
+```
+
 ## 2. Writing a UI test
 
 ```swift
@@ -87,6 +122,23 @@ reads as an `Int`/`Bool` object or as an array (`numPanels`, `listMode*`, `toolb
 `timestampLevel`, `autoRefresh`, `folderHistory`, `folderShortcuts`) end up at the app's built-in
 default — use `sevenZip.ensurePanelCount(2)` for two panels — and `Lang` cannot be seeded from a
 test at all (the scripts do it).
+
+**When `SEVENZIP_DEFAULTS_SUITE` lands** (a sibling scope is adding it: the app reads its
+preferences from the domain that environment variable names), switching over is a small, local
+change — nothing in your tests moves. `SettingsSeed.launchArguments` is the only producer of the
+seed and `SevenZipApp.launch(seed:)` its only consumer, so it means: pass
+`launchEnvironment["SEVENZIP_DEFAULTS_SUITE"] = "com.yrambler2001.7zip.uitest.<run>"`, fill that
+domain with `SettingsDomain(applicationID: …).replace(with:)` — typed values, so `numPanels`,
+`toolbars` and `Lang` finally work — and drop the `-key value` arguments. Two details:
+
+* the app's real domain is then untouched, so the `test.sh` preferences backup/restore and the
+  `Lang` write are no longer needed (keep them until the hook is on the branch);
+* the **sandboxed test runner cannot write any CFPreferences domain the app can see** (the sandbox
+  redirects every domain into the runner's container, measured), so the per-run domain has to be
+  filled by `test.sh`/`verify.sh` before the run, or the hook has to accept a *plist path* instead
+  of a domain name — a path inside the runner's container, which the test can write and the
+  non-sandboxed app can read. Per-test seeding only works with the second variant; that is
+  recorded in `Mac/docs/requests.md`.
 
 ## 4. `SevenZipApp` (the driver)
 
@@ -176,5 +228,11 @@ Fixtures (from `Mac/scripts/make-fixtures.sh`): `test.7z`, `test.zip`, `test.tar
 * Never assert a behaviour that is not implemented yet — add it when the scope lands.
 * Prefer `menuItem(selector:)` over a title when a title may be localized.
 * Run `Mac/scripts/verify.sh` before reporting; it writes `Mac/docs/reports/verify-latest.md`.
+* Never drive the app outside the scripts without taking the app-launch lock (§1a), and never run
+  two UI runs at once — expect to queue behind another agent.
+* Read values through the snapshot-based accessors (`names`, `columnTitles`, `itemTitles`,
+  `toolbarButtonTitles`) or add new ones the same way; resolving many elements one at a time is slow
+  and has crashed the test runner.
 * If a test needs something the app does not expose to accessibility, ask the owning scope for it
-  in your report instead of touching their files (`00-orchestration.md` ownership table).
+  in your report and add a line to `Mac/docs/requests.md`, instead of touching their files
+  (`00-orchestration.md` ownership table).

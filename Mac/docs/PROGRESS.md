@@ -643,7 +643,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 
 ### 9.1 Build and signing
 
-- [ ] `Mac/scripts/build.sh` = `xcodegen -s Mac/project.yml` + `xcodebuild` Debug, ad-hoc signed, exits 0 with no new warnings in `Mac/` code; `run.sh` builds and opens `Mac/build/Debug/7-Zip.app`; `test.sh` runs unit + UI tests (00-orchestration "Build and run", "Agent deliverables")
+- [x] `Mac/scripts/build.sh` = `xcodegen -s Mac/project.yml` + `xcodebuild` Debug, ad-hoc signed, exits 0 with no new warnings in `Mac/` code; `run.sh` builds and opens `Mac/build/Debug/7-Zip.app`; `test.sh` runs unit + UI tests (00-orchestration "Build and run", "Agent deliverables")
 - [ ] `Mac/scripts/package.sh`: Release build, `codesign --force --deep --sign -` by default, Developer ID when `DEVELOPMENT_TEAM` / `CODE_SIGN_IDENTITY` are given (hardened runtime, timestamp), optional notarization step (00-orchestration "Signing", 03 §6.4)
 - [ ] Embedded targets signed consistently (app, FinderSync appex, Quick Action appex, optional 7zG helper), entitlements per target, bundle identifiers under `com.yrambler2001.7zip` (00-orchestration, 03 §6.4)
 - [ ] `fetch-assets.sh` reproducibly pulls the official `Lang/*.txt` and SFX stubs; `make-fixtures.sh` regenerates `Mac/Tests/Fixtures/` with the built `7zz` (architecture "Verification")

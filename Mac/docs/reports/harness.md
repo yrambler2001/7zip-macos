@@ -122,12 +122,14 @@ NSUserDefaults' argument domain and win over everything stored.
 
 ## 3. Smoke tests (`SmokeTests.swift`)
 
-Eight tests, only over what the scaffold already does: launch + home listing, navigating into a
+Nine tests, only over what the scaffold already does: launch + home listing, navigating into a
 directory, opening `test.7z` and listing its entries, "Up One Level" out of a folder inside the
 archive and out of the archive, the `View > 2 Panels` toggle and its persistence across a
 relaunch, sorting by the Size column header (descending first, second click ascending, expected
-order computed from the fixture files), the menu bar inventory (top-level menus and item titles
-per menu, plus selector-addressed items) and the seven toolbar buttons.
+order computed from the fixture files), the `Enter password` prompt on `secret.7z` followed by the
+listing, the menu bar inventory (top-level menus and item titles per menu, plus selector-addressed
+items) and the seven toolbar buttons. Each test launches its own app instance and asserts nothing
+that is not implemented; the whole suite is ~140 s.
 
 ---
 
@@ -148,29 +150,67 @@ array and no associative arrays.
 | `verify.sh` | new: clean build → unit tests → UI tests → `Mac/docs/reports/verify-latest.md` (date, branch, commit, toolchain, a result table with timings, the parity summary, log and screenshot paths); `--fast`, `--no-ui`, `--config`, `--scope`, `--out`; exits non-zero on any failure |
 | `parity-check.sh` | new: awk over `Mac/docs/PROGRESS.md`, `done/total/pct` per scope plus a `TOTAL` line, `--scope`, `--list <scope>` (open items with line numbers), `--list-all`, `--file`; read-only |
 
-### Shared-machine hazards (worth knowing before running UI tests)
+### Shared-machine hazards, and the app-launch lock
 
-* The preferences domain `com.yrambler2001.7zip` is **shared by every worktree's build**, and
-  `XCUIApplication.launch()` terminates any running instance of that bundle id. A UI run therefore
-  disturbs another agent that is using the app, and vice versa. `test.sh` detects a running
-  instance, prints a warning and then leaves the domain untouched instead of clearing it.
-* Two UI runs in parallel fight over the app and over `Mac/build/test-7-ZipUITests.log`; the
-  runners lose their connection to the app ("Lost connection to the application") and the log ends
-  up with interleaved NUL bytes. Run one at a time.
+Measured the hard way: every worktree builds the same bundle id, and `XCUIApplication.launch()`
+**attaches to an instance that is already running** instead of replacing it. When another agent had
+the app open, three of my tests died with `Lost connection to the application (pid …)` /
+`Application com.yrambler2001.7zip is not running`, and two parallel UI runs also scrambled
+`Mac/build/test-7-ZipUITests.log` (interleaved NUL bytes). The preferences domain is shared as well,
+so a run that clears it disturbs whoever else is using the app.
+
+Two fixes, both in place:
+
+1. `SevenZipApp.launch()` terminates a running instance before launching, so a test always drives
+   its own fresh process.
+2. **One app-launch lock for the whole repository**: the directory
+   `<repo>/.worktrees/.app-lock` (`$SEVENZIP_APP_LOCK` overrides; a non-worktree checkout uses
+   `<root>/.worktrees/.app-lock` too, else `$TMPDIR/7zip-app-lock`). `test.sh --ui|--all` and
+   `verify.sh` acquire it with `mkdir` in a loop — 180 tries, 5 s apart, 15 minutes total — write
+   `<branch> (pid …, <time>)` into `$LOCK/owner`, and release it from a single `trap … EXIT INT
+   TERM`, so a failure, an assertion or Ctrl-C never leaves it behind. A lock directory **older
+   than 30 minutes** is announced with its owner and broken; a wait that runs out exits 3 and names
+   the owner. `verify.sh` holds the lock for its whole run and exports `SEVENZIP_APP_LOCK_HELD=1`,
+   which makes the nested `test.sh` calls skip their own acquire (no self-deadlock). Agents that
+   drive the app *without* these scripts must take the same lock; the recipe is in
+   `Mac/docs/api/harness.md` "App-launch lock".
+   With the lock held, `test.sh` also backs up, clears and restores the preferences domain, because
+   no one else can be using the app then; if it still finds a running instance it warns and leaves
+   the domain alone.
 
 ---
 
+## 5. Verification
+
+| What | Result |
+|---|---|
+| `Mac/scripts/test.sh --ui` | **9 tests, 0 failures**, 142 s of testing (154 s wall), `** TEST SUCCEEDED **`; the lock was taken and released, the preferences domain backed up, cleared and restored |
+| `Mac/scripts/verify.sh` | **green end to end** (exit 0): clean build 32 s (344 C/C++ + 45 Swift compile tasks — Xcode 26's compilation cache makes a wiped `Mac/build` cheap), unit tests 17 passed / 6 s, UI tests 9 passed / 141 s; it queued ~4 min behind the `options` agent's lock first, then wrote `Mac/docs/reports/verify-latest.md` (regenerated on every run) |
+| `Mac/scripts/parity-check.sh` | 476 items, `packaging 1/22` after the tick below; cross-checked against `grep -c '^- \['` (476) and a manual awk count of the packaging section (22) |
+| `build.sh` / `test.sh` with no arguments | re-run after all the changes: `build.sh` prints `== xcodegen`, `== xcodebuild (Debug) -> …`, `** BUILD SUCCEEDED **`, `OK: …/7-Zip.app -> …`, exit 0; `test.sh` runs only `SevenZipKitTests` (17 passed), prints the same per-case lines and `OK: tests passed`, exit 0, and takes **no** app lock (unit runs do not touch the app) |
+| Screenshots | `Mac/docs/reports/screenshots/harness-01-home.png`, `-02-fixtures`, `-03-archive`, `-04-two-panels`, `-05-sorted-by-size`, `-06-two-panels-restored`, `-07-password` — all written by the suite through the attachment export |
+| `Mac/docs/PROGRESS.md` | one box ticked, in §9.1: `build.sh` = xcodegen + xcodebuild Debug ad-hoc, `run.sh` opens the app, `test.sh` runs unit **and** UI tests. Nothing else in `packaging` is mine to tick |
+
+Both of the requests I filed in `Mac/docs/requests.md` under `harness` are resolved from my side:
+the launch-instance fix is in, and the settings-domain override is now owned by the `options` /
+bridge scopes (see the note in §"Known gaps" and in `Mac/docs/api/harness.md` §3).
+
 ## Known gaps / requests
 
-**Request to the scope that owns the settings** (`Mac/App/Support/Settings.swift` — `options`; and
-`Mac/Core/SZSettings.mm` — bridge): let the app take its preferences domain from the environment,
-e.g. `SEVENZIP_DEFAULTS_SUITE=<name>` → `UserDefaults(suiteName:)` in `Settings` and the same
-application id in `SZSettings`. That single hook would give UI tests a private domain per run:
-no interference with a parallel worktree, seeding of the keys an argument cannot type (`numPanels`,
-`listMode*`, `toolbars`, `timestampLevel`, `autoRefresh`, and the string arrays), and a seedable
-`Lang` (today `Mac/scripts/test.sh` writes `Lang = "-"` into the real domain instead, and
-`testMenuBarStructure` skips itself when the app is not running English strings). No other test
-hook is needed: everything else is reachable through accessibility.
+**Settings-domain override (filed in `Mac/docs/requests.md`, being implemented by another scope).**
+`SEVENZIP_DEFAULTS_SUITE` — the app reading its preferences domain from the environment
+(`UserDefaults(suiteName:)` in `Mac/App/Support/Settings.swift`, the same application id in
+`Mac/Core/SZSettings.mm`) — removes the two things launch arguments cannot do: the keys an argument
+cannot type (`numPanels`, `listMode*`, `toolbars`, `timestampLevel`, `autoRefresh`, the string
+arrays) and `Lang`. It is not on this branch, so nothing here depends on it; switching is a change
+in two places only (`SettingsSeed.launchArguments` produces the seed, `SevenZipApp.launch(seed:)`
+consumes it) and `Mac/docs/api/harness.md` §3 spells out the diff.
+One caveat for whoever implements it: **the sandboxed test runner cannot write any CFPreferences
+domain the app can read** (every domain is redirected into its container — measured), so with a
+domain *name* the per-run domain must be filled by `test.sh`/`verify.sh`; accepting a **plist path**
+as well (a file the test writes inside its own container, which the non-sandboxed app then reads)
+is what would allow per-*test* seeding. Apart from settings, no test hook is needed: everything is
+reachable through accessibility.
 
 **Not covered by the smoke suite (add when the scope lands).** Nothing below is asserted today;
 each needs the feature first.
@@ -186,6 +226,19 @@ each needs the feature first.
 | `finder` | the Finder Sync menu and Quick Actions (these drive *Finder*, not our app: XCUITest can attach to `com.apple.finder`, or use `osascript`), `sevenzip://` URLs, document types |
 | `packaging` | DMG contents, bundled help HTML, first-launch registration |
 
+**Follow-up owed to `options` (after the merge, not before).** `Mac/Tests/SevenZipKitTests/`
+contains two symlinks to `Mac/App/Support/Settings.swift` and `Mac/App/Support/FileTypes.swift` so
+the unit tests can compile those types. Once `mac/options` is merged, replace them with explicit
+source entries on the `SevenZipKitTests` target in `Mac/project.yml`
+(`- path: App/Support/Settings.swift`, `- path: App/Support/FileTypes.swift`) and delete the
+symlinks. It cannot be done on this branch: the files do not exist here yet, and XcodeGen fails on a
+source path that is missing. Recorded in `Mac/docs/requests.md` (`options` → `harness`).
+
+**For the orchestrator.** `CLAUDE.md` is not mine to edit; its "Build, run, test" block would be
+worth two extra lines: `Mac/scripts/verify.sh` before reporting, and "take
+`<repo>/.worktrees/.app-lock` before driving the app by hand" (the recipe is in
+`Mac/docs/api/harness.md` §1a).
+
 **Other notes.**
 
 * `testToolbarButtons` asserts that the toolbar buttons are still **disabled**; whoever implements
@@ -199,40 +252,3 @@ each needs the feature first.
 * This branch polluted `com.yrambler2001.7zip` with UI-state keys (`FM.Position`, `FM.ShowDots`,
   `FM.ShowGrid`, `Lang = "-"`) while another agent was using the app in parallel; all of them are
   ordinary UI state the options scope owns and rewrites.
-
----
-
-## State note — 2026-09-19 (stopped on the coordinator's request, usage limits)
-
-**Done and verified**
-
-* `7-ZipUITests` target, schemes, `Info.plist`: builds; `xcodebuild -scheme 7-ZipUITests test` runs.
-  The app is launchable and driveable under XCUITest with no test hook (§1).
-* Helper library (`SevenZipUITestCase`, `SevenZipApp`, `SevenZipPanel`, `SettingsSeed`,
-  `SettingsDomain`, `TestPaths`) — compiles warnings-clean, documented in `Mac/docs/api/harness.md`.
-* Smoke tests: **one full green run of all 8 tests** (`Executed 8 tests, with 0 failures`,
-  `** TEST SUCCEEDED **`, 220 s) with the six screenshots exported to
-  `Mac/docs/reports/screenshots/harness-01-home.png` … `harness-06-two-panels-restored.png`.
-* `parity-check.sh`: output cross-checked against a manual `grep` (476 items, 0 ticked; packaging
-  22). `build.sh`/`test.sh` with no arguments behave as before (`--help`, syntax and the unit-test
-  default were exercised; `test.sh --ui` ran the suite end to end).
-
-**Half-done**
-
-* A ninth test, `testPasswordPromptOpensEncryptedArchive` (opens `secret.7z`, types the password
-  into the modal `Enter password` alert), is written but has **never been run**.
-* The last two UI runs were disturbed by a sibling agent's 7-Zip instance: three tests failed with
-  "Lost connection to the application (pid …)" / "Application … is not running" because
-  `XCUIApplication.launch()` attaches to an already running instance of the same bundle id.
-* `verify.sh` was written and syntax-checked but **never executed end to end**, so
-  `Mac/docs/reports/verify-latest.md` does not exist yet.
-* `Mac/docs/PROGRESS.md` is untouched — the one box to tick is line 646 in §9.1 (`build.sh` +
-  `run.sh` + `test.sh` runs unit + UI tests), and only that one.
-
-**Next steps, in order**
-
-1. In `SevenZipApp.launch()`, terminate a running instance before launching
-   (`if isRunning { app.terminate() }` before `app.launch()`), which fixes the failures above.
-2. `Mac/scripts/test.sh --ui` once, with no other 7-Zip instance running, and confirm 9/9 green.
-3. `Mac/scripts/verify.sh` end to end; check `Mac/docs/reports/verify-latest.md`.
-4. Tick PROGRESS.md §9.1 line 646; commit.
