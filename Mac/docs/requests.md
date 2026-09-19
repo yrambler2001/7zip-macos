@@ -11,6 +11,7 @@ agent. Add a line, never rewrite someone else's.
 | `options` | `harness` (`project.yml`) | Replace the two symlinks under `Mac/Tests/SevenZipKitTests/` that point at `Support/Settings.swift` and `Support/FileTypes.swift` with proper source entries for the test target. | open |
 | `options`, `opsinfra`, `harness` | orchestrator | Agents running the app concurrently share the `com.yrambler2001.7zip` preferences domain and overwrite each other's settings; the domain override request above fixes this. | **done**: launch with `SEVENZIP_DEFAULTS_SUITE=7zip-<scope>` (or any name) and the whole process, engine included, uses that domain. |
 | `compress` | `extract` / `SZArchiveOpener` owner | `SZFolder.folder(forPath:)` / `SZArchiveOpener.openArchive(atPath:)` cannot open a multi-volume set: opening `x.7z.001` fails with `SZErrorCodeNotArchive` because no `IArchiveOpenVolumeCallback` (`COpenCallbackImp`) is supplied. The console `7zz` opens the same file fine. `UpdaterOptionsTests.testSplitVolumes` works around it by concatenating the volumes. | open |
+| `compress` | `harness` (`project.yml`) | Add `Resources/SFX` to the **SevenZipKit** framework's resources (it is an app-target resource today), so `SZUpdater.defaultSFXModulePath` finds `7z.sfx` from the unit-test bundle without the `SEVENZIP_SFX_DIR` override. | open |
 
 ## Spec corrections found during implementation
 
@@ -31,3 +32,6 @@ These override the inventory documents. Trust this list over the inventory when 
 - Follow-up after the merge: `harness` replaces the two `Mac/Tests/SevenZipKitTests/` symlinks with
   proper `project.yml` source entries. Keep `Settings.swift` and `FileTypes.swift` Foundation-only
   so they stay compilable inside the test target.
+- `AddMemSize` (CompressDialog.cpp:2717) switches to GB only at **>= 2 GB** (`size >= 1 << 31`), so the memory-use combo shows `1024 MB`, not `1 GB`, and its top 64-bit item is `2 << 43` = `16384 MB`, not `3 << 43`; `01b-fm-dialogs-settings.md` section 4.23 says `3 << 43`.
+- `AddMemUsage` (CompressDialog.cpp:3072) uses MB up to **and including** 16 GB, so the memory line reads `16384 MB / … / 16384 MB` on a 16 GB machine.
+- The static `CCodecs::Load()` (`LoadCodecs.cpp:808-...`) never copied `CArcInfo::TimeFlags`, so `Get_TimePrecFlags()` / `Get_DefaultTimePrec()` were 0 in this build and the Compress Options timestamp-precision combo was empty. Patched under `#ifdef __APPLE__` (`Mac/docs/upstream-patches.md`). Windows uses the 7z.dll path, which reads the same value from `NHandlerPropID::kTimeFlags`.
