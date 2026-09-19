@@ -52,7 +52,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)benchmarkDidUpdate;
 /// The worker thread has ended. `error` is nil on a clean stop / finish. After this the
 /// object may be started again.
-- (void)benchmarkDidFinishWithError:(nullable NSError *)error;
+- (void)benchmarkDidFinishWithError:(nullable NSError *)error
+    NS_SWIFT_NAME(benchmarkDidFinish(error:));
 @optional
 /// CFreqCallback: one measured CPU frequency line.
 - (void)benchmarkDidAddFrequencyLine:(NSString *)line;
@@ -134,7 +135,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (class, nonatomic, readonly) NSString *cpuName;
 /// GetOsInfoText + " : " + AddCpuFeatures -- IDT_BENCH_CPU_FEATURE 109.
 @property (class, nonatomic, readonly) NSString *cpuFeaturesText;
-/// GetSysInfo -- IDT_BENCH_SYS1 107 / IDT_BENCH_SYS2 108 (second may be empty).
+/// GetSysInfo -- IDT_BENCH_SYS1 107 / IDT_BENCH_SYS2 108. **Both are empty on macOS**:
+/// upstream GetSysInfo (Windows/SystemInfo.cpp:490-520) only fills them under _WIN32. The
+/// Darwin version and the page size are part of cpuFeaturesText instead.
 @property (class, nonatomic, readonly) NSString *systemInfoLine1;
 @property (class, nonatomic, readonly) NSString *systemInfoLine2;
 /// "7-Zip " MY_VERSION_CPU -- IDT_BENCH_VER 105, and also what About shows.

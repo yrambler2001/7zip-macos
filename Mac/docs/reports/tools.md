@@ -36,3 +36,32 @@
 
 Next: the Swift UI (CRC submenu + results dialog, Benchmark, Split/Combine, Link, About,
 Help, temp-files browser).
+
+### Phases 2-4 — the UI (built, not yet driven live)
+
+* `Mac/App/Dialogs/HashResultsDialog.swift` — `HashListDialogView` is the generic
+  `CListViewDialog` (IDD_LISTVIEW 99): 1 or 2 columns, Del deletes rows when allowed,
+  Cmd+A selects all, Cmd+C copies `"<name>: <value>"` lines, Enter/double-click shows the row
+  in an info box for a 2-column list. `HashResultsDialog.show` is `ShowHashResults`: title
+  lang 7501 "Checksum information", `DeleteIsAllowed = true`, `SelectFirst = false`.
+  **The `panel` scope may lift `HashListDialogView` into its own `ListViewDialog.swift`** for
+  Properties / archive info / Folders History; this file then just uses it.
+* `Mac/App/Dialogs/BenchmarkDialog.swift` — every control of IDD_BENCH 7600: dictionary combo
+  (2·2^n / 3·2^n, 256 KB … 4 GB, initial = largest 2^n from 32 MB down that fits RAM),
+  memory-usage line, thread combo (1, 2, 4, 6 … 2× system, initial = process threads rounded
+  down to even), pass combo (1, 2, 5, 10 … 10⁷), the Compressing / Decompressing Current and
+  Resulting rows (size, CPU usage, speed, rating/usage, rating), Total Rating, elapsed time,
+  pass counter, error line, CPU / version / features statics, the log column with the
+  `Compr Decompr Total   CPU` table, Restart / Stop / Help / Cancel with the real enable and
+  restart semantics, and the 1000 ms tick. Cancel asks the worker to exit and closes only
+  after `waitUntilFinished`.
+* `Mac/App/Dialogs/SplitDialog.swift`, `CombineDialog.swift` — IDD_SPLIT 7300 with the nine
+  volume presets and free-text parsing, and the Combine destination dialog (a local stand-in
+  for the `panel` scope's Copy dialog) with the detected-parts info block.
+* `Mac/App/Dialogs/LinkDialog.swift` — IDD_LINK 7700 with the three link types macOS has and
+  a footnote about Directory Junction / WSL.
+* `Mac/App/Dialogs/AboutDialog.swift` — IDD_ABOUT 2900 plus `Help`, the topic opener
+  (bundled `Contents/Resources/Help/<topic>`, else the online documentation).
+* `Mac/App/Dialogs/ToolsTempFilesDialog.swift` — IDD_BROWSE2 93 temp browser.
+* `Mac/App/Commands/ToolsCommands.swift` — the menu commands plus `ToolsPanelAccess`, which
+  reads the operated items from the focused panel's public surface.

@@ -43,6 +43,7 @@ enum MainMenu {
 
     static func build() -> NSMenu {
         OpsInfraDemo.installIfRequested()   // SZ_OPSINFRA_DEMO: opsinfra scope verification hook
+        ToolsCommands.install()             // tools scope: real About dialog on the IDM_ABOUT items
         let bar = NSMenu(title: "MainMenu")
         bar.addItem(appMenu())
         bar.addItem(fileMenu())
