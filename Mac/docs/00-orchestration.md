@@ -74,3 +74,34 @@ Mac/scripts/build.sh            # xcodegen + xcodebuild Debug, ad-hoc signed
 Mac/scripts/run.sh              # builds then opens Mac/build/Debug/7-Zip.app
 Mac/scripts/test.sh             # unit + UI tests
 ```
+
+## File ownership (added before Wave 2)
+
+`Mac/project.yml` globs directories, so adding source files under `Mac/App`, `Mac/Core`,
+`Mac/FinderSync`, `Mac/Tests` needs no project change. Each scope may edit only the paths it
+owns; everything else is read-only for it.
+
+| Scope | Owns |
+|---|---|
+| `opsinfra` | `Mac/Core/include/SZProgressDelegate.h`, `Mac/Core/include/SZFolderOperations.h`, `Mac/Core/SZFolderOperations.mm`, `Mac/Core/Internal/SZCallbackAdapters.*`, `Mac/App/Support/OperationRunner.swift`, `Mac/App/Dialogs/Progress*.swift`, `Overwrite*.swift`, `Password*.swift`, `Messages*.swift`, `MemoryUse*.swift` |
+| `fsfolder` | `Mac/Core/Internal/FSFolderMac.*`, `RootFolderMac.*`, `FSEventsWatcher.*`, `Mac/Core/SZFileSystemFolder.mm`, `Mac/Core/SZRootFolder.mm`, `Mac/Core/include/SZFileSystemFolder.h`, `SZRootFolder.h` |
+| `options` | `Mac/App/Dialogs/Options*.swift`, `Mac/App/Support/Settings.swift`, `Mac/App/Support/FileTypes.swift`, `Mac/App/Commands/OptionsCommands.swift` |
+| `harness` | `Mac/scripts/*`, `Mac/Tests/UITests/*`, `Mac/project.yml` |
+| `panel` | `Mac/App/Panel/*`, `Mac/App/MainWindow/*`, `Mac/App/Commands/Panel*.swift`, `Mac/App/Dialogs/Properties*.swift`, `Comment*.swift`, `CopyMove*.swift`, `ListView*.swift`, `Combo*.swift`, `Browse*.swift` |
+| `extract` | `Mac/Core/SZExtractor.mm` + header, `Mac/Core/Internal/SZTempOpen.*`, `Mac/App/Dialogs/Extract*.swift`, `Mac/App/Commands/ExtractCommands.swift`, `Mac/App/Support/TempOpen*.swift` |
+| `compress` | `Mac/Core/SZUpdater.mm` + header, `Mac/App/Dialogs/Compress*.swift`, `Mac/App/Commands/CompressCommands.swift` |
+| `tools` | `Mac/Core/SZHasher.mm`, `SZBenchmark.mm` + headers, `Mac/App/Dialogs/Hash*.swift`, `Benchmark*.swift`, `Split*.swift`, `Combine*.swift`, `Link*.swift`, `About*.swift`, `Mac/App/Commands/ToolsCommands.swift` |
+| `finder` | `Mac/FinderSync/*`, `Mac/QuickAction/*`, `Mac/App/Info.plist`, `Mac/App/Integration/*`, `Mac/App/CommandLine*.swift` |
+| `packaging` | `Mac/scripts/package.sh`, `Mac/README.md`, signing settings |
+
+Shared files where **additive-only** edits are allowed by any scope (append or insert; never
+reorder or reformat, so merges stay trivial):
+
+- `Mac/App/MainMenu.swift` — add selectors to the `MenuActions` protocol and wire menu items.
+- `Mac/Core/include/SevenZipKit.h` — add your `#import` in alphabetical order.
+- `Mac/docs/PROGRESS.md` — tick boxes in your own scope section only.
+- `Mac/App/Support/Lang.swift`, `Formatting.swift`, `Icons.swift` — extend via a new file
+  `Support/<Name>+<Scope>.swift` instead of editing, unless a one-line addition is unavoidable.
+
+Do **not** edit `Mac/docs/architecture.md`. Instead write your scope's public API and the
+hooks other scopes need to `Mac/docs/api/<scope>.md`; later waves read those files.
