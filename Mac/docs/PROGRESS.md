@@ -19,7 +19,7 @@ Rules for implementation agents:
 | 4 | `extract` | `mac/extract` | not started | depends on scaffold |
 | 5 | `compress` | `mac/compress` | not started | depends on scaffold; shares Progress dialog with extract |
 | 6 | `tools` | `mac/tools` | not started | depends on scaffold; hash results reuse the ListView dialog (panel) |
-| 7 | `options` | `mac/options` | not started | depends on scaffold |
+| 7 | `options` | `mac/options` | review | Options window + all pages + settings facade done; 2 boxes left (lang ID lists, `FM.AutoRefresh` is persisted here) |
 | 8 | `finder` | `mac/finder` | not started | depends on extract, compress, tools for the command handlers |
 | 9 | `packaging` | `mac/packaging` | not started | last; needs every other scope merged |
 
@@ -524,72 +524,72 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 
 ### 7.1 Options window
 
-- [ ] Tools → Options… `IDM_OPTIONS 900` opens a tabbed window titled `IDS_OPTIONS` with pages in this order: System `IDD_SYSTEM 2200`, 7-Zip `IDD_MENU 2300`, Folders `IDD_FOLDERS 2400`, Editor `IDD_EDIT 2103`, Settings `IDD_SETTINGS 2500`, Language `IDD_LANG 2101`; page titles from the lang file with the resource captions as fallback (01b §4.22)
-- [ ] Each page: `OnInit`, change tracking (`Changed()`), `OnApply` writing only changed values, Help button → its topic (01b §4.22)
-- [ ] After the window closes: language changed → rebuild menu, toolbars, layout, `ReloadLangItems`; always `SetListSettings` + `RefreshAllPanels` (01b §4.22)
-- [ ] Plugins: 26.03 has no plugin chooser (`CExtPlugins.Plugins` only holds the built-in archive manager; plugin enumeration is commented out) — nothing to port, documented in the report (03 §3.4, 01 §6.8)
+- [x] Tools → Options… `IDM_OPTIONS 900` opens a tabbed window titled `IDS_OPTIONS` with pages in this order: System `IDD_SYSTEM 2200`, 7-Zip `IDD_MENU 2300`, Folders `IDD_FOLDERS 2400`, Editor `IDD_EDIT 2103`, Settings `IDD_SETTINGS 2500`, Language `IDD_LANG 2101`; page titles from the lang file with the resource captions as fallback (01b §4.22)
+- [x] Each page: `OnInit`, change tracking (`Changed()`), `OnApply` writing only changed values, Help button → its topic (01b §4.22)
+- [x] After the window closes: language changed → rebuild menu, toolbars, layout, `ReloadLangItems`; always `SetListSettings` + `RefreshAllPanels` (01b §4.22)
+- [x] Plugins: 26.03 has no plugin chooser (`CExtPlugins.Plugins` only holds the built-in archive manager; plugin enumeration is commented out) — nothing to port, documented in the report (03 §3.4, 01 §6.8)
 
 ### 7.2 System page (`IDD_SYSTEM 2200`, "System")
 
-- [ ] "Associate 7-Zip with:" `IDT_SYSTEM_ASSOCIATE 2201` (localised), `+` button `IDB_SYSTEM_CURRENT 101` toggling all rows for the current user; the all-users button `IDB_SYSTEM_ALL 102` and column are dropped (01b §4.21, 03 §3.4, 01 §9 #3)
-- [ ] List `IDL_SYSTEM_ASSOCIATE 100`: columns Type (`IDS_PROP_FILE_TYPE`, with the format icon) and `<user name>` ("Current User" fallback); one row per extension of the 39-entry association list (7z zip rar 001 cab iso xz txz lzma tar cpio bz2 bzip2 tbz2 tbz gz gzip tgz tpz zst tzst z taz lzh lha rpm deb arj vhd vhdx wim swm esd fat ntfs dmg hfs xar squashfs apfs) with icons converted from `Archive/Icons/*.ico` (03 §3.1, §6.2)
-- [ ] Cell text per state: empty = no association, `7-Zip` = this app, `[7-Zip]` = another 7-Zip install, otherwise the current handler's display name (`urlForApplication(toOpen:)`) (03 §3.4)
-- [ ] Interaction: click a cell, Space, `+` / `-` / `*`, Ctrl+A / numpad `*` select all, Enter / `+` button toggle; state cycles Clear ⇄ 7-Zip, rows owned by another program return to "Other" unless the whole group is set; `_needSave` + `Changed()` (01b §4.21, 03 §3.4)
-- [ ] Apply: for each changed row `NSWorkspace.setDefaultApplication(at:toOpen: UTType)` (7-Zip) or restore the previous handler (Clear); first error reported once; Launch Services re-registered; Help → `FM/options.htm#system` (01b §4.21, 03 §6.1, §6.2)
+- [x] "Associate 7-Zip with:" `IDT_SYSTEM_ASSOCIATE 2201` (localised), `+` button `IDB_SYSTEM_CURRENT 101` toggling all rows for the current user; the all-users button `IDB_SYSTEM_ALL 102` and column are dropped (01b §4.21, 03 §3.4, 01 §9 #3)
+- [x] List `IDL_SYSTEM_ASSOCIATE 100`: columns Type (`IDS_PROP_FILE_TYPE`, with the format icon) and `<user name>` ("Current User" fallback); one row per extension of the 39-entry association list (7z zip rar 001 cab iso xz txz lzma tar cpio bz2 bzip2 tbz2 tbz gz gzip tgz tpz zst tzst z taz lzh lha rpm deb arj vhd vhdx wim swm esd fat ntfs dmg hfs xar squashfs apfs) with icons converted from `Archive/Icons/*.ico` (03 §3.1, §6.2)
+- [x] Cell text per state: empty = no association, `7-Zip` = this app, `[7-Zip]` = another 7-Zip install, otherwise the current handler's display name (`urlForApplication(toOpen:)`) (03 §3.4)
+- [x] Interaction: click a cell, Space, `+` / `-` / `*`, Ctrl+A / numpad `*` select all, Enter / `+` button toggle; state cycles Clear ⇄ 7-Zip, rows owned by another program return to "Other" unless the whole group is set; `_needSave` + `Changed()` (01b §4.21, 03 §3.4)
+- [x] Apply: for each changed row `NSWorkspace.setDefaultApplication(at:toOpen: UTType)` (7-Zip) or restore the previous handler (Clear); first error reported once; Launch Services re-registered; Help → `FM/options.htm#system` (01b §4.21, 03 §6.1, §6.2)
 
 ### 7.3 7-Zip page (`IDD_MENU 2300`, "7-Zip")
 
-- [ ] "Integrate 7-Zip to shell context menu" `IDX_SYSTEM_INTEGRATE_TO_MENU 2301` → "Enable Finder integration": shows the current `pluginkit` state, opens System Settings › General › Login Items & Extensions (File Providers / Finder), prints the `pluginkit -e use -i <id>` command and a diagnostics line (`pluginkit -m -p com.apple.FinderSync -v`); second bitness checkbox `2310` dropped (01b §4.13, 03 §6.2, §6.4, §7)
-- [ ] "Cascaded context menu" `IDX_SYSTEM_CASCADED_MENU 2302` (default true, `Options.CascadedMenu`) (01b §4.13, 03 §1.3)
-- [ ] "Icons in context menu" `IDX_SYSTEM_ICON_IN_MENU 2304` (default false, `Options.MenuIcons`) (01b §4.13)
-- [ ] "Eliminate duplication of root folder" `IDX_EXTRACT_ELIM_DUP 3430` (default true, `Options.ElimDupExtract`) (01b §4.13)
-- [ ] "Propagate Zone.Id stream:" `IDT_SYSTEM_ZONE 3440` / combo `IDC_SYSTEM_ZONE 101`: `* No` (lang 406, 0), `Yes` (407, 1), `For Office files` (`IDT_ZONE_FOR_OFFICE 3441`, 2), raw number when ≥ 3; index ≤ 0 stored as `-1`; drives quarantine propagation (01b §4.13, 01 §9 #23)
-- [ ] "Context menu items:" `IDT_SYSTEM_CONTEXT_MENU_ITEMS 2303` / check-list `IDL_SYSTEM_OPTIONS 100` with rows Open archive (`1<<5`), Open archive > (`1<<6`), Extract files... (`1<<0`), Extract Here (`1<<1`), Extract to <Folder> (`1<<2`), Test archive (`1<<4`), Add to archive... (`1<<8`), Add to <Archive>.7z (`1<<9`), Add to <Archive>.zip (`1<<12`), Compress and email... (`1<<10`), Compress to <Archive>.7z and email (`1<<11`), Compress to <Archive>.zip and email (`1<<13`), CRC SHA > (`1<<31`), 7-Zip > CRC SHA > (`1<<30`); all checked when `Options.ContextMenu` is absent; mask saved only when changed (01b §4.13, 03 §1.3)
-- [ ] Apply order: integration state first, then the five option flags only when changed; changed settings pushed to the Finder extension (URL-scheme handshake / suite defaults); Help → `fm/options.htm#sevenZip` (01b §4.13, 03 §6.4)
+- [x] "Integrate 7-Zip to shell context menu" `IDX_SYSTEM_INTEGRATE_TO_MENU 2301` → "Enable Finder integration": shows the current `pluginkit` state, opens System Settings › General › Login Items & Extensions (File Providers / Finder), prints the `pluginkit -e use -i <id>` command and a diagnostics line (`pluginkit -m -p com.apple.FinderSync -v`); second bitness checkbox `2310` dropped (01b §4.13, 03 §6.2, §6.4, §7)
+- [x] "Cascaded context menu" `IDX_SYSTEM_CASCADED_MENU 2302` (default true, `Options.CascadedMenu`) (01b §4.13, 03 §1.3)
+- [x] "Icons in context menu" `IDX_SYSTEM_ICON_IN_MENU 2304` (default false, `Options.MenuIcons`) (01b §4.13)
+- [x] "Eliminate duplication of root folder" `IDX_EXTRACT_ELIM_DUP 3430` (default true, `Options.ElimDupExtract`) (01b §4.13)
+- [x] "Propagate Zone.Id stream:" `IDT_SYSTEM_ZONE 3440` / combo `IDC_SYSTEM_ZONE 101`: `* No` (lang 406, 0), `Yes` (407, 1), `For Office files` (`IDT_ZONE_FOR_OFFICE 3441`, 2), raw number when ≥ 3; index ≤ 0 stored as `-1`; drives quarantine propagation (01b §4.13, 01 §9 #23)
+- [x] "Context menu items:" `IDT_SYSTEM_CONTEXT_MENU_ITEMS 2303` / check-list `IDL_SYSTEM_OPTIONS 100` with rows Open archive (`1<<5`), Open archive > (`1<<6`), Extract files... (`1<<0`), Extract Here (`1<<1`), Extract to <Folder> (`1<<2`), Test archive (`1<<4`), Add to archive... (`1<<8`), Add to <Archive>.7z (`1<<9`), Add to <Archive>.zip (`1<<12`), Compress and email... (`1<<10`), Compress to <Archive>.7z and email (`1<<11`), Compress to <Archive>.zip and email (`1<<13`), CRC SHA > (`1<<31`), 7-Zip > CRC SHA > (`1<<30`); all checked when `Options.ContextMenu` is absent; mask saved only when changed (01b §4.13, 03 §1.3)
+- [x] Apply order: integration state first, then the five option flags only when changed; changed settings pushed to the Finder extension (URL-scheme handshake / suite defaults); Help → `fm/options.htm#sevenZip` (01b §4.13, 03 §6.4)
 
 ### 7.4 Folders page (`IDD_FOLDERS 2400`, "Folders")
 
-- [ ] "Working folder" `IDT_FOLDERS_WORKING_FOLDER 2401`; radios "System temp folder" `IDR_FOLDERS_WORK_SYSTEM 2402` (default), "Current" `2403`, "Specified:" `2404`; path edit `IDE_FOLDERS_WORK_PATH 100` + Browse `IDB_FOLDERS_WORK_PATH 101` (`IDS_FOLDERS_SET_WORK_PATH_TITLE 2406` "Specify a location for temporary archive files.") enabled only for Specified; "Use for removable drives only" `IDX_FOLDERS_WORK_FOR_REMOVABLE 2405` (default checked) (01b §4.8)
-- [ ] Load falls back to System when the mode is Specified without a path; Apply saves `WorkDirType` / `WorkDirPath` / `TempRemovableOnly` only when changed; Help → `fm/options.htm#folders` (01b §4.8, §5.5)
+- [x] "Working folder" `IDT_FOLDERS_WORKING_FOLDER 2401`; radios "System temp folder" `IDR_FOLDERS_WORK_SYSTEM 2402` (default), "Current" `2403`, "Specified:" `2404`; path edit `IDE_FOLDERS_WORK_PATH 100` + Browse `IDB_FOLDERS_WORK_PATH 101` (`IDS_FOLDERS_SET_WORK_PATH_TITLE 2406` "Specify a location for temporary archive files.") enabled only for Specified; "Use for removable drives only" `IDX_FOLDERS_WORK_FOR_REMOVABLE 2405` (default checked) (01b §4.8)
+- [x] Load falls back to System when the mode is Specified without a path; Apply saves `WorkDirType` / `WorkDirPath` / `TempRemovableOnly` only when changed; Help → `fm/options.htm#folders` (01b §4.8, §5.5)
 
 ### 7.5 Editor page (`IDD_EDIT 2103`, "Editor")
 
-- [ ] "View:" `IDT_EDIT_VIEWER 543` / `IDE_EDIT_VIEWER 100` / Browse `101`; "Editor:" `IDT_EDIT_EDITOR 2104` / `102` / `103`; "Diff:" `IDT_EDIT_DIFF 2105` / `104` / `105`; labels localised with `LangSetDlgItems_Colon` (01b §4.7)
-- [ ] Browse picks an application bundle or executable (`NSOpenPanel`), replacing the whole text (arguments dropped, `SplitCmdLineSmart`); values may carry arguments and are stored as `FM.Viewer` / `FM.Editor` / `FM.Diff`; empty = Quick Look / TextEdit / Diff hidden (01b §4.7, 01 §9 #10)
-- [ ] Change tracking per row, Apply saves only changed rows; Help → `FM/options.htm#editor` (01b §4.7)
+- [x] "View:" `IDT_EDIT_VIEWER 543` / `IDE_EDIT_VIEWER 100` / Browse `101`; "Editor:" `IDT_EDIT_EDITOR 2104` / `102` / `103`; "Diff:" `IDT_EDIT_DIFF 2105` / `104` / `105`; labels localised with `LangSetDlgItems_Colon` (01b §4.7)
+- [x] Browse picks an application bundle or executable (`NSOpenPanel`), replacing the whole text (arguments dropped, `SplitCmdLineSmart`); values may carry arguments and are stored as `FM.Viewer` / `FM.Editor` / `FM.Diff`; empty = Quick Look / TextEdit / Diff hidden (01b §4.7, 01 §9 #10)
+- [x] Change tracking per row, Apply saves only changed rows; Help → `FM/options.htm#editor` (01b §4.7)
 
 ### 7.6 Settings page (`IDD_SETTINGS 2500`, "Settings")
 
-- [ ] Checkboxes "Show \"..\" item" `IDX_SETTINGS_SHOW_DOTS 2501`, "Show real file icons" `2502`, "Full row select" `2504`, "Show grid lines" `2505`, "Single-click to open an item" `2506`, "Alternative selection mode" `2507`, "Show system menu" `2503` (all default false, `FM.*` keys) (01b §4.19)
-- [ ] "Use large memory pages" `IDX_SETTINGS_LARGE_PAGES 2508` removed (final section) (01b §4.19)
-- [ ] "Maximum amount of RAM memory usage allowed to unpack archives:" `IDT_MEM_USAGE_EXTRACT 7816` + set checkbox `IDX_SETTINGS_MEM_SET 100` + spin edit `IDE_SETTINGS_MEM_SPIN_EDIT 101` / `IDC_SETTINGS_MEM_SPIN 102` + `IDT_SETTINGS_MEM_GB 103` (`GB` / `GB / <RAM> GB (RAM)`); unchecked when `Extraction.MemLimit` is 0 / −1; range 1..`min(RAM_GB−1, 16384)`; Apply writes −1 when unchecked else the validated value (≤ 2^30, otherwise `E_INVALIDARG` box and the page stays invalid) (01b §4.19)
-- [ ] Apply saves `CFmSettings` only when changed and the memory limit only when changed; then `SetListSettings` + `RefreshAllPanels`; Help → `FM/options.htm#settings`; eight checkboxes and the label localised (01b §4.19)
+- [x] Checkboxes "Show \"..\" item" `IDX_SETTINGS_SHOW_DOTS 2501`, "Show real file icons" `2502`, "Full row select" `2504`, "Show grid lines" `2505`, "Single-click to open an item" `2506`, "Alternative selection mode" `2507`, "Show system menu" `2503` (all default false, `FM.*` keys) (01b §4.19)
+- [x] "Use large memory pages" `IDX_SETTINGS_LARGE_PAGES 2508` removed (final section) (01b §4.19)
+- [x] "Maximum amount of RAM memory usage allowed to unpack archives:" `IDT_MEM_USAGE_EXTRACT 7816` + set checkbox `IDX_SETTINGS_MEM_SET 100` + spin edit `IDE_SETTINGS_MEM_SPIN_EDIT 101` / `IDC_SETTINGS_MEM_SPIN 102` + `IDT_SETTINGS_MEM_GB 103` (`GB` / `GB / <RAM> GB (RAM)`); unchecked when `Extraction.MemLimit` is 0 / −1; range 1..`min(RAM_GB−1, 16384)`; Apply writes −1 when unchecked else the validated value (≤ 2^30, otherwise `E_INVALIDARG` box and the page stays invalid) (01b §4.19)
+- [x] Apply saves `CFmSettings` only when changed and the memory limit only when changed; then `SetListSettings` + `RefreshAllPanels`; Help → `FM/options.htm#settings`; eight checkboxes and the label localised (01b §4.19)
 
 ### 7.7 Language page (`IDD_LANG 2101`, "Language")
 
-- [ ] "Language:" `IDT_LANG_LANG 2102` / combo `IDC_LANG_LANG 100`: first entry built-in English (`"-"`), then every `Lang/*.txt` shown as `<English name (id 1)> : <native name (id 2)>` (fallback = file stem); files that fail to load reported in one "Error in Lang file" box; entries matching the user's locale marked `***` (exact) or `+++` (same primary language); current = `Lang` (01b §4.9, 01 §7.1)
+- [x] "Language:" `IDT_LANG_LANG 2102` / combo `IDC_LANG_LANG 100`: first entry built-in English (`"-"`), then every `Lang/*.txt` shown as `<English name (id 1)> : <native name (id 2)>` (fallback = file stem); files that fail to load reported in one "Error in Lang file" box; entries matching the user's locale marked `***` (exact) or `+++` (same primary language); current = `Lang` (01b §4.9, 01 §7.1)
 - [ ] Info `IDT_LANG_INFO 101`: `<name> : <lines> / <NumLangLines_EN> = NN%` (`en.ttt` line count, else 443), the file's comment lines, "Missing lines" / "Extra lines" ID lists relative to `en.ttt` (01b §4.9)
-- [ ] Change → `_needSave`; Apply → save `Lang`, `ReloadLang`, `LangWasChanged` so the menu / toolbars / panels re-localise; Help → `fm/options.htm#language` (01b §4.9)
+- [x] Change → `_needSave`; Apply → save `Lang`, `ReloadLang`, `LangWasChanged` so the menu / toolbars / panels re-localise; Help → `fm/options.htm#language` (01b §4.9)
 
 ### 7.8 Settings persistence (`UserDefaults`, keys named after the registry values; tri-state `CBoolPair` = absent / false / true)
 
-- [ ] `Lang` (String: absent = auto, `"-"` = English, else lang file stem) (01b §5.1, §5.7)
-- [ ] `FM.Viewer`, `FM.Editor`, `FM.Diff`, `FM.7vc` (String; empty = default / hidden) (01b §5.2, §5.7)
-- [ ] `FM.ShowDots`, `FM.ShowRealFileIcons`, `FM.FullRow`, `FM.ShowGrid`, `FM.SingleClick`, `FM.AlternativeSelection`, `FM.ShowSystemMenu` (Bool, default false) (01b §5.2)
-- [ ] `FM.FlatViewArc0` / `FM.FlatViewArc1` (Bool) (01b §5.2)
-- [ ] Window frame via `setFrameAutosaveName` (+ `FM.Maximized`); `FM.NumPanels`, `FM.CurrentPanel`, `FM.SplitterPos` (Int) (01b §5.2, §5.7)
-- [ ] `FM.Toolbars` (Int mask, bit layout kept incl. bit 31 = defaults) (01b §5.2)
-- [ ] `FM.ListMode0` / `FM.ListMode1` (Int 0..3, default 3) (01b §5.2)
-- [ ] `FM.PanelPath0` / `FM.PanelPath1` (String) (01b §5.2)
-- [ ] `FM.FolderHistory` (≤ 100), `FM.CopyHistory` (≤ 20), `FM.FolderShortcuts` (10 slots, empty = unset) ([String]) (01b §5.2)
-- [ ] `FM.Columns.<FolderTypeID>` dictionary `{sortID, ascending, columns: [{propID, visible, width}]}` with the version-1 semantics of `CListViewInfo` (01b §5.3, §5.7)
-- [ ] `Extraction.ExtractMode`, `Extraction.OverwriteMode` (Int, absent = not forced), `Extraction.ShowPassword`, `Extraction.SplitDest` (default true), `Extraction.ElimDup`, `Extraction.PathHistory` (≤ 16), `Extraction.MemLimit` (Int GB, absent = none); `Extraction.Security` kept only for compatibility (01b §5.4, §5.7)
-- [ ] `Compression.ArcHistory` (≤ 20), `Compression.Archiver` (default `7z`), `Compression.Level` (default 5), `Compression.ShowPassword`, `Compression.EncryptHeaders`, `Compression.HardLinks`, `Compression.SymLinks`, `Compression.PreserveATime` (tri-state); `Security` / `AltStreams` kept only for compatibility (01b §5.4, §5.7)
-- [ ] `Compression.Options.<Format>` `{Method, Options, EncryptionMethod, MemUse (String); Level, Dictionary (−1 auto / −2 ≥ 4 GB), Order (−1), BlockSize (log2; 0 non-solid, 64 solid, −1 auto), NumThreads (−1), TimePrec (−1) (Int); MTime, ATime, CTime, SetArcMTime (Bool?)}`; one `MemUse` key (64-bit only) (01b §5.4, §5.7)
-- [ ] `Options.WorkDirType` (Int 0/1/2), `Options.WorkDirPath` (String), `Options.TempRemovableOnly` (Bool, default true) (01b §5.5)
-- [ ] `Options.CascadedMenu` (default true), `Options.MenuIcons` (false), `Options.ElimDupExtract` (true), `Options.WriteZoneIdExtract` (Int −1/0/1/2), `Options.ContextMenu` (Int mask, absent = all) (01b §5.5, §5.7)
-- [ ] `Options.*`, `Compression.*`, `Extraction.*` readable by the Finder extension (shared suite or pushed copy); the rest in the standard suite (01b §5.7, 03 §6.4)
-- [ ] `SZSettings` and the Swift `Settings` facade read / write the same keys so engine-side defaults (`ZipRegistry` accessors) and the UI never disagree; all writes serialised (01b §5, architecture)
+- [x] `Lang` (String: absent = auto, `"-"` = English, else lang file stem) (01b §5.1, §5.7)
+- [x] `FM.Viewer`, `FM.Editor`, `FM.Diff`, `FM.7vc` (String; empty = default / hidden) (01b §5.2, §5.7)
+- [x] `FM.ShowDots`, `FM.ShowRealFileIcons`, `FM.FullRow`, `FM.ShowGrid`, `FM.SingleClick`, `FM.AlternativeSelection`, `FM.ShowSystemMenu` (Bool, default false) (01b §5.2)
+- [x] `FM.FlatViewArc0` / `FM.FlatViewArc1` (Bool) (01b §5.2)
+- [x] Window frame via `setFrameAutosaveName` (+ `FM.Maximized`); `FM.NumPanels`, `FM.CurrentPanel`, `FM.SplitterPos` (Int) (01b §5.2, §5.7)
+- [x] `FM.Toolbars` (Int mask, bit layout kept incl. bit 31 = defaults) (01b §5.2)
+- [x] `FM.ListMode0` / `FM.ListMode1` (Int 0..3, default 3) (01b §5.2)
+- [x] `FM.PanelPath0` / `FM.PanelPath1` (String) (01b §5.2)
+- [x] `FM.FolderHistory` (≤ 100), `FM.CopyHistory` (≤ 20), `FM.FolderShortcuts` (10 slots, empty = unset) ([String]) (01b §5.2)
+- [x] `FM.Columns.<FolderTypeID>` dictionary `{sortID, ascending, columns: [{propID, visible, width}]}` with the version-1 semantics of `CListViewInfo` (01b §5.3, §5.7)
+- [x] `Extraction.ExtractMode`, `Extraction.OverwriteMode` (Int, absent = not forced), `Extraction.ShowPassword`, `Extraction.SplitDest` (default true), `Extraction.ElimDup`, `Extraction.PathHistory` (≤ 16), `Extraction.MemLimit` (Int GB, absent = none); `Extraction.Security` kept only for compatibility (01b §5.4, §5.7)
+- [x] `Compression.ArcHistory` (≤ 20), `Compression.Archiver` (default `7z`), `Compression.Level` (default 5), `Compression.ShowPassword`, `Compression.EncryptHeaders`, `Compression.HardLinks`, `Compression.SymLinks`, `Compression.PreserveATime` (tri-state); `Security` / `AltStreams` kept only for compatibility (01b §5.4, §5.7)
+- [x] `Compression.Options.<Format>` `{Method, Options, EncryptionMethod, MemUse (String); Level, Dictionary (−1 auto / −2 ≥ 4 GB), Order (−1), BlockSize (log2; 0 non-solid, 64 solid, −1 auto), NumThreads (−1), TimePrec (−1) (Int); MTime, ATime, CTime, SetArcMTime (Bool?)}`; one `MemUse` key (64-bit only) (01b §5.4, §5.7)
+- [x] `Options.WorkDirType` (Int 0/1/2), `Options.WorkDirPath` (String), `Options.TempRemovableOnly` (Bool, default true) (01b §5.5)
+- [x] `Options.CascadedMenu` (default true), `Options.MenuIcons` (false), `Options.ElimDupExtract` (true), `Options.WriteZoneIdExtract` (Int −1/0/1/2), `Options.ContextMenu` (Int mask, absent = all) (01b §5.5, §5.7)
+- [x] `Options.*`, `Compression.*`, `Extraction.*` readable by the Finder extension (shared suite or pushed copy); the rest in the standard suite (01b §5.7, 03 §6.4)
+- [x] `SZSettings` and the Swift `Settings` facade read / write the same keys so engine-side defaults (`ZipRegistry` accessors) and the UI never disagree; all writes serialised (01b §5, architecture)
 - [ ] Not persisted, as on Windows: `AutoRefresh_Mode`, `ShowDeleted`, `Underline`; benchmark and hash operations have no stored settings (01 §3.17, 01b §5, §5.2)
 
 ## 8. finder — Finder Sync extension, Services / Quick Actions, document types, `sevenzip://` commands, 7zG grammar
