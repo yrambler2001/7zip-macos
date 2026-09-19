@@ -11,6 +11,8 @@ agent. Add a line, never rewrite someone else's.
 | `options` | `harness` (`project.yml`) | Replace the two symlinks under `Mac/Tests/SevenZipKitTests/` that point at `Support/Settings.swift` and `Support/FileTypes.swift` with proper source entries for the test target. | open |
 | `options`, `opsinfra`, `harness` | orchestrator | Agents running the app concurrently share the `com.yrambler2001.7zip` preferences domain and overwrite each other's settings; the domain override request above fixes this. | **done**: launch with `SEVENZIP_DEFAULTS_SUITE=7zip-<scope>` (or any name) and the whole process, engine included, uses that domain. |
 
+| `harness` | `options` (settings owner) | `SEVENZIP_DEFAULTS_SUITE` takes a domain name, which only allows per-run seeding from the scripts, because the sandboxed XCUITest runner cannot write any CFPreferences domain the app reads. Accepting a **plist path** as well would allow per-test seeding. | open |
+
 ## Spec corrections found during implementation
 
 These override the inventory documents. Trust this list over the inventory when they disagree.
@@ -24,9 +26,10 @@ These override the inventory documents. Trust this list over the inventory when 
 ## Wave status
 
 - Merged into `macos`: `fsfolder`, `opsinfra`, `options`. Each ran a clean build plus test pass.
-- `mac/harness` (4 commits, work staged): needs its `verify.sh` run, which waits on the shared
+
   app lock, then the `PROGRESS.md` section 9.1 tick.
-- `mac/tools` in progress.
+- `mac/harness` merged: UI suite 9/9 green, `verify.sh` green end to end, the app-launch lock is wired into `test.sh --ui` and `verify.sh`.
+- In progress: `mac/tools`, `mac/panel`, `mac/extract`, `mac/compress`.
 - Follow-up after the merge: `harness` replaces the two `Mac/Tests/SevenZipKitTests/` symlinks with
   proper `project.yml` source entries. Keep `Settings.swift` and `FileTypes.swift` Foundation-only
   so they stay compilable inside the test target.
