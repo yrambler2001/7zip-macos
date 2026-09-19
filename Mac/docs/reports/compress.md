@@ -84,3 +84,42 @@ Sync and the relative/absolute path modes; and `CreateArchiveName` including the
 Known gap recorded in `Mac/docs/requests.md`: the bridge's archive *opener* has no
 `IArchiveOpenVolumeCallback`, so `x.7z.001` cannot be opened through `SZFolder`
 (the console can). Creating volumes works; only reading a set back through the bridge does not.
+
+## Phase 2 + 3 — dialog, Options sheet and commands (built)
+
+- `Mac/App/Dialogs/CompressModel.swift` — the AppKit-free computation half of
+  `CompressDialog.cpp`: `g_Formats` (9 entries with `LevelsMask`, method lists and the seven
+  `kFF_*` flags), `CompressMethodID` = `EMethodID` with `kMethodsNames`, the level / method /
+  dictionary / word-size / solid / thread / mem-use item builders with their auto rules and
+  selection-from-settings logic, `Get_Lzma2_ChunkSize`, `Get_MemUse_Bytes`,
+  `GetMemoryUsage_Threads_Dict_DecompMem`, `PrintMemUsage`, `CompressMemUse`
+  (`NCompression::CMemUse::Parse`), `CompressVolumes` (`ParseVolumeSizes` + the Split presets +
+  `GetNumberOfVolumes`), `CompressTimePrecision` (`AddPrec` / `Get_TimePrecFlags`) and
+  `CompressDialogResult`, whose `properties` emits the `-m` list in the exact
+  `SetOutProperties` + `ParseAndAddPropertires` order (including `IsThereMethodOverride`).
+- `Mac/App/Dialogs/CompressDialog.swift` — IDD_COMPRESS 4000. Every control carries its
+  Windows ID in a comment and its label comes from the lang table by ID. The cascade is the
+  Windows one: format -> `SaveOptionsInMem` + `FormatChanged` + `SetArchiveName2`;
+  level -> `ResetForLevelChange` + method + dependents; method -> dictionary/order/solid/
+  threads/memory (+ the hash extension); dictionary -> reset stored block size unless
+  Non-solid/Solid, refill solid/threads/memory; order/solid/threads -> memory;
+  mem-use -> threads + memory. OnOK does the five validations in order, the volume parse with
+  the < 100 KB confirmation, and writes `Archiver`, `ShowPassword`, `EncryptHeaders`,
+  `ArcHistory` (20) and every touched per-format option group.
+- `Mac/App/Dialogs/CompressOptionsSheet.swift` — IDD_COMPRESS_OPTIONS 14001 with the tri-state
+  ":" set-boxes, `SetPrec` / `SetTimeMAC` (tar -> no ctime, atime only for POSIX; zip -> c/a
+  only at Windows precision; mtime's set-box hidden for multi-file formats), the always-shown
+  `-stl` box and the `-ssp` box. Alt streams and file security are hidden on macOS but still
+  round-trip through the settings.
+- `Mac/App/Commands/CompressCommands.swift` — `toolbarAddToArchive` (`CPanel::AddToArchive`
+  rules: FS panel only, IDS_SELECT_FILES when nothing is selected, `CreateArchiveName`),
+  the `CompressTo7z` / `CompressToZip` quick commands and their email variants, compress and
+  email through `NSSharingService.composeEmail` with a `7zE-<uuid>` temp folder (stale folders
+  purged on the next run since `EMailRemoveAfter` cannot be synchronous), and adding files to
+  the archive an open panel is inside (in-place `SZUpdater.addPaths` at the root, the Agent's
+  `CopyFrom` in a sub-folder). Everything runs under `OperationRunner` with the
+  IDS_PROGRESS_COMPRESSING title and `showCompressionInfo = true`, then `ActiveContext.refreshAll()`.
+- `Mac/App/MainMenu.swift`: six selectors appended to `MenuActions` (additive only).
+
+Next: unit tests for the model (item lists, auto values, memory, property order), then the
+running-app verification.

@@ -420,4 +420,12 @@ final class FavoritesMenuDelegate: NSObject, NSMenuDelegate {
     func toolbarAddToArchive(_ sender: Any?)
     func toolbarExtractArchives(_ sender: Any?)
     func toolbarTestArchives(_ sender: Any?)
+    // Explorer context-menu compress commands (ContextMenu.cpp:278-283); 7zFM itself has no
+    // menu items for these, the `finder` scope wires them into the Finder menu.
+    func compressToSevenZip(_ sender: Any?)          // kCompressTo7z
+    func compressToZip(_ sender: Any?)               // kCompressToZip
+    func compressAndEmail(_ sender: Any?)            // kCompressEmail
+    func compressToSevenZipAndEmail(_ sender: Any?)  // kCompressTo7zEmail
+    func compressToZipAndEmail(_ sender: Any?)       // kCompressToZipEmail
+    func compressAddToOpenArchive(_ sender: Any?)    // add files to the open archive (01 3.10)
 }
