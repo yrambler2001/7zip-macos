@@ -25,6 +25,7 @@ agent. Add a line, never rewrite someone else's.
 | `extract` | `tools` | Extraction can hash on the fly (`-scrc<method>`, `Extract()`'s `IHashCalc*`). `SZArchiveExtractor` passes NULL; wire it to the hash-results dialog when that exists. | open |
 | `compress` | `extract` / `SZArchiveOpener` owner | `SZFolder.folder(forPath:)` / `SZArchiveOpener.openArchive(atPath:)` cannot open a multi-volume set: opening `x.7z.001` fails with `SZErrorCodeNotArchive` because no `IArchiveOpenVolumeCallback` (`COpenCallbackImp`) is supplied. The console `7zz` opens the same file fine. `UpdaterOptionsTests.testSplitVolumes` works around it by concatenating the volumes. | open |
 | `compress` | `harness` (`project.yml`) | Add `Resources/SFX` to the **SevenZipKit** framework's resources (it is an app-target resource today), so `SZUpdater.defaultSFXModulePath` finds `7z.sfx` from the unit-test bundle without the `SEVENZIP_SFX_DIR` override. | open |
+| orchestrator | `fsfolder` | `FSFolderTests/testCrossVolumeCopyMoveAndVolumeRefresh` asserts the exact total number of mounted volumes, so it fails whenever another agent mounts or detaches a RAM disk concurrently. Assert that its own volume is present and absent again instead of comparing totals. | open |
 
 ## Spec corrections found during implementation
 
