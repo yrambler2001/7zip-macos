@@ -20,6 +20,9 @@ agent. Add a line, never rewrite someone else's.
 | `tools` | `extract` | `-scrc` on extract/test: build the digests into `SZHashResults` and show them with `HashResultsDialog`; `CSZHashStreamCallback` in `SZHasher.mm` is the `IFolderExtractToStreamCallback` model. | open |
 | `tools` | `finder` | The Explorer commands `CRC SHA-256 -> <name>.sha256` (03 §1.4 C12) and `Test archive : Checksum` (C13) are `SZHasher.writeChecksumFile` / `SZHasher.verifyChecksumFile`; no update flow is needed. | open |
 | `tools` | orchestrator | New `tools`-owned paths not in the Wave 2 ownership table: `Mac/Core/SZSplitFile.{h,mm}`, `Mac/Core/Internal/SZToolsEngine.h`, `Mac/App/Dialogs/ToolsTempFilesDialog.swift`. | open |
+| `extract` | `panel` | `PanelViewController` implements `fileOpenOutside(_:)` and disables it unless the folder is a file system, so Open Outside never reaches the archive branch. Call `ItemOpenCommands.openOutside()` (or let the command scope own the selector) so an item inside an archive is extracted to a `7zO` temp folder and opened. | open |
+| `extract` | `panel` | Drag-out of archive members: use `ArchiveDragOut.promisedNames(indices:from:)` / `.extract(indices:from:to:...)` / `.removeTemporaryDirectory(_:)` from `Mac/App/Support/TempOpenCommands.swift` (documented in `Mac/docs/api/extract.md` §5) instead of calling the folder directly. | open |
+| `extract` | `tools` | Extraction can hash on the fly (`-scrc<method>`, `Extract()`'s `IHashCalc*`). `SZArchiveExtractor` passes NULL; wire it to the hash-results dialog when that exists. | open |
 
 ## Spec corrections found during implementation
 
@@ -33,6 +36,10 @@ These override the inventory documents. Trust this list over the inventory when 
 - Button lang IDs (the run that starts at 401 in `Lang/*.txt`): 401 OK, 402 Cancel,
 - `NWindows::NSystem::CProcessAffinity` has **no**
 - `GetSysInfo(s1, s2)` (`Windows/SystemInfo.cpp:490`) returns two **empty** strings on
+- `AutoRenamePath` (`CPP/7zip/Common/FilePathAutoRename.cpp`) renames to `name_1.ext`, not
+- Button lang IDs are positional in `en.ttt`: **406 = Yes, 407 = No, 408 = Close, 409 = Help**
+- The Extract dialog's path-mode and overwrite-mode controls are **combo boxes**
+- The obvious bridge class name `SZExtractor` collides with a private Objective-C class in
 
 ## Wave status
 
@@ -41,7 +48,6 @@ These override the inventory documents. Trust this list over the inventory when 
 - In progress: `mac/tools`, `mac/panel`, `mac/extract`, `mac/compress`.
 - Follow-up after the merge: `harness` replaces the two `Mac/Tests/SevenZipKitTests/` symlinks with
 - `mac/tools` merged: hashing, Benchmark, Split, Combine, Link, About, Help, temp browser. Its
-  `ToolsPanelAccess.operatedItems` reads the panel table directly because the branch predates the
-  frozen `OperationContext`; migrate it to `ActiveContext.current()` once `panel` is merged.
 - Retroactive tick needed: the `scaffold` section of `PROGRESS.md` is 0/57 because the checklist
-  did not exist when the scaffold was built. An audit pass must tick what the scaffold really did.
+- `mac/harness` (4 commits, work staged): needs its `verify.sh` run, which waits on the shared
+- `mac/tools` in progress.
