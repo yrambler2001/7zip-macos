@@ -131,6 +131,10 @@ public:
   /// An unambiguous IProgress for the interfaces that want one (IFolderOperations).
   IProgress *AsProgress() { return static_cast<IFolderArchiveExtractCallback *>(this); }
 
+  /// Path of the item PrepareOperation/SetCurrentFilePath last announced
+  /// (CExtractCallbackImp::_currentFilePath): reported with each operation result.
+  UString CurrentFilePath;
+
 private:
   bool _isFolder;   // last PrepareOperation item kind
 };

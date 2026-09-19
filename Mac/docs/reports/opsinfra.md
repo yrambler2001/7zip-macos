@@ -34,3 +34,20 @@ Password / Messages / Memory dialogs. Public API: `Mac/docs/api/opsinfra.md`.
 * `Mac/Core/include/SevenZipKit.h` — one additive `#import` (allowed shared file).
 
 Builds clean (`Mac/scripts/build.sh`). Next: Phase 3 `OperationRunner.swift`.
+
+### Phase 5a done — bridge unit tests
+
+`Mac/Tests/SevenZipKitTests/FolderOperationsTests.swift` (15 tests, all green together with
+the 17 pre-existing ones): callback order for a real `test.7z` extraction (status and title
+before data, `SetTotal` before the first `SetCompleted`, monotonic completion, current file
+before its result, `SetRatioInfo` seen, 6 results = 4 files + 2 dirs, files on disk with the
+right sizes), selected-items extraction with `.noPaths`, test mode writing nothing, cancel →
+`SZError.Code.cancelled`, password delegate unlocking `secret.zip` and `secret.7z` (encrypted
+headers), wrong password → per-item failures flagged encrypted with the item name, password
+Cancel → cancelled, `.ask` overwrite asked once for "No to All", `calcSize` = 3043 / 3010 / 12
+for the fixture tree and 350 for a real directory (BindToFolder fallback), file-system
+`IFolderOperations` reporting a clear `notImplemented`, archive move refused, copy-out through
+`IFolderOperations::CopyTo`.
+
+Adapters now report the current item path with each operation result
+(`CExtractCallbackImp::_currentFilePath`).

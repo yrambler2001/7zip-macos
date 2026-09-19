@@ -209,6 +209,7 @@ Z7_COM7F_IMF(CSZExtractCallbackAdapter::PrepareOperation(
     default: break;
   }
   SetStatus(status);
+  CurrentFilePath = name ? UString(name) : UString();
   SetCurrentFile(name, _isFolder);
   return S_OK;
 }
@@ -232,7 +233,7 @@ Z7_COM7F_IMF(CSZExtractCallbackAdapter::SetOperationResult(Int32 opRes, Int32 en
     if (FirstBadOpRes == NArchive::NExtract::NOperationResult::kOK)
       FirstBadOpRes = opRes;
   }
-  ReportOperationResult(opRes, encrypted, NULL);
+  ReportOperationResult(opRes, encrypted, CurrentFilePath.IsEmpty() ? NULL : CurrentFilePath.Ptr());
   return CheckBreak();
 }
 
@@ -369,6 +370,7 @@ Z7_COM7F_IMF(CSZExtractCallbackAdapter::ShowMessage(const wchar_t *message))
 Z7_COM7F_IMF(CSZExtractCallbackAdapter::SetCurrentFilePath(const wchar_t *filePath))
 {
   RINOK(CheckBreak())
+  CurrentFilePath = filePath ? UString(filePath) : UString();
   SetCurrentFile(filePath, false);
   return S_OK;
 }
