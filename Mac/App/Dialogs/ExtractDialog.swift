@@ -189,7 +189,31 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
             field.delegate = self
         }
 
-        DialogKit.install(buildContent(), in: window, parent: options.parentWindow, minimumWidth: 480)
+        // IDD_EXTRACT is a fixed 336 x 168 dialog-unit window (01b §4.25), so the macOS dialog is
+        // laid out at a fixed size too: the stack is pinned to the top and the two side margins
+        // and keeps its natural row heights. Sizing from `fittingSize` (DialogKit.install) lets
+        // the stack compress its rows into each other when the grid and the box report late.
+        let content = buildContent()
+        let host = NSView()
+        content.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 20),
+            content.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -20),
+            content.topAnchor.constraint(equalTo: host.topAnchor, constant: 20),
+            content.bottomAnchor.constraint(lessThanOrEqualTo: host.bottomAnchor, constant: -20),
+        ])
+        window.contentView = host
+        let summaryHeight = CGFloat(min(options.summaryLines.count, 12)) * 14
+        window.setContentSize(NSSize(width: 560, height: 322 + summaryHeight))
+        host.layoutSubtreeIfNeeded()
+        if let parent = options.parentWindow {
+            let frame = parent.frame
+            let size = window.frame.size
+            window.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2))
+        } else {
+            window.center()
+        }
         applyShowPassword()
         window.initialFirstResponder = pathCombo
     }
@@ -219,6 +243,8 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         let pathRow = NSStackView(views: [pathCombo, browseButton])
         pathRow.orientation = .horizontal
         pathRow.spacing = 6
+        pathCombo.translatesAutoresizingMaskIntoConstraints = false
+        pathCombo.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
 
         // The unnamed checkbox + the sub-folder name edit (IDX_EXTRACT_NAME_ENABLE 131 /
         // IDE_EXTRACT_NAME 130). Windows draws the box to the left of the edit with no text.
@@ -251,12 +277,32 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         // IDX_PASSWORD_SHOW 3803.
         let passwordBox = NSBox()
         passwordBox.title = Lang.text(3807, "Password")
+        passwordBox.titlePosition = .atTop
         let passwordStack = NSStackView(views: [passwordField, plainPasswordField, showPasswordBox])
         passwordStack.orientation = .vertical
         passwordStack.alignment = .leading
         passwordStack.spacing = 6
         passwordStack.translatesAutoresizingMaskIntoConstraints = false
-        passwordBox.contentView = passwordStack
+        // NSBox does not constrain a hand-made content view, so pin it explicitly; without this
+        // the box reports a zero fitting size and the whole dialog collapses.
+        let passwordContent = NSView()
+        passwordContent.translatesAutoresizingMaskIntoConstraints = false
+        passwordContent.addSubview(passwordStack)
+        NSLayoutConstraint.activate([
+            passwordStack.leadingAnchor.constraint(equalTo: passwordContent.leadingAnchor, constant: 8),
+            passwordStack.trailingAnchor.constraint(equalTo: passwordContent.trailingAnchor, constant: -8),
+            passwordStack.topAnchor.constraint(equalTo: passwordContent.topAnchor, constant: 8),
+            passwordStack.bottomAnchor.constraint(equalTo: passwordContent.bottomAnchor, constant: -8),
+        ])
+        passwordBox.contentView = passwordContent
+        // ... and pin the content view to the box, which NSBox does not do for a view that opts
+        // out of autoresizing: without it the box has no height and draws over its neighbour.
+        NSLayoutConstraint.activate([
+            passwordContent.leadingAnchor.constraint(equalTo: passwordBox.leadingAnchor),
+            passwordContent.trailingAnchor.constraint(equalTo: passwordBox.trailingAnchor),
+            passwordContent.topAnchor.constraint(equalTo: passwordBox.topAnchor, constant: 20),
+            passwordContent.bottomAnchor.constraint(equalTo: passwordBox.bottomAnchor),
+        ])
         for field in [passwordField, plainPasswordField] {
             field.translatesAutoresizingMaskIntoConstraints = false
             passwordStack.addConstraint(NSLayoutConstraint(item: field, attribute: .width, relatedBy: .equal,
@@ -267,7 +313,7 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(accept), key: "\r")
         let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancel), key: "\u{1b}")
         // IDHELP -> kHelpTopic "fm/plugins/7-zip/extract.htm" (ExtractDialog.cpp:414)
-        let help = DialogKit.button(Lang.text(403, "Help"), target: self, action: #selector(showHelp))
+        let help = DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(showHelp))
         let buttons = NSStackView(views: [help, NSView(), cancel, ok])
         buttons.orientation = .horizontal
         buttons.spacing = 10
@@ -287,6 +333,14 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
+        // Without this the stack happily compresses its rows into each other and the window is
+        // sized from the compressed fitting size.
+        stack.setHuggingPriority(.required, for: .vertical)
+        stack.setClippingResistancePriority(.required, for: .vertical)
+        stack.setClippingResistancePriority(.required, for: .horizontal)
+        for view in views {
+            view.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
         for view in [pathRow, nameRow, modeGrid, passwordBox, buttons] as [NSView] {
             stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
                                                    toItem: stack, attribute: .width, multiplier: 1, constant: 0))

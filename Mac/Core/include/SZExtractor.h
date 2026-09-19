@@ -135,7 +135,11 @@ typedef NS_ENUM(NSInteger, SZZoneIDMode) {
 
 // ---------------------------------------------------------------------------
 
-@interface SZExtractor : NSObject
+/// NOTE ON THE NAME: the obvious `SZExtractor` clashes with a private Objective-C class of
+/// Apple's StreamingZip.framework, which the runtime reports as a duplicate ("may cause spurious
+/// casting failures and mysterious crashes"). The class is therefore `SZArchiveExtractor`; the
+/// header keeps the file name `SZExtractor.h` that the architecture document uses.
+@interface SZArchiveExtractor : NSObject
 
 /// `Extract()` over `archivePaths`. Blocks; call off the main thread.
 /// Returns nil with `error` set only for a *fatal* failure (cancellation gives

@@ -179,8 +179,8 @@ enum SuspiciousName {
         alert.messageText = "7-Zip"
         alert.informativeText = Lang.format(
             Lang.text(3012, "The file '{0}' looks like a dangerous file. Do you want to open it?"), name)
-        alert.addButton(withTitle: Lang.text(410, "Yes"))
-        alert.addButton(withTitle: Lang.text(411, "No"))
+        alert.addButton(withTitle: Lang.text(406, "Yes"))    // IDYES, lang 406
+        alert.addButton(withTitle: Lang.text(407, "No"))     // IDNO, lang 407
         return alert.runModal() == .alertFirstButtonReturn
     }
 }
@@ -283,8 +283,8 @@ final class TempOpenSession: NSObject {
         alert.informativeText = Lang.format(
             Lang.text(3009, "File '{0}' was modified.\nDo you want to update it in the archive?"),
             tempFile.itemName)
-        alert.addButton(withTitle: Lang.text(410, "Yes"))
-        alert.addButton(withTitle: Lang.text(411, "No"))
+        alert.addButton(withTitle: Lang.text(406, "Yes"))    // IDYES, lang 406
+        alert.addButton(withTitle: Lang.text(407, "No"))     // IDNO, lang 407
         guard alert.runModal() == .alertFirstButtonReturn else {
             if finishAfterwards { finish() }
             return

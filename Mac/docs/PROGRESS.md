@@ -324,30 +324,30 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 
 ### 4.1 Extract dialog (`IDD_EXTRACT 3400`, caption "Extract" + ` : <ArcPath>` for one archive)
 
-- [ ] Inputs: `DirPath` (normalised `-o` dir or current dir), `ArcPath` (single archive), `PathMode` / `OverwriteMode` (+ `_Force` from the command line), `ElimDup`, `Password`; window icon; non-resizable 336×168 (01b §4.25)
-- [ ] "Extract to:" `IDT_EXTRACT_EXTRACT_TO 3401` + path combo `IDC_EXTRACT_PATH 100` with `Extraction.PathHistory` (max 16), initial text = `DirPath` (or its parent when the sub-folder box is on), first history item pre-selected when history exists (01b §4.25)
-- [ ] Browse `IDB_EXTRACT_SET_PATH 101` → `NSOpenPanel` titled `IDS_EXTRACT_SET_FOLDER 3402` "Specify a location for extracted files.", result normalised to a dir prefix (01b §4.25)
-- [ ] Sub-folder checkbox `IDX_EXTRACT_NAME_ENABLE 131` (no text; initial = `SplitDest`, default true) and name edit `IDE_EXTRACT_NAME 130`: `SplitPathToParts_Smart` puts the parent in the combo and the last component in the edit; toggling shows / hides the edit; at OK the name is appended; changed state saved with `Def = true` (01b §4.25)
-- [ ] "Path mode:" `IDT_EXTRACT_PATH_MODE 3410` / combo `IDC_EXTRACT_PATH_MODE 102`: `IDS_EXTRACT_PATHS_FULL 3411` → `kFullPaths`, `IDS_EXTRACT_PATHS_NO 3412` → `kNoPaths`, `IDS_EXTRACT_PATHS_ABS 3413` → `kAbsPaths`; caller's mode unless forced by settings; `kCurPaths` displayed as Full and kept unless changed; saved as `ExtractMode` + `PathMode_Force`, never storing `kAbsPaths` (01b §4.25)
-- [ ] "Eliminate duplication of root folder" `IDX_EXTRACT_ELIM_DUP 3430`: caller's `Def` wins, else `Extraction.ElimDup`, default true; result → `options.ElimDup` (01b §4.25, 03 §1.6)
-- [ ] "Overwrite mode:" `IDT_EXTRACT_OVERWRITE_MODE 3420` / combo `IDC_EXTRACT_OVERWRITE_MODE 103`: `IDS_EXTRACT_OVERWRITE_ASK 3421` → `kAsk`, `_WITHOUT_PROMPT 3422` → `kOverwrite`, `_SKIP_EXISTING 3423` → `kSkip`, `_RENAME 3424` → `kRename`, `_RENAME_EXISTING 3425` → `kRenameExisting`; caller's unless forced; saved as `OverwriteMode` (+ `_Force` when it differs) (01b §4.25)
-- [ ] Password group `IDG_PASSWORD 3807` with `IDE_EXTRACT_PASSWORD 120` (secure) and "Show Password" `IDX_PASSWORD_SHOW 3803` (initial from `Extraction.ShowPassword`, toggles the password char, saved when changed); result → callback password (01b §4.25)
-- [ ] `IDX_EXTRACT_NT_SECUR 3431` "Restore file security" hidden (final section) (01b §4.25)
-- [ ] OK: read modes / password / bool pairs, combo text or selected history entry, trim, normalise, append sub-folder, store `DirPath`, rebuild `PathHistory` = new path + others (max 16), `Save()`; Cancel → `E_ABORT`; Help → `fm/plugins/7-zip/extract.htm`; labels localised via `kLangIDs` (01b §4.25)
+- [x] Inputs: `DirPath` (normalised `-o` dir or current dir), `ArcPath` (single archive), `PathMode` / `OverwriteMode` (+ `_Force` from the command line), `ElimDup`, `Password`; window icon; non-resizable 336×168 (01b §4.25)
+- [x] "Extract to:" `IDT_EXTRACT_EXTRACT_TO 3401` + path combo `IDC_EXTRACT_PATH 100` with `Extraction.PathHistory` (max 16), initial text = `DirPath` (or its parent when the sub-folder box is on), first history item pre-selected when history exists (01b §4.25)
+- [x] Browse `IDB_EXTRACT_SET_PATH 101` → `NSOpenPanel` titled `IDS_EXTRACT_SET_FOLDER 3402` "Specify a location for extracted files.", result normalised to a dir prefix (01b §4.25)
+- [x] Sub-folder checkbox `IDX_EXTRACT_NAME_ENABLE 131` (no text; initial = `SplitDest`, default true) and name edit `IDE_EXTRACT_NAME 130`: `SplitPathToParts_Smart` puts the parent in the combo and the last component in the edit; toggling shows / hides the edit; at OK the name is appended; changed state saved with `Def = true` (01b §4.25)
+- [x] "Path mode:" `IDT_EXTRACT_PATH_MODE 3410` / combo `IDC_EXTRACT_PATH_MODE 102`: `IDS_EXTRACT_PATHS_FULL 3411` → `kFullPaths`, `IDS_EXTRACT_PATHS_NO 3412` → `kNoPaths`, `IDS_EXTRACT_PATHS_ABS 3413` → `kAbsPaths`; caller's mode unless forced by settings; `kCurPaths` displayed as Full and kept unless changed; saved as `ExtractMode` + `PathMode_Force`, never storing `kAbsPaths` (01b §4.25)
+- [x] "Eliminate duplication of root folder" `IDX_EXTRACT_ELIM_DUP 3430`: caller's `Def` wins, else `Extraction.ElimDup`, default true; result → `options.ElimDup` (01b §4.25, 03 §1.6)
+- [x] "Overwrite mode:" `IDT_EXTRACT_OVERWRITE_MODE 3420` / combo `IDC_EXTRACT_OVERWRITE_MODE 103`: `IDS_EXTRACT_OVERWRITE_ASK 3421` → `kAsk`, `_WITHOUT_PROMPT 3422` → `kOverwrite`, `_SKIP_EXISTING 3423` → `kSkip`, `_RENAME 3424` → `kRename`, `_RENAME_EXISTING 3425` → `kRenameExisting`; caller's unless forced; saved as `OverwriteMode` (+ `_Force` when it differs) (01b §4.25)
+- [x] Password group `IDG_PASSWORD 3807` with `IDE_EXTRACT_PASSWORD 120` (secure) and "Show Password" `IDX_PASSWORD_SHOW 3803` (initial from `Extraction.ShowPassword`, toggles the password char, saved when changed); result → callback password (01b §4.25)
+- [x] `IDX_EXTRACT_NT_SECUR 3431` "Restore file security" hidden (final section) (01b §4.25)
+- [x] OK: read modes / password / bool pairs, combo text or selected history entry, trim, normalise, append sub-folder, store `DirPath`, rebuild `PathHistory` = new path + others (max 16), `Save()`; Cancel → `E_ABORT`; Help → `fm/plugins/7-zip/extract.htm`; labels localised via `kLangIDs` (01b §4.25)
 
 ### 4.2 Extract / Test flow (`ExtractGUI`, `SZExtractor`)
 
-- [ ] `SZExtractor` over `UI/Common/Extract.cpp`: many archives → one output dir with `SZExtractOptions` (path mode, overwrite mode, password, `ElimDup`, `-snl` / `-snh`, `-spe`, zone mode) reporting through `SZProgressDelegate` (architecture)
-- [ ] Output dir = `-o` or current dir; `*` in the out dir replaced by each archive's default name (`k_ReplaceAsterisk`) (01 §8.1, 03 §1.6)
-- [ ] `-spe` rule: an archive whose single root folder equals the last `-o` component extracts to the parent (no `foo/foo/`) (03 §1.6)
-- [ ] `CreateComplexDir(outputDir)`; failure → `IDS_CANNOT_CREATE_FOLDER` "Cannot create folder '{0}'" (01 §8.3)
-- [ ] Worker under Progress titled `IDS_PROGRESS_EXTRACTING` "Extracting" / `IDS_PROGRESS_TESTING` "Testing", `ShowCompressionInfo = false`, `MainTitle = "7-Zip"`; `MultiArcMode` shares one progress window (01 §8.3, 03 §2.4)
-- [ ] Per archive: `BeforeOpen` sets the title file name; `OpenResult_GUI` multi-line message (`IDS_CANT_OPEN_ARCHIVE` "Cannot open file '{0}' as archive", `IDS_CANT_OPEN_ENCRYPTED_ARCHIVE` "…Wrong password?", per-level type / error / flags) added to the error list; `ExtractResult` non-OK → archive-name error + `HResultToMessage` (01 §8.3)
-- [ ] Test summary (`IDS_ARCHIVES_COLON` N, `IDS_PROP_PACKED_SIZE`, `IDS_PROP_FOLDERS`, `IDS_PROP_FILES`, `IDS_PROP_SIZE`, alt-stream rows only when > 0, `IDS_MESSAGE_NO_ERRORS`) as `OkMessage` when there are no errors; with errors the progress stays open; with `-scrc` results go to the hash dialog (01 §8.3, 03 §2.4)
-- [ ] Panel `ExtractArchives` (toolbar Extract, context menu): FS folder only; out folder `<arcDir>/<GetSubFolderNameForExtract2(name)>/` for one archive or `<arcDir>/*/` for several; `elimDup` / `writeZone` from the shell options; shows the Extract dialog (01 §8.1)
-- [ ] Inside an archive: toolbar Extract → `OnCopy` (copy to a folder via the Agent) (01 §8.1)
-- [ ] Panel `TestArchives` (toolbar Test): FS folder → test flow (`-thash` for hash-list files); inside an archive → `CopyTo` with `testMode` and the summary message (01 §8.1, §8.6)
-- [ ] All of this runs in-process on background queues, not by spawning a helper (01 §9 #1)
+- [x] `SZExtractor` over `UI/Common/Extract.cpp`: many archives → one output dir with `SZExtractOptions` (path mode, overwrite mode, password, `ElimDup`, `-snl` / `-snh`, `-spe`, zone mode) reporting through `SZProgressDelegate` (architecture)
+- [x] Output dir = `-o` or current dir; `*` in the out dir replaced by each archive's default name (`k_ReplaceAsterisk`) (01 §8.1, 03 §1.6)
+- [x] `-spe` rule: an archive whose single root folder equals the last `-o` component extracts to the parent (no `foo/foo/`) (03 §1.6)
+- [x] `CreateComplexDir(outputDir)`; failure → `IDS_CANNOT_CREATE_FOLDER` "Cannot create folder '{0}'" (01 §8.3)
+- [x] Worker under Progress titled `IDS_PROGRESS_EXTRACTING` "Extracting" / `IDS_PROGRESS_TESTING` "Testing", `ShowCompressionInfo = false`, `MainTitle = "7-Zip"`; `MultiArcMode` shares one progress window (01 §8.3, 03 §2.4)
+- [x] Per archive: `BeforeOpen` sets the title file name; `OpenResult_GUI` multi-line message (`IDS_CANT_OPEN_ARCHIVE` "Cannot open file '{0}' as archive", `IDS_CANT_OPEN_ENCRYPTED_ARCHIVE` "…Wrong password?", per-level type / error / flags) added to the error list; `ExtractResult` non-OK → archive-name error + `HResultToMessage` (01 §8.3)
+- [x] Test summary (`IDS_ARCHIVES_COLON` N, `IDS_PROP_PACKED_SIZE`, `IDS_PROP_FOLDERS`, `IDS_PROP_FILES`, `IDS_PROP_SIZE`, alt-stream rows only when > 0, `IDS_MESSAGE_NO_ERRORS`) as `OkMessage` when there are no errors; with errors the progress stays open; with `-scrc` results go to the hash dialog (01 §8.3, 03 §2.4)
+- [x] Panel `ExtractArchives` (toolbar Extract, context menu): FS folder only; out folder `<arcDir>/<GetSubFolderNameForExtract2(name)>/` for one archive or `<arcDir>/*/` for several; `elimDup` / `writeZone` from the shell options; shows the Extract dialog (01 §8.1)
+- [x] Inside an archive: toolbar Extract → `OnCopy` (copy to a folder via the Agent) (01 §8.1)
+- [x] Panel `TestArchives` (toolbar Test): FS folder → test flow (`-thash` for hash-list files); inside an archive → `CopyTo` with `testMode` and the summary message (01 §8.1, §8.6)
+- [x] All of this runs in-process on background queues, not by spawning a helper (01 §9 #1)
 
 ### 4.3 `CExtractCallbackImp` behaviours
 
@@ -358,8 +358,8 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] `MessageError(message, path)` → `AddError_Message_Name`; `ShowMessage` → list; `SetRatioInfo` (01 §8.4)
 - [x] Password: `CryptoGetTextPassword` → Password dialog (parent = progress after `WaitCreating`), Cancel → `E_ABORT`, cached for the run (`PasswordIsDefined`), handed to nested opens (`Open_GetPasswordIfAny`), `PasswordWasAsked` reported to the FM (01 §8.4)
 - [x] `RequestMemoryUse` → raise the limit to `Extraction.MemLimit` when set, answer `k_Allow` silently when it fits, else Memory dialog (remembered answer / `_skipArc` skip the dialog; `k_IsReport` only reports) (01 §8.4, 01b §4.12)
-- [ ] `CVirtFileSystem`: in-memory extraction target (name, data, isDir, attrib, times, zone) up to `MaxTotalAllocSize`, `FlushToDisk` under `DirPrefix` with quarantine per `ZoneMode`, attributes / times preserved, errors via `MessageError` (01 §8.4)
-- [ ] `IOpenCallbackUI` (`Open_CheckBreak`, `Open_SetTotal`, `Open_SetCompleted`, `Open_Finished`, `Open_CryptoGetTextPassword`, `Open_WasPasswordAsked`, `Open_Clear_PasswordWasAsked_Flag`) wired to the progress sync (01 §8.4)
+- [x] `CVirtFileSystem`: in-memory extraction target (name, data, isDir, attrib, times, zone) up to `MaxTotalAllocSize`, `FlushToDisk` under `DirPrefix` with quarantine per `ZoneMode`, attributes / times preserved, errors via `MessageError` (01 §8.4)
+- [x] `IOpenCallbackUI` (`Open_CheckBreak`, `Open_SetTotal`, `Open_SetCompleted`, `Open_Finished`, `Open_CryptoGetTextPassword`, `Open_WasPasswordAsked`, `Open_Clear_PasswordWasAsked_Flag`) wired to the progress sync (01 §8.4)
 - [ ] Quarantine (`com.apple.quarantine`) written on extracted files when the archive is quarantined (mode `kAll`) or only for Office documents (`kOffice`), per `-snz{0,1,2}` / `WriteZone` (01 §9 #23, 03 §6.2)
 
 ### 4.4 Progress dialog (`IDD_PROGRESS 97`, resizable, separate window)
@@ -388,16 +388,16 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 
 ### 4.6 Open Outside / View / Edit / Diff
 
-- [ ] Open Outside (Shift+Enter, `IDM_OPEN_OUTSIDE 542`): FS files via `NSWorkspace.open` after the virus check; FS folder → Finder; folder inside an archive → extract to temp then open the temp dir (`OpenFolderExternal`) (01 §3.8, §3.11)
-- [ ] View (F3, `IDM_FILE_VIEW 543`) / Edit (F4, `IDM_FILE_EDIT 544`): FS file → `StartEditApplication` with the Viewer / Editor setting; inside an archive → `OpenItemInArchive(editMode)` using the fsfolder temp-file machinery (01 §3.11 "View / Edit", 01b §4.7)
-- [ ] Default viewer = Quick Look (`QLPreviewPanel`), default editor = TextEdit when the settings are empty; error `IDS_CANNOT_START_EDITOR 3011` style message when the tool cannot start (01 §3.11, §9 #10)
-- [ ] Diff (`IDM_DIFF 554`, hidden without a Diff tool): two selected items in one panel, or the focused item of each panel in two-panel mode; archive items extracted to temp first (`tryExternal = false`); runs `<diff> "path1" "path2"` (01 §3.11 "Diff")
+- [x] Open Outside (Shift+Enter, `IDM_OPEN_OUTSIDE 542`): FS files via `NSWorkspace.open` after the virus check; FS folder → Finder; folder inside an archive → extract to temp then open the temp dir (`OpenFolderExternal`) (01 §3.8, §3.11)
+- [x] View (F3, `IDM_FILE_VIEW 543`) / Edit (F4, `IDM_FILE_EDIT 544`): FS file → `StartEditApplication` with the Viewer / Editor setting; inside an archive → `OpenItemInArchive(editMode)` using the fsfolder temp-file machinery (01 §3.11 "View / Edit", 01b §4.7)
+- [x] Default viewer = Quick Look (`QLPreviewPanel`), default editor = TextEdit when the settings are empty; error `IDS_CANNOT_START_EDITOR 3011` style message when the tool cannot start (01 §3.11, §9 #10)
+- [x] Diff (`IDM_DIFF 554`, hidden without a Diff tool): two selected items in one panel, or the focused item of each panel in two-panel mode; archive items extracted to temp first (`tryExternal = false`); runs `<diff> "path1" "path2"` (01 §3.11 "Diff")
 - [ ] Open (`IDM_OPEN 540`) with `kMaxOpenItems = 20` limit and Open Inside `*` / `#` variants dispatch into the extract-side opener (01 §2.1, §3.8)
 
 ### 4.7 Drag-out lazy extraction hook
 
-- [ ] `NSFilePromiseProviderDelegate` writes each promised item into the destination URL Finder supplies by running the archive `CopyTo` (extract) code path with progress and error collection (03 §4.1, §6.2)
-- [ ] Non-7-Zip receivers that need real paths get the files extracted into a `7zE<hex>` temp dir at drop time; the dir is removed by the source afterwards (01 §3.15, 03 §4.1)
+- [x] `NSFilePromiseProviderDelegate` writes each promised item into the destination URL Finder supplies by running the archive `CopyTo` (extract) code path with progress and error collection (03 §4.1, §6.2)
+- [x] Non-7-Zip receivers that need real paths get the files extracted into a `7zE<hex>` temp dir at drop time; the dir is removed by the source afterwards (01 §3.15, 03 §4.1)
 - [ ] 7-Zip → 7-Zip drops bypass promises: the target reads the private pasteboard type and asks the source to extract straight into the target folder (01 §3.15, 03 §6.2)
 
 ## 5. compress — Compress dialog, Compress Options, update flow, delete-after, compress-and-email

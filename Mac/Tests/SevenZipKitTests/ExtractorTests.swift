@@ -1,4 +1,4 @@
-// ExtractorTests.swift -- SZExtractor (the ExtractGUI / UI/Common/Extract.cpp path).
+// ExtractorTests.swift -- SZArchiveExtractor (the ExtractGUI / UI/Common/Extract.cpp path).
 //
 // Fixtures come from Mac/scripts/make-fixtures.sh: readme.txt (12 B), notes.md (21 B),
 // sub/big.txt (3000 B), sub/deep/inner.txt (10 B); secret.7z / secret.zip use password
@@ -139,7 +139,7 @@ final class ExtractorTests: XCTestCase {
             let dest = tempDir(name)
             let o = options(dest)
             o.pathMode = .fullPaths
-            let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture(name)], options: o, progress: nil))
+            let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture(name)], options: o, progress: nil))
             XCTAssertTrue(result.isOK, "\(name): \(result.messages)")
             XCTAssertEqual(tree(dest), ["notes.md", "readme.txt", "sub/big.txt", "sub/deep/inner.txt"], name)
             XCTAssertEqual(contents((dest as NSString).appendingPathComponent("readme.txt")), "hello 7-zip\n")
@@ -151,14 +151,14 @@ final class ExtractorTests: XCTestCase {
         // gzip / xz hold one stream: the inner tar.
         for name in ["test.tar.gz", "test.tar.xz"] {
             let dest = tempDir(name)
-            let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture(name)], options: options(dest), progress: nil))
+            let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture(name)], options: options(dest), progress: nil))
             XCTAssertTrue(result.isOK, "\(name): \(result.messages)")
             XCTAssertEqual(tree(dest), ["test.tar"], name)
             // and the tar itself extracts the same tree
             let inner = tempDir("inner-\(name)")
             let o2 = options(inner)
             o2.pathMode = .fullPaths
-            let r2 = try XCTUnwrap(SZExtractor.extractArchives(
+            let r2 = try XCTUnwrap(SZArchiveExtractor.extractArchives(
                 at: [(dest as NSString).appendingPathComponent("test.tar")], options: o2, progress: nil))
             XCTAssertTrue(r2.isOK)
             XCTAssertEqual(tree(inner), ["notes.md", "readme.txt", "sub/big.txt", "sub/deep/inner.txt"], name)
@@ -171,7 +171,7 @@ final class ExtractorTests: XCTestCase {
         let o = options(dest)
         o.pathMode = .noPaths
         let progress = RecordingProgress()
-        let result = try XCTUnwrap(SZExtractor.extractArchives(
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(
             at: [fixture("test.7z"), fixture("test.zip")], options: o, progress: progress))
         XCTAssertTrue(result.isOK, "\(result.messages)")
         XCTAssertEqual(result.statistics.archiveCount, 2)
@@ -188,7 +188,7 @@ final class ExtractorTests: XCTestCase {
         o.outDirMode = .replaceAsterisk
         o.overwriteMode = .overwrite
         o.pathMode = .fullPaths
-        let result = try XCTUnwrap(SZExtractor.extractArchives(
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(
             at: [fixture("test.7z"), fixture("test.zip")], options: o, progress: nil))
         XCTAssertTrue(result.isOK, "\(result.messages)")
         XCTAssertEqual(tree(dest), ["test/notes.md", "test/readme.txt", "test/sub/big.txt", "test/sub/deep/inner.txt"])
@@ -199,7 +199,7 @@ final class ExtractorTests: XCTestCase {
         let o = options(dest)
         o.outDirMode = .addArchiveName
         o.pathMode = .noPaths
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.zip")], options: o, progress: nil))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.zip")], options: o, progress: nil))
         XCTAssertTrue(result.isOK)
         XCTAssertEqual(tree(dest), ["test/big.txt", "test/inner.txt", "test/notes.md", "test/readme.txt"])
     }
@@ -219,7 +219,7 @@ final class ExtractorTests: XCTestCase {
             let dest = tempDir("mode\(mode.rawValue)")
             let o = options(dest)
             o.pathMode = mode
-            let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: nil))
+            let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: nil))
             XCTAssertTrue(result.isOK, "mode \(mode.rawValue): \(result.messages)")
             XCTAssertEqual(tree(dest), expected, "path mode \(mode.rawValue)")
         }
@@ -237,7 +237,7 @@ final class ExtractorTests: XCTestCase {
         o.eliminateDuplicateRoot = true
         // only the "sub" subtree: excluding the two top-level files is not expressible here, so
         // extract everything and check that "sub" was *not* eliminated (readme.txt is at the root).
-        var result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: nil))
+        var result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: nil))
         XCTAssertTrue(result.isOK)
         XCTAssertEqual(tree(dest), ["notes.md", "readme.txt", "sub/big.txt", "sub/deep/inner.txt"])
 
@@ -247,7 +247,7 @@ final class ExtractorTests: XCTestCase {
         let o2 = options(dest2)
         o2.pathMode = .fullPaths
         o2.eliminateDuplicateRoot = false
-        result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.7z")], options: o2, progress: nil))
+        result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o2, progress: nil))
         XCTAssertTrue(result.isOK)
         XCTAssertEqual(tree(dest2), ["notes.md", "readme.txt", "sub/big.txt", "sub/deep/inner.txt"])
     }
@@ -266,7 +266,7 @@ final class ExtractorTests: XCTestCase {
         o.pathMode = .noPaths
         o.overwriteMode = .overwrite
         let progress = RecordingProgress()
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress))
         XCTAssertTrue(result.isOK)
         XCTAssertEqual(contents((dest as NSString).appendingPathComponent("readme.txt")), "hello 7-zip\n")
         XCTAssertTrue(progress.overwriteQuestions.isEmpty, "kOverwrite must not ask")
@@ -279,7 +279,7 @@ final class ExtractorTests: XCTestCase {
         o.pathMode = .noPaths
         o.overwriteMode = .skip
         let progress = RecordingProgress()
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress))
         XCTAssertTrue(result.isOK)
         XCTAssertEqual(contents((dest as NSString).appendingPathComponent("readme.txt")), "OLD")
         XCTAssertTrue(progress.overwriteQuestions.isEmpty)
@@ -293,7 +293,7 @@ final class ExtractorTests: XCTestCase {
         let o = options(dest)
         o.pathMode = .noPaths
         o.overwriteMode = .rename
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: nil))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: nil))
         XCTAssertTrue(result.isOK)
         XCTAssertEqual(contents((dest as NSString).appendingPathComponent("readme.txt")), "OLD")
         // AutoRenamePath (7zip/Common/FilePathAutoRename.cpp): "readme.txt" -> "readme_1.txt".
@@ -307,7 +307,7 @@ final class ExtractorTests: XCTestCase {
         let o = options(dest)
         o.pathMode = .noPaths
         o.overwriteMode = .renameExisting
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: nil))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: nil))
         XCTAssertTrue(result.isOK)
         XCTAssertEqual(contents((dest as NSString).appendingPathComponent("readme.txt")), "hello 7-zip\n")
         XCTAssertEqual(contents((dest as NSString).appendingPathComponent("readme_1.txt")), "OLD")
@@ -324,7 +324,7 @@ final class ExtractorTests: XCTestCase {
             o.overwriteMode = .ask
             let progress = RecordingProgress()
             progress.overwriteAnswer = answer
-            let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress))
+            let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress))
             XCTAssertTrue(result.isOK)
             XCTAssertEqual(progress.overwriteQuestions.count, 1)
             XCTAssertEqual(contents((dest as NSString).appendingPathComponent("readme.txt")), expected)
@@ -337,7 +337,7 @@ final class ExtractorTests: XCTestCase {
         o.overwriteMode = .ask
         let progress = RecordingProgress()
         progress.overwriteAnswer = .cancel
-        XCTAssertThrowsError(try SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress)) {
+        XCTAssertThrowsError(try SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress)) {
             XCTAssertEqual(($0 as NSError).code, SZError.Code.cancelled.rawValue)
         }
     }
@@ -350,7 +350,7 @@ final class ExtractorTests: XCTestCase {
             let o = options(dest)
             o.pathMode = .noPaths
             o.password = "secret"
-            let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture(name)], options: o, progress: nil))
+            let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture(name)], options: o, progress: nil))
             XCTAssertTrue(result.isOK, "\(name): \(result.messages)")
             XCTAssertEqual(contents((dest as NSString).appendingPathComponent("readme.txt")), "hello 7-zip\n", name)
         }
@@ -362,7 +362,7 @@ final class ExtractorTests: XCTestCase {
         o.pathMode = .noPaths
         let progress = RecordingProgress()
         progress.password = "secret"
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("secret.7z")], options: o, progress: progress))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("secret.7z")], options: o, progress: progress))
         XCTAssertTrue(result.isOK, "\(result.messages)")
         XCTAssertTrue(result.passwordWasAsked)
         XCTAssertEqual(result.password, "secret")
@@ -378,7 +378,7 @@ final class ExtractorTests: XCTestCase {
         let o = options(dest)
         o.password = "wrong"
         let progress = RecordingProgress()
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("secret.7z")], options: o, progress: progress))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("secret.7z")], options: o, progress: progress))
         XCTAssertFalse(result.isOK)
         XCTAssertEqual(result.archiveErrorCount, 1)
         XCTAssertTrue(result.messages.joined(separator: "\n").contains("Cannot open"), "\(result.messages)")
@@ -390,7 +390,7 @@ final class ExtractorTests: XCTestCase {
         let o2 = options(dest2)
         o2.pathMode = .noPaths
         o2.password = "wrong"
-        let r2 = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("secret.zip")], options: o2, progress: nil))
+        let r2 = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("secret.zip")], options: o2, progress: nil))
         XCTAssertFalse(r2.isOK)
         XCTAssertNotEqual(r2.firstFailure, .OK)
     }
@@ -400,7 +400,7 @@ final class ExtractorTests: XCTestCase {
         let o = options(dest)
         let progress = RecordingProgress()
         progress.password = nil                     // Cancel in the Password dialog
-        XCTAssertThrowsError(try SZExtractor.extractArchives(at: [fixture("secret.7z")], options: o, progress: progress)) {
+        XCTAssertThrowsError(try SZArchiveExtractor.extractArchives(at: [fixture("secret.7z")], options: o, progress: progress)) {
             XCTAssertEqual(($0 as NSError).code, SZError.Code.cancelled.rawValue)
         }
     }
@@ -411,7 +411,7 @@ final class ExtractorTests: XCTestCase {
         let dest = tempDir()
         let o = options(dest)
         o.pathMode = .noPaths
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: [fixture("multi.7z.001")], options: o, progress: nil))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: [fixture("multi.7z.001")], options: o, progress: nil))
         XCTAssertTrue(result.isOK, "\(result.messages)")
         XCTAssertEqual(tree(dest), ["random.bin", "vol.txt"])
         let size = try FileManager.default.attributesOfItem(
@@ -429,7 +429,7 @@ final class ExtractorTests: XCTestCase {
         let o = options(dest)
         o.pathMode = .noPaths
         let paths = ["multi.7z.001", "multi.7z.002", "multi.7z.003"].map { fixture($0) }
-        let result = try XCTUnwrap(SZExtractor.extractArchives(at: paths, options: o, progress: nil))
+        let result = try XCTUnwrap(SZArchiveExtractor.extractArchives(at: paths, options: o, progress: nil))
         XCTAssertEqual(tree(dest), ["random.bin", "vol.txt"])
         XCTAssertEqual(result.statistics.fileCount, 2)
     }
@@ -442,7 +442,7 @@ final class ExtractorTests: XCTestCase {
         o.pathMode = .noPaths
         let progress = RecordingProgress()
         progress.cancelAfterFiles = 1              // stop after the first item's result
-        XCTAssertThrowsError(try SZExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress)) {
+        XCTAssertThrowsError(try SZArchiveExtractor.extractArchives(at: [fixture("test.7z")], options: o, progress: progress)) {
             XCTAssertEqual(($0 as NSError).code, SZError.Code.cancelled.rawValue)
         }
         XCTAssertLessThan(tree(dest).count, 4, "the run must not have finished")
@@ -453,7 +453,7 @@ final class ExtractorTests: XCTestCase {
     func testTestGoodArchiveProducesSummary() throws {
         let o = SZExtractOptions()
         let progress = RecordingProgress()
-        let result = try XCTUnwrap(SZExtractor.testArchives(at: [fixture("test.7z")], options: o, progress: progress))
+        let result = try XCTUnwrap(SZArchiveExtractor.testArchives(at: [fixture("test.7z")], options: o, progress: progress))
         XCTAssertTrue(result.isOK, "\(result.messages)")
         XCTAssertEqual(result.statistics.fileCount, 4)
         XCTAssertEqual(result.statistics.folderCount, 2)
@@ -470,7 +470,7 @@ final class ExtractorTests: XCTestCase {
     }
 
     func testTestSeveralArchivesSummaryCountsThem() throws {
-        let result = try XCTUnwrap(SZExtractor.testArchives(
+        let result = try XCTUnwrap(SZArchiveExtractor.testArchives(
             at: [fixture("test.7z"), fixture("test.zip")], options: SZExtractOptions(), progress: nil))
         XCTAssertTrue(result.isOK)
         XCTAssertEqual(result.statistics.archiveCount, 2)
@@ -487,7 +487,7 @@ final class ExtractorTests: XCTestCase {
         try data.write(to: URL(fileURLWithPath: broken))
 
         let progress = RecordingProgress()
-        let result = try XCTUnwrap(SZExtractor.testArchives(at: [broken], options: SZExtractOptions(), progress: progress))
+        let result = try XCTUnwrap(SZArchiveExtractor.testArchives(at: [broken], options: SZExtractOptions(), progress: progress))
         XCTAssertFalse(result.isOK, "a corrupted archive must not pass the test")
         XCTAssertNil(result.testSummary, "no summary when there were errors")
         XCTAssertGreaterThan(result.errorCount, 0)
@@ -502,7 +502,7 @@ final class ExtractorTests: XCTestCase {
         let dir = tempDir()
         let notArc = (dir as NSString).appendingPathComponent("garbage.7z")
         try Data(repeating: 0x41, count: 4096).write(to: URL(fileURLWithPath: notArc))
-        let result = try XCTUnwrap(SZExtractor.testArchives(at: [notArc], options: SZExtractOptions(), progress: nil))
+        let result = try XCTUnwrap(SZArchiveExtractor.testArchives(at: [notArc], options: SZExtractOptions(), progress: nil))
         XCTAssertFalse(result.isOK)
         XCTAssertEqual(result.archiveErrorCount, 1)
         // IDS_CANT_OPEN_AS_TYPE 3017 "Cannot open the file as [{0}] archive" when a handler
@@ -514,26 +514,26 @@ final class ExtractorTests: XCTestCase {
 
     func testSubfolderNameForArchive() throws {
         // GetSubFolderNameForExtract (Explorer/ContextMenu.cpp:448)
-        XCTAssertEqual(SZExtractor.subfolderName(forArchiveNamed: "test.7z"), "test")
-        XCTAssertEqual(SZExtractor.subfolderName(forArchiveNamed: "test.tar.gz"), "test.tar")
-        XCTAssertEqual(SZExtractor.subfolderName(forArchiveNamed: "noextension"), "noextension~")
-        XCTAssertEqual(SZExtractor.subfolderName(forArchiveNamed: "movie.part01.rar"), "movie")
-        XCTAssertEqual(SZExtractor.subfolderName(forArchiveNamed: "data.7z.001"), "data")
-        XCTAssertEqual(SZExtractor.subfolderName(forArchiveNamed: "plain.zip"), "plain")
+        XCTAssertEqual(SZArchiveExtractor.subfolderName(forArchiveNamed: "test.7z"), "test")
+        XCTAssertEqual(SZArchiveExtractor.subfolderName(forArchiveNamed: "test.tar.gz"), "test.tar")
+        XCTAssertEqual(SZArchiveExtractor.subfolderName(forArchiveNamed: "noextension"), "noextension~")
+        XCTAssertEqual(SZArchiveExtractor.subfolderName(forArchiveNamed: "movie.part01.rar"), "movie")
+        XCTAssertEqual(SZArchiveExtractor.subfolderName(forArchiveNamed: "data.7z.001"), "data")
+        XCTAssertEqual(SZArchiveExtractor.subfolderName(forArchiveNamed: "plain.zip"), "plain")
     }
 
     func testCreateOutputDirectory() throws {
         let base = tempDir()
         let deep = (base as NSString).appendingPathComponent("a/b/c")
-        XCTAssertNoThrow(try SZExtractor.createOutputDirectory(deep))
+        XCTAssertNoThrow(try SZArchiveExtractor.createOutputDirectory(deep))
         XCTAssertTrue(FileManager.default.fileExists(atPath: deep))
         // CreateComplexDir succeeds when it already exists
-        XCTAssertNoThrow(try SZExtractor.createOutputDirectory(deep))
+        XCTAssertNoThrow(try SZArchiveExtractor.createOutputDirectory(deep))
     }
 
     func testMissingArchiveIsAFatalError() throws {
         let o = options(tempDir())
-        XCTAssertThrowsError(try SZExtractor.extractArchives(at: [fixture("does-not-exist.7z")], options: o, progress: nil))
+        XCTAssertThrowsError(try SZArchiveExtractor.extractArchives(at: [fixture("does-not-exist.7z")], options: o, progress: nil))
     }
 }
 

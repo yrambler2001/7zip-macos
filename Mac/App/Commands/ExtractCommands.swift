@@ -86,7 +86,7 @@ enum ExtractCommands {
 
         let window = context.window
         let result = OperationRunner.run(runnerOptions) { runner -> SZExtractResult in
-            try SZExtractor.testArchives(at: archives, options: options, progress: runner)
+            try SZArchiveExtractor.testArchives(at: archives, options: options, progress: runner)
         }
         // The statistics block is shown as an info box after the progress window closes, and
         // only when there were no errors (01 §8.3 step 4).
@@ -96,7 +96,7 @@ enum ExtractCommands {
         ActiveContext.refresh()
     }
 
-    // MARK: - the file-system path (SZExtractor over UI/Common/Extract.cpp)
+    // MARK: - the file-system path (SZArchiveExtractor over UI/Common/Extract.cpp)
 
     private static func run(context: OperationContext, destination: Destination,
                             showDialog: Bool, eliminateDuplicateRoot: Bool?) {
@@ -109,7 +109,7 @@ enum ExtractCommands {
             outputDirectory = directory
         case .subfolderPerArchive:
             if archives.count == 1 {
-                outputDirectory = directory + SZExtractor.subfolderName(
+                outputDirectory = directory + SZArchiveExtractor.subfolderName(
                     forArchiveNamed: (archives[0] as NSString).lastPathComponent) + "/"
             } else {
                 outputDirectory = directory + "*/"
@@ -150,7 +150,7 @@ enum ExtractCommands {
         // so only an asterisk-free path can be created up front.
         if !options.outputDirectory.contains("*") {
             do {
-                try SZExtractor.createOutputDirectory(options.outputDirectory)
+                try SZArchiveExtractor.createOutputDirectory(options.outputDirectory)
             } catch {
                 showError(error.localizedDescription, parent: context.window)
                 return
@@ -164,7 +164,7 @@ enum ExtractCommands {
         runnerOptions.password = options.password
 
         OperationRunner.run(runnerOptions) { runner -> SZExtractResult in
-            try SZExtractor.extractArchives(at: archives, options: options, progress: runner)
+            try SZArchiveExtractor.extractArchives(at: archives, options: options, progress: runner)
         }
         ActiveContext.refresh()
     }
@@ -193,7 +193,7 @@ enum ExtractCommands {
         Settings.addToExtractPathHistory(answer.directoryPath)
 
         do {
-            try SZExtractor.createOutputDirectory(answer.directoryPath)
+            try SZArchiveExtractor.createOutputDirectory(answer.directoryPath)
         } catch {
             showError(error.localizedDescription, parent: context.window)
             return
@@ -390,8 +390,78 @@ final class ExtractMenuTitles: NSObject, NSMenuDelegate {
         let template = Lang.text(UInt32(Self.extractToTag), "Extract to {0}")
         var name = "*"
         if let context = ActiveContext.current(), context.isFileSystem, context.names.count == 1 {
-            name = SZExtractor.subfolderName(forArchiveNamed: context.names[0])
+            name = SZArchiveExtractor.subfolderName(forArchiveNamed: context.names[0])
         }
         item.title = Lang.format(template, "\"\(name)/\"")
     }
+}
+
+// MARK: - verification hook (this scope's stand-in for the panel's context provider)
+
+/// Lets the extract commands be driven before the `panel` scope registers the real
+/// `OperationContextProviding`, so this scope can be verified in the running app:
+///
+///   SEVENZIP_DEFAULTS_SUITE=7zip-extract SZ_EXTRACT_CONTEXT=<folder or archive path> \
+///   SZ_EXTRACT_SELECT=readme.txt,notes.md  7-Zip.app/Contents/MacOS/7-Zip
+///
+/// With no `SZ_EXTRACT_SELECT` every item of the folder is operated on. Not part of the shipping
+/// UI: without the variable nothing is installed and `ActiveContext` stays untouched.
+final class ExtractVerificationContext: NSObject, OperationContextProviding {
+
+    private let folder: SZFolder
+    private let path: String
+    private var indices: [Int] = []
+    /// ActiveContext.provider is weak (the panel owns the real one), so the stand-in has to be
+    /// kept alive here.
+    private static var installed: ExtractVerificationContext?
+
+    static func installIfRequested() {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["SZ_EXTRACT_CONTEXT"], !path.isEmpty else { return }
+        NotificationCenter.default.addObserver(forName: NSApplication.didFinishLaunchingNotification,
+                                              object: nil, queue: .main) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                guard let provider = ExtractVerificationContext(
+                    path: path, selection: environment["SZ_EXTRACT_SELECT"]) else {
+                    NSLog("extract-verify: cannot open %@", path)
+                    return
+                }
+                installed = provider
+                ActiveContext.register(provider)
+                NSLog("extract-verify: context = %@ (%ld items operated)", path, provider.indices.count)
+            }
+        }
+    }
+
+    private init?(path: String, selection: String?) {
+        guard let folder = try? SZFolder.folder(forPath: path, passwordDelegate: nil) else { return nil }
+        self.folder = folder
+        self.path = path
+        super.init()
+        try? folder.loadItems()
+        let wanted = (selection?.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }) ?? []
+        for i in 0..<folder.itemCount {
+            if wanted.isEmpty || wanted.contains(folder.nameOfItem(at: i)) { indices.append(i) }
+        }
+    }
+
+    func currentOperationContext() -> OperationContext? {
+        let names = indices.map { folder.nameOfItem(at: $0) }
+        let isFileSystem = folder.isFileSystem
+        let folderPath = isFileSystem ? ExtractCommands.normalizeDirectory(folder.path) : ""
+        let paths = isFileSystem ? names.map { (folderPath as NSString).appendingPathComponent($0) } : []
+        return OperationContext(folder: folder,
+                                displayPath: folder.fullPath,
+                                isArchive: folder.isArchive,
+                                isFileSystem: isFileSystem,
+                                indices: indices,
+                                names: names,
+                                paths: paths,
+                                folderPath: folderPath,
+                                otherPanelPath: nil,
+                                window: NSApp.mainWindow)
+    }
+
+    func refreshAfterOperation() { NSLog("extract-verify: refreshAfterOperation") }
+    func refreshAllPanels() { NSLog("extract-verify: refreshAllPanels") }
 }

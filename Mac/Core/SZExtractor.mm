@@ -693,9 +693,9 @@ HRESULT CSZExtractUICallback::Open_CryptoGetTextPassword(BSTR *password)
 }
 
 // ---------------------------------------------------------------------------
-#pragma mark - SZExtractor
+#pragma mark - SZArchiveExtractor
 
-@implementation SZExtractor
+@implementation SZArchiveExtractor
 
 + (NSString *)correctFileName:(NSString *)name
 {

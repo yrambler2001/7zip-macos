@@ -158,3 +158,106 @@ file-system folder, the temp-folder prefixes and the guarded removal, the RAM fo
 quarantine propagation in all three zone modes.
 
 **Next** Phase 5: verification in the running app.
+
+## Phase 5 — verification in the running app (done)
+
+Launched from this worktree with `SEVENZIP_DEFAULTS_SUITE=7zip-extract` and a scope-local
+stand-in for the panel's context provider (`ExtractVerificationContext`, installed only when
+`SZ_EXTRACT_CONTEXT` is set — the `panel` scope has not registered the real
+`OperationContextProviding` yet). Driven with `osascript` System Events; screenshots in
+`Mac/docs/reports/screenshots/`:
+
+| Screenshot | What it shows |
+|---|---|
+| `extract-01-menu.png` | File > 7-Zip with Extract files… / Extract Here / `Extract to "test/"` / Test archive; the `{0}` of `IDS_CONTEXT_EXTRACT_TO 2327` is filled from the selection |
+| `extract-02-dialog.png` | the Extract dialog: caption `Extract : <archive>`, path combo + browse, sub-folder box with `test/`, both mode combos, Eliminate duplication, the password group, the item summary, Help / Cancel / OK |
+| `extract-03-test-summary.png` | the test statistics box: `Archives: 1 / Packed Size: 296 bytes / Folders: 2 / Files: 4 / Size: 3043 bytes : 2 KiB` + `There are no errors` |
+| `extract-04-update-prompt.png` | `File 'readme.txt' was modified. Do you want to update it in the archive?` with Yes / No |
+| `extract-05-dialog-in-archive.png` | the same dialog opened from inside an archive: caption = the archive file recovered from the display path, destination proposed as the archive's own folder |
+| `extract-06-test-in-archive.png` | Test inside an archive: `Files: 6 / There are no errors` |
+
+Exercised end to end, each verified by inspecting the file system afterwards:
+
+- **Extract files…** → `<arcDir>/test/` with `notes.md readme.txt sub/big.txt sub/deep/inner.txt`,
+  then `refreshAfterOperation`.
+- **Extract Here** → the same four files directly in `<arcDir>/`, no dialog.
+- **Extract to "…"** with two archives selected → `<arcDir>/*/` substituted per archive.
+- **Test archive** on a file-system folder and inside an archive → both summaries.
+- **Extract from inside an archive** (two items, one of them a folder) → the subtree landed in the
+  archive's own directory.
+- **Edit (F4) on an item inside an archive** → extracted to `/var/folders/…/T/7zO-XXXXXX/`,
+  opened in TextEdit, the file changed from a shell, the `DispatchSource` watcher fired, the
+  prompt appeared, Yes repacked the zip (verified with the console `7zz`: `readme.txt` is now the
+  edited text at the new size).
+- Both mode combos read back through the accessibility API with every Windows entry
+  (`Ask before overwrite, Overwrite without prompt, Skip existing files, Auto rename,
+  Auto rename existing files`).
+
+**Fixed during verification**
+
+1. The Objective-C class `SZExtractor` collides with a private class of Apple's
+   `StreamingZip.framework` ("may cause spurious casting failures and mysterious crashes");
+   renamed to `SZArchiveExtractor`, header file name unchanged. Logged in `requests.md`.
+2. `ActiveContext.provider` is `weak`, so a provider nobody else retains disappears at once —
+   the verification stand-in now keeps a static reference. Worth knowing for the panel scope.
+3. Wrong button lang IDs: 410/411 are "" and "Continue"; Yes/No/Help are **406/407/409**.
+   Logged in `requests.md`.
+4. The Extract dialog collapsed into itself: an `NSBox` whose content view opts out of
+   autoresizing is not constrained by the box, and `DialogKit.install`'s `fittingSize` sizing
+   then produced a window too small. The dialog now pins the box content explicitly and uses a
+   fixed size, which is also what `IDD_EXTRACT` (336 x 168 du, non-resizable) is.
+
+**Shared app lock.** Acquired at 23:54 with the documented `mkdir` loop. While it was held, the
+`panel` and then the `compress` scope overwrote `.app-lock/owner` with their own name and ran
+their apps anyway; the panel harness also terminated my instance twice mid-run (that is the open
+`harness` request in `requests.md`). Because another scope currently claims the lock, this agent
+did **not** `rm -rf` it — deleting it would drop their claim. Orchestrator: the lock protocol
+needs `mkdir` to be honoured, not just `owner` rewritten.
+
+## Phase 6 — deliverables
+
+- **API document**: `Mac/docs/api/extract.md` — `SZArchiveExtractor`, `SZTempOpen` / `SZTempFile`,
+  the Extract dialog, the commands, the **`ArchiveDragOut` lazy-extraction hook for the `panel`
+  scope** (section 5) and the **test-summary shape** (section 1).
+- **PROGRESS.md**: 29 items ticked in section 4 (`extract`) only.
+- **Cross-scope requests** added to `Mac/docs/requests.md`: Open Outside inside an archive
+  (`panel`), the drag-out hook (`panel`), `-scrc` hashing during extraction (`tools`), plus four
+  spec corrections (auto-rename naming, the Yes/No/Help lang IDs, combos vs radio groups and the
+  absent summary control in `IDD_EXTRACT`, and the `SZExtractor` class-name collision).
+
+### Files owned and touched
+
+| Path | |
+|---|---|
+| `Mac/Core/include/SZExtractor.h` | new — `SZExtractOptions`, `SZExtractStatistics`, `SZExtractResult`, `SZArchiveExtractor`, `SZTempFile`, `SZTempOpen` |
+| `Mac/Core/SZExtractor.mm` | new — the `Extract()` driver, `CSZExtractUICallback`, `OpenResult_GUI`, the test summary |
+| `Mac/Core/Internal/SZTempOpen.h` / `.mm` | new — `CSZVirtFileSystem`, quarantine, the temp helpers, `CopyFromFile` |
+| `Mac/App/Dialogs/ExtractDialog.swift` | new — `IDD_EXTRACT 3400` |
+| `Mac/App/Commands/ExtractCommands.swift` | new — the four commands, `ExtractMenuTitles`, `ExtractVerificationContext` |
+| `Mac/App/Support/TempOpen.swift`, `TempOpenCommands.swift` | new — tools, watcher, View/Edit/Open Outside/Diff, `ArchiveDragOut` |
+| `Mac/Tests/SevenZipKitTests/ExtractorTests.swift`, `TempOpenTests.swift` | new — 33 tests |
+| `Mac/Tests/Fixtures/multi.7z.001..003` | new 3-volume fixture |
+
+Additive-only edits in shared files: `Mac/Core/include/SevenZipKit.h` (one `#import`),
+`Mac/App/MainMenu.swift` (the File > 7-Zip submenu, two `MenuActions` selectors, one line calling
+the verification hook), `Mac/docs/PROGRESS.md` (section 4 only), `Mac/docs/requests.md` (appended
+rows and corrections).
+
+### Known gaps
+
+1. `-scrc<method>` hashing during extraction is not wired (`Extract()` gets `IHashCalc = NULL`);
+   it belongs with the `tools` hash dialog. Request filed.
+2. `-thash` (testing a `.sha256` hash list as an archive) is not passed by the Test command.
+3. Quarantine on a plain extraction: `zoneIDMode` reaches the engine but
+   `ReadZoneFile_Of_BaseFile` is `#if defined(_WIN32)`, so nothing is written. The temp-open path
+   does it itself; `SZTempOpen.applyQuarantine(fromArchiveAt:to:mode:)` can post-process an
+   extraction when the panel scope wants it. PROGRESS §4.3 item left unticked.
+4. Diff across two panels needs the other panel's focused item, which the frozen
+   `OperationContext` does not expose; only "two items selected in one panel" works.
+5. Open Outside inside an archive is unreachable from the menu while `PanelViewController` claims
+   and disables the selector. Request filed; `ItemOpenCommands.openOutside()` does the work.
+6. The Progress dialog's Dock-tile mirror and the `CProgressThreadVirt::Process` exception→text
+   mapping are `opsinfra` items and stay unticked.
+7. `7zO` / `7zE` folders survive a crash (`kill -9`), exactly like Windows, which never sweeps.
+   `SZTempOpen.temporaryDirectories()` is there for Tools > Delete Temporary Files and for an
+   optional startup sweep.
