@@ -38,7 +38,7 @@ Test fixtures come from `Mac/scripts/make-fixtures.sh`, which needs the console 
 - `Mac/docs/03-shell-integration-inventory.md` — Windows shell integration and the macOS mechanisms chosen to replace it. This is the specification for the unfinished `finder` scope.
 - `Mac/docs/04-toolchain.md` — build recipe and toolchain gotchas.
 - `Mac/docs/api/*.md` — the public API each finished scope exposes. Read these instead of the sources.
-- `Mac/docs/PROGRESS.md` — the 476-item checklist, per scope.
+- `Mac/docs/PROGRESS.md` — the 496-item checklist, per scope.
 - `Mac/docs/reports/*.md` — what each scope did, verified, and left undone.
 
 ## Scope status
@@ -61,7 +61,7 @@ their worktrees have been removed, so the repository moves cleanly.
 | `finder` | **not started**: Finder Sync extension, Services and Quick Actions, document types and UTIs, `sevenzip://` URL commands, the 7zG argument grammar. Specified in `03-shell-integration-inventory.md`. |
 | `packaging` | **not started**: DMG, Developer ID signing, README, localization QA across all 93 languages, final parity audit |
 
-Checklist progress is 337 of 496 items. Two figures understate the truth: `scaffold` reads 0 of 57
+Checklist progress is 334 of 496 items. Two figures understate the truth: `scaffold` reads 0 of 57
 because the checklist did not exist when it was built, and `fsfolder` reads 41% because half its
 items were deliberately assigned to `panel`.
 
