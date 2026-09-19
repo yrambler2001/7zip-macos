@@ -18,3 +18,18 @@ These override the inventory documents. Trust this list over the inventory when 
 - The association list has **40** extensions, not 39 (`CPP/7zip/Bundles/Format7zF/resource.rc:38`), correcting `03-shell-integration-inventory.md` section 3.
 - The zone-handling combo lang IDs are `406 = Yes`, `407 = No`; `01b-fm-dialogs-settings.md` section 4.13 has them swapped.
 - `NWorkDir::CInfo::Load` falls back to the system temp folder only when `WorkDirPath` is **absent**, not when it is present but empty.
+- 7zFM has **no "Auto Rename Existing" button**: `NOverwriteAnswer` has no such value and 3425 is
+  an Extract-dialog overwrite *mode*. The Overwrite dialog has six buttons.
+
+## Unfinished at the Wave 2 pause (2026-09-19)
+
+Each branch builds and its features were verified live, but none ran a final clean
+build-plus-test, so nothing is merged yet except `fsfolder`.
+
+- `mac/opsinfra` (3 commits): write `Mac/docs/api/opsinfra.md`, tick the shared-dialog boxes
+  (they sit in the `extract` section of `PROGRESS.md`), clean verify.
+- `mac/options` (3 commits): write `Mac/docs/api/options.md`, tick the `options` section, finish
+  the language screenshot and switch-back check, clean verify, replace the two test-target
+  symlinks.
+- `mac/harness` (4 commits): terminate an already-running app in `SevenZipApp.launch()`, rerun
+  the 9 UI tests, run `verify.sh` end to end, tick `PROGRESS.md` section 9.1.
