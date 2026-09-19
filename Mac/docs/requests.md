@@ -20,6 +20,10 @@ agent. Add a line, never rewrite someone else's.
 | `tools` | `extract` | `-scrc` on extract/test: build the digests into `SZHashResults` and show them with `HashResultsDialog`; `CSZHashStreamCallback` in `SZHasher.mm` is the `IFolderExtractToStreamCallback` model. | open |
 | `tools` | `finder` | The Explorer commands `CRC SHA-256 -> <name>.sha256` (03 §1.4 C12) and `Test archive : Checksum` (C13) are `SZHasher.writeChecksumFile` / `SZHasher.verifyChecksumFile`; no update flow is needed. | open |
 | `tools` | orchestrator | New `tools`-owned paths not in the Wave 2 ownership table: `Mac/Core/SZSplitFile.{h,mm}`, `Mac/Core/Internal/SZToolsEngine.h`, `Mac/App/Dialogs/ToolsTempFilesDialog.swift`. | open |
+| `icons` | `finder` (`Mac/App/Info.plist`) | The 27 document icons are built and bundled. Add `CFBundleDocumentTypes` entries with `CFBundleTypeIconFile` = `doc-<name>` (no extension); the exact plist shape, the 40-row extension -> icon table and the JSON form at `Mac/build/icons/extension-map.json` are in `Mac/docs/api/icons.md`. | open |
+| `icons` | `options` (`OptionsSystemPage.swift`) | The System page can stop using system icons: `NSImage(named: "doc-<name>")` (asset catalogue, 256/512 px) or the bundled `doc-<name>.icns` (native 16/32 px reps) for `FileTypes.iconNames[iconIndex]`. See `Mac/docs/api/icons.md`. | open |
+| `icons` | `tools` (`AboutDialog.swift`) | `CPP/7zip/UI/FileManager/7zipLogo.ico` (the 110x63 About-box wordmark) is decoded by `Mac/scripts/make-icons.sh` to `Mac/build/icons/frames/7zipLogo/110x63-8bpp.png` but is not shipped as an asset. Ask and the `icons` scope will add it to the catalogue. | open |
+| `icons` | orchestrator | New `icons`-owned paths not in the Wave 2 ownership table: `Mac/Resources/Icons/`, `Mac/scripts/make-icons.{sh,py,swift}`, `Mac/docs/api/icons.md`. `Mac/scripts/*` is listed under `harness`; the three `make-icons.*` files are `icons`-owned. | open |
 
 ## Spec corrections found during implementation
 
