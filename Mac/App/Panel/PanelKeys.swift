@@ -51,8 +51,14 @@ extension PanelViewController {
                 activateFocusedItem(modifiers: mods)
                 return true
             }
-        case PanelKey.backspace:                                    // Backspace -> parent folder
-            if !command {
+        case PanelKey.backspace:
+            // Cmd+Backspace is the menu's Delete (to the Trash); adding Shift or Option is the
+            // permanent variant, the way Windows uses Shift+Del (01 §3.7).
+            if command && (shift || option) {
+                deleteItems(toTrash: false)
+                return true
+            }
+            if !command {                                           // Backspace -> parent folder
                 goUp()
                 return true
             }

@@ -122,13 +122,15 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, L
         // OnInit (ListViewDialog.cpp:34-131): LVS_REPORT | LVS_SHOWSELALWAYS, LVS_EX_FULLROWSELECT,
         // the header only when NumColumns > 1; columns "Strings" / "Values", auto-sized.
         let stringsColumn = NSTableColumn(identifier: ListViewDialogController.stringsColumn)
-        stringsColumn.title = Lang.text(1004, "Name")       // IDS_PROP_NAME
+        // ListViewDialog.rc inserts both columns without a header text, so the port does the
+        // same (a lang ID here showed an unrelated string in the Properties dialog).
+        stringsColumn.title = ""
         stringsColumn.minWidth = 60
         table.addTableColumn(stringsColumn)
         if options.numColumns > 1 {
             stringsColumn.width = 200
             let valuesColumn = NSTableColumn(identifier: ListViewDialogController.valuesColumn)
-            valuesColumn.title = Lang.text(3003, "Value")   // IDS_PROP_VALUE
+            valuesColumn.title = ""
             valuesColumn.minWidth = 60
             valuesColumn.width = 460
             table.addTableColumn(valuesColumn)
