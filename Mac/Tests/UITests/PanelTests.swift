@@ -117,8 +117,9 @@ final class PanelTests: SevenZipUITestCase {
         let panel = sevenZip.panel(0)
         XCTAssertTrue(panel.waitForRow(named: "nested.zip"))
         panel.open("nested.zip")
-        XCTAssertTrue(panel.waitForRow(named: "test.zip"), "nested.zip holds \(panel.names)")
-        panel.open("test.zip")
+        // make-fixtures.sh puts test.7z and test.tar.gz in nested.zip, not test.zip.
+        XCTAssertTrue(panel.waitForRow(named: "test.7z"), "nested.zip holds \(panel.names)")
+        panel.open("test.7z")
         XCTAssertTrue(panel.waitForRow(named: "readme.txt"), "inner archive holds \(panel.names)")
     }
 

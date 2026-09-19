@@ -171,13 +171,13 @@ final class SmokeTests: SevenZipUITestCase {
         XCTAssertTrue(sevenZip.menuItem("File", "CRC", "MD5").exists, "nested CRC submenu")
     }
 
-    /// The seven 7zFM toolbar buttons exist; the scaffold leaves them disabled because nobody
-    /// implements their actions yet (App.cpp g_ArchiveButtons / g_StandardButtons).
+    /// The seven 7zFM toolbar buttons exist and Add is wired to the Compress dialog
+    /// (App.cpp g_ArchiveButtons / g_StandardButtons).
     func testToolbarButtons() {
         launch()
         XCTAssertEqual(sevenZip.toolbarButtonTitles, ["Add", "Extract", "Test", "Copy", "Move", "Delete", "Info"])
         XCTAssertTrue(sevenZip.toolbarButton("Add").exists)
-        XCTAssertFalse(sevenZip.toolbarButton("Add").isEnabled, "Add is implemented now -- update this test")
+        XCTAssertTrue(sevenZip.toolbarButton("Add").isEnabled, "the compress scope implemented Add")
     }
 
     // MARK: helpers
