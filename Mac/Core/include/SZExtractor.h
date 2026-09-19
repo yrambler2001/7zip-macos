@@ -172,6 +172,92 @@ typedef NS_ENUM(NSInteger, SZZoneIDMode) {
 
 @end
 
+// ---------------------------------------------------------------------------
+
+/// CTempFileInfo (FileManager/Panel.h): what was extracted to a temp folder so an external
+/// application can open it, and what the watcher compares against to notice a change.
+@interface SZTempFile : NSObject
+
+/// The `7zO<hex>` directory that holds the copy; delete it when the item is closed.
+@property (nonatomic, readonly, copy) NSString *directoryPath;
+/// The extracted file (or directory) inside `directoryPath`.
+@property (nonatomic, readonly, copy) NSString *filePath;
+/// Path of the item relative to the archive folder it came from (CTempFileInfo::RelPath).
+@property (nonatomic, readonly, copy) NSString *relativePath;
+@property (nonatomic, readonly, copy) NSString *itemName;
+@property (nonatomic, readonly) NSInteger itemIndex;
+@property (nonatomic, readonly) BOOL isDirectory;
+/// YES when the item went through the in-memory path (CVirtFileSystem) before being written.
+@property (nonatomic, readonly) BOOL wasHeldInMemory;
+/// Size and modification date recorded right after the extraction (CTempFileInfo::FileInfo).
+@property (nonatomic, readonly) uint64_t size;
+@property (nonatomic, readonly, copy, nullable) NSDate *modificationDate;
+
+/// The file on disk no longer matches `size` / `modificationDate`, i.e. the application saved
+/// it (PanelItemOpen.cpp: the watcher's "was it modified?" test).
+@property (nonatomic, readonly) BOOL wasModified;
+/// Re-reads size and modification date, so a second edit round is noticed too.
+- (void)refreshRecordedAttributes;
+
+@end
+
+/// The temp-folder machinery behind "open / view / edit an item that is inside an archive"
+/// (01 §3.9, §3.11) and behind dragging archive members out to Finder (01 §3.15).
+@interface SZTempOpen : NSObject
+
+/// kTempDirPrefix of PanelItemOpen.cpp ("7zO") and of PanelCopy/PanelDrag ("7zE").
+@property (class, nonatomic, readonly) NSString *openDirectoryPrefix;
+@property (class, nonatomic, readonly) NSString *extractDirectoryPrefix;
+
+/// A fresh `<temp>/<prefix>-XXXXXX` directory (mkdtemp). nil with `error` set on failure.
++ (nullable NSString *)createTemporaryDirectoryWithPrefix:(NSString *)prefix
+                                                    error:(NSError **)error
+    NS_SWIFT_NAME(createTemporaryDirectory(prefix:));
+
+/// The size below which extraction goes through memory first:
+/// `RAM >> max(levels + 1, 8)` when the RAM size is known, else 4 MiB
+/// (PanelItemOpen.cpp:1613-1615).
++ (uint64_t)inMemoryLimitForArchiveLevelCount:(NSInteger)levels
+    NS_SWIFT_NAME(inMemoryLimit(archiveLevelCount:));
+
+/// Extracts item `index` of an archive folder into a fresh `7zO` directory and returns the
+/// bookkeeping the watcher needs. Small items are collected in memory and flushed afterwards,
+/// like CVirtFileSystem; bigger ones are written straight to disk. `archiveFilePath` is the
+/// file whose `com.apple.quarantine` attribute is propagated when `zoneMode` asks for it.
+/// BLOCKS; run on the queue that owns `folder`.
++ (nullable SZTempFile *)extractItemAtIndex:(NSInteger)index
+                                   ofFolder:(SZFolder *)folder
+                            archiveFilePath:(nullable NSString *)archiveFilePath
+                          archiveLevelCount:(NSInteger)levels
+                                   zoneMode:(SZZoneIDMode)zoneMode
+                                   progress:(nullable id<SZProgressDelegate>)progress
+                                      error:(NSError **)error
+    NS_SWIFT_NAME(extractItem(at:of:archiveFilePath:archiveLevelCount:zoneMode:progress:));
+
+/// IFolderOperations::CopyFromFile: replaces one item's data with a file from disk, keeping the
+/// item's name -- how a modified temp file gets back into the archive
+/// (CAgentFolder::CopyFromFile -> UpdateOneFile, 01 §3.9 step 5, §6.7). BLOCKS.
++ (BOOL)updateItemAtIndex:(NSInteger)index
+                 ofFolder:(SZFolder *)folder
+             fromFilePath:(NSString *)filePath
+                 progress:(nullable id<SZProgressDelegate>)progress
+                    error:(NSError **)error
+    NS_SWIFT_NAME(updateItem(at:of:fromFilePath:progress:));
+
+/// Every `7zO*` / `7zE*` directory currently in the temp folder, for Tools > Delete Temporary
+/// Files and for a startup sweep (01 §9 #11: Windows never sweeps, so this is an addition).
++ (NSArray<NSString *> *)temporaryDirectories;
++ (BOOL)removeTemporaryDirectoryAtPath:(NSString *)path;
+
+/// Copies the `com.apple.quarantine` attribute of `archivePath` onto `path` when `mode` asks
+/// for it: `.all` always, `.office` only for Office documents (01 §9 #23).
++ (void)applyQuarantineFromArchiveAtPath:(nullable NSString *)archivePath
+                                  toPath:(NSString *)path
+                                    mode:(SZZoneIDMode)mode
+    NS_SWIFT_NAME(applyQuarantine(fromArchiveAt:to:mode:));
+
+@end
+
 NS_ASSUME_NONNULL_END
 
 #endif

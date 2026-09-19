@@ -101,3 +101,60 @@ entries, case-insensitively unique, max 16.
 
 **Builds** clean. **Next** Phase 4: temp-file open / view / edit / diff + the watcher and the
 lazy-extraction hook for the panel scope.
+
+## Phase 4 — open / view / edit / diff, the temp watcher and the drag-out hook (done)
+
+**Bridge** `Mac/Core/Internal/SZTempOpen.h` + `.mm`, public API in `Mac/Core/include/SZExtractor.h`:
+
+- `CSZVirtFileSystem` = `CVirtFileSystem` (ExtractCallback.cpp:840-1200): an
+  `IFolderArchiveExtractCallback` that also answers `IFolderExtractToStreamCallback`, so
+  `CArchiveExtractCallback` writes into memory (`CDynBufSeqOutStream`) instead of into files;
+  `FlushToDisk()` then writes the items under the temp prefix, restoring mtime and attributes and
+  applying the quarantine attribute.
+- `SZTempFile` = `CTempFileInfo`: directory, file, relative path, item index, size + mtime and
+  `wasModified` / `refreshRecordedAttributes`, which is the watcher's comparison.
+- `SZTempOpen`: `7zO` / `7zE` prefixes, `createTemporaryDirectory(prefix:)` (mkdtemp),
+  `inMemoryLimit(archiveLevelCount:)` = `RAM >> max(levels + 1, 8)` else 4 MiB,
+  `extractItem(at:of:archiveFilePath:archiveLevelCount:zoneMode:progress:)` (memory first for a
+  small file, disk for anything bigger and for folders, with a fall-back to disk when the memory
+  path fails), `updateItem(at:of:fromFilePath:progress:)` = `IFolderOperations::CopyFromFile`,
+  `temporaryDirectories()` / `removeTemporaryDirectory(atPath:)` (refuses anything that is not a
+  `7zO*`/`7zE*` folder inside the temp directory), `applyQuarantine(fromArchiveAt:to:mode:)`.
+
+**App** `Mac/App/Support/TempOpen.swift` and `TempOpenCommands.swift`:
+
+- `ExternalTool`: `SplitCmdLineSmart` for the `FM.Viewer` / `FM.Editor` / `FM.Diff` settings,
+  which may be an `.app` bundle, an executable, an application name or a command line; empty
+  falls back to Quick Look (`qlmanage -p`) for View and TextEdit for Edit (01 §9 #10).
+- `SuspiciousName`: `IsVirus_Message` (RLO, 5+ spaces, an executable extension hidden behind
+  trailing dots/spaces, `kExeExtensions` + `app command sh pkg dmg`) and the `IDS_VIRUS 3012`
+  confirmation.
+- `TempOpenSession`: the watcher. A `DispatchSource` (`.write .rename .delete .extend`) on the
+  temp file **and** `NSWorkspace.didTerminateApplicationNotification` for the launched app
+  (01 §9 #11). On a change it asks `IDS_WANT_UPDATE_MODIFIED_FILE 3009` and runs `CopyFromFile`
+  under the Progress dialog, reports `IDS_CANNOT_UPDATE_FILE 3010` on failure, then removes the
+  temp folder. A read-only archive is refused with the same 3010 text (step 3 of
+  `OpenItemInArchive`). `TempOpenManager` keeps the sessions and drains them on
+  `NSApplication.willTerminateNotification` (01 §1.1 "Shutdown").
+- `ItemOpenCommands`: View (F3, `IDM_FILE_VIEW 543`), Edit (F4, `IDM_FILE_EDIT 544`), Open
+  Outside (`IDM_OPEN_OUTSIDE 542`) and Diff (`IDM_DIFF 554`), for both a file-system item and an
+  item inside an archive; a folder inside an archive is extracted and revealed in Finder
+  (`OpenFolderExternal`).
+- `ArchiveDragOut`: the lazy-extraction hook for the `panel` scope —
+  `extract(indices:from:to:archiveDisplayPath:parentWindow:overwriteMode:)` writes the items into
+  the destination Finder supplies or into a fresh `7zE` folder and returns the paths,
+  `promisedNames(indices:from:)` for the promise provider, `removeTemporaryDirectory(_:)` for the
+  clean-up. Documented in `Mac/docs/api/extract.md`.
+
+**Difference from Windows, documented:** small files are held in memory exactly as Windows does,
+but the "give up and go to disk" decision is made *before* the run from the item's own size
+(`PanelItemOpen.cpp:1613-1615` does the same), whereas `CVirtFileSystem` can also bail out
+mid-run; when the in-memory attempt does fail here, the code simply repeats it straight to disk.
+
+**Verified** `Mac/scripts/test.sh` → 100 tests, 0 failures. `TempOpenTests.swift` (8 tests)
+covers the memory path, the disk path for a folder item, an encrypted archive, the full
+modify-and-write-back round trip with a re-opened archive, `CopyFromFile` refusal on a
+file-system folder, the temp-folder prefixes and the guarded removal, the RAM formula, and
+quarantine propagation in all three zone modes.
+
+**Next** Phase 5: verification in the running app.
