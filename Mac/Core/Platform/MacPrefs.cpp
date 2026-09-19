@@ -6,16 +6,43 @@
 
 #include "../../../CPP/Common/StringConvert.h"
 
+#include "../../../CPP/Windows/Synchronization.h"
+
 #include "MacPrefs.h"
+
+#include <stdlib.h>
 
 namespace NMacPrefs {
 
 const char * const kAppID = "com.yrambler2001.7zip";
+const char * const kSuiteEnvVar = "SEVENZIP_DEFAULTS_SUITE";
 
+static NWindows::NSynchronization::CCriticalSection g_AppIDCS;
+
+AString ApplicationID()
+{
+  const char *env = getenv(kSuiteEnvVar);
+  if (env && *env)
+    return AString(env);
+  return AString(kAppID);
+}
+
+// The CFString of the current domain. The environment variable is re-read on every call so a
+// test can switch domains with setenv(); the string is rebuilt only when the value changed.
 static CFStringRef AppID()
 {
-  static CFStringRef s = CFStringCreateWithCString(kCFAllocatorDefault, kAppID, kCFStringEncodingUTF8);
-  return s;
+  NWindows::NSynchronization::CCriticalSectionLock lock(g_AppIDCS);
+  static CFStringRef s_id = NULL;
+  static AString s_name;
+  const AString want = ApplicationID();
+  if (!s_id || !s_name.IsEqualTo(want.Ptr()))
+  {
+    if (s_id)
+      CFRelease(s_id);
+    s_id = CFStringCreateWithCString(kCFAllocatorDefault, want.Ptr(), kCFStringEncodingUTF8);
+    s_name = want;
+  }
+  return s_id;
 }
 
 static CFStringRef MakeKey(const char *key)
