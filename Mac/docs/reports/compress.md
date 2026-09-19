@@ -57,3 +57,30 @@ Design decisions taken:
 
 Next: the rest of the bridge tests (encryption, volumes, SFX bytes, delete-after, cancel,
 in-place update, entry deletion, timestamps), then the Compress dialog.
+
+## Phase 1b — bridge verification (done)
+
+`Mac/Tests/SevenZipKitTests/UpdaterTests.swift`: 35 tests, all green (102 in the suite).
+Every archive is verified twice — re-opened through `SZFolder` and tested with the console
+`7zz` built from this tree (`CPP/7zip/Bundles/Alone2/b/m_arm64/7zz`), skipped automatically
+when it is absent.
+
+Covered: create in 7z / zip / tar / wim / gzip / bzip2 / xz; the tar GNU and POSIX header
+methods; all ten 7z levels (Store is the largest, Ultra the smallest); the 7z method list
+(LZMA2 LZMA PPMd BZip2 Copy Deflate) and the zip method list (Deflate Deflate64 BZip2 LZMA
+PPMd) and zip's 0/1/3/5/7/9 levels; a read-only handler refused with
+`SZErrorCodeUnsupported`; solid (`s=…`) vs non-solid (`s=0b`) proven through the console's
+`Block =` lines; an encrypted 7z that lists but needs the password to test; `he=on` that
+cannot even be listed without one; zip ZipCrypto vs `em=AES256`; a 5-volume split that
+rejoins by concatenation and that the console accepts; an SFX whose first
+`sizeof(7z.sfx)` bytes are byte-identical to the bundled stub, starts with `MZ` and whose
+payload lists and tests; `-sdel` removing the sources, and keeping them when the run fails;
+cancellation mid-compression leaving neither an archive nor a temp file; `tc`/`ta`/`tp=0`
+making zip store creation/access times and `tm=off` dropping gzip's mtime; `-stl`; `-snl`
+on/off; in-place add (with the MoveArc callback firing), entry deletion (`7z d`), Freshen,
+Sync and the relative/absolute path modes; and `CreateArchiveName` including the
+`<name>_<N>` collision rule.
+
+Known gap recorded in `Mac/docs/requests.md`: the bridge's archive *opener* has no
+`IArchiveOpenVolumeCallback`, so `x.7z.001` cannot be opened through `SZFolder`
+(the console can). Creating volumes works; only reading a set back through the bridge does not.

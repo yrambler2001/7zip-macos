@@ -10,6 +10,7 @@ agent. Add a line, never rewrite someone else's.
 | `fsfolder` | `panel` | `GetSystemIconIndex` and the delete-confirmation strings were left to the panel scope. | open |
 | `options` | `harness` (`project.yml`) | Replace the two symlinks under `Mac/Tests/SevenZipKitTests/` that point at `Support/Settings.swift` and `Support/FileTypes.swift` with proper source entries for the test target. | open |
 | `options`, `opsinfra`, `harness` | orchestrator | Agents running the app concurrently share the `com.yrambler2001.7zip` preferences domain and overwrite each other's settings; the domain override request above fixes this. | **done**: launch with `SEVENZIP_DEFAULTS_SUITE=7zip-<scope>` (or any name) and the whole process, engine included, uses that domain. |
+| `compress` | `extract` / `SZArchiveOpener` owner | `SZFolder.folder(forPath:)` / `SZArchiveOpener.openArchive(atPath:)` cannot open a multi-volume set: opening `x.7z.001` fails with `SZErrorCodeNotArchive` because no `IArchiveOpenVolumeCallback` (`COpenCallbackImp`) is supplied. The console `7zz` opens the same file fine. `UpdaterOptionsTests.testSplitVolumes` works around it by concatenating the volumes. | open |
 
 ## Spec corrections found during implementation
 
