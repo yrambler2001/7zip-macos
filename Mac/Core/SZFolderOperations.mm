@@ -426,8 +426,20 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
             for (NSInteger i = 0; i < count; i++)
                 indices.Add((UInt32)i);
         }
+        // IArchiveFolder::Extract has no SetNumFiles; a total is only meaningful when the
+        // selection contains no directories (their contents are counted too).
         if ([progress respondsToSelector:@selector(progressSetTotalFiles:)])
-            [progress progressSetTotalFiles:(uint64_t)indices.Size()];
+        {
+            bool anyDir = false;
+            FOR_VECTOR (i, indices)
+                if ([self isDirectoryAtIndex:(NSInteger)indices[i]])
+                {
+                    anyDir = true;
+                    break;
+                }
+            if (!anyDir)
+                [progress progressSetTotalFiles:(uint64_t)indices.Size()];
+        }
 
         const HRESULT res = archiveFolder->Extract(indices.ConstData(), indices.Size(),
             BoolToInt(false), 0,
