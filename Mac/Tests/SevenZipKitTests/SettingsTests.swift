@@ -2,17 +2,20 @@
 // association list (FileTypes.swift). Both files are symlinked into this target so the tests run
 // against the very same source the app compiles; they are plain Foundation code by design.
 //
-// The tests write into the real preferences domain (com.yrambler2001.7zip) because that is the
-// contract being tested -- that a value written through the facade is visible through SZSettings
-// under the Windows-style key. Every key a test touches is snapshotted with CFPreferences in
-// setUp and restored in tearDown.
+// The tests run against an isolated preferences domain: setUp points SEVENZIP_DEFAULTS_SUITE at
+// "com.yrambler2001.7zip.tests", so nothing here can disturb the user's real settings or another
+// agent's running app, and tearDown clears the suite again. testDefaultsSuiteOverride covers the
+// override mechanism itself, including that the real domain stays untouched.
 
 import XCTest
 import SevenZipKit
 
 final class SettingsTests: XCTestCase {
 
-    private static let appID = "com.yrambler2001.7zip" as CFString
+    /// The isolated domain these tests write to.
+    private static let testSuite = "com.yrambler2001.7zip.tests"
+    private static let appID = testSuite as CFString
+    private static let realAppID = "com.yrambler2001.7zip" as CFString
 
     /// Every key these tests may write.
     private static let touchedKeys: [String] = [
@@ -51,6 +54,7 @@ final class SettingsTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        setenv(SZSettingsSuiteEnvironmentVariable, Self.testSuite, 1)
         saved = [:]
         for key in Self.touchedKeys {
             saved[key] = rawValue(key)
@@ -60,9 +64,10 @@ final class SettingsTests: XCTestCase {
     }
 
     override func tearDown() {
-        for (key, value) in saved { setRawValue(value ?? nil, key) }
+        for key in Self.touchedKeys { setRawValue(nil, key) }
         CFPreferencesAppSynchronize(Self.appID)
         saved = [:]
+        unsetenv(SZSettingsSuiteEnvironmentVariable)
         super.tearDown()
     }
 
@@ -382,6 +387,55 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(export["Options.ElimDupExtract"] as? Bool, true)
         XCTAssertEqual(export["Options.WriteZoneIdExtract"] as? Int, 2)
         XCTAssertEqual(export["Options.ContextMenu"] as? Int, (1 << 1) | (1 << 9))
+    }
+
+    // MARK: the SEVENZIP_DEFAULTS_SUITE override (requests.md: harness -> options)
+
+    /// With the variable set, everything -- SZSettings, the Swift facade and the engine-side
+    /// ZipRegistry accessors -- reads and writes that suite, and the real domain is untouched.
+    func testDefaultsSuiteOverride() {
+        let probe = "FM.PanelPath0"
+        let engineProbe = "Options.WorkDirPath"
+
+        // What the real domain holds right now; nothing below may change it.
+        unsetenv(SZSettingsSuiteEnvironmentVariable)
+        XCTAssertEqual(SZSettings.applicationID, SZSettingsDefaultApplicationID)
+        XCTAssertFalse(SZSettings.usesOverrideSuite)
+        CFPreferencesAppSynchronize(Self.realAppID)
+        let realProbeBefore = CFPreferencesCopyAppValue(probe as CFString, Self.realAppID) as? String
+        let realEngineBefore = CFPreferencesCopyAppValue(engineProbe as CFString, Self.realAppID) as? String
+
+        setenv(SZSettingsSuiteEnvironmentVariable, Self.testSuite, 1)
+        XCTAssertEqual(SZSettings.applicationID, Self.testSuite)
+        XCTAssertTrue(SZSettings.usesOverrideSuite)
+
+        // Swift facade -> suite
+        Settings.setPanelPath("/tmp/suite-only", 0)
+        XCTAssertEqual(Settings.panelPath(0), "/tmp/suite-only")
+        XCTAssertEqual(SZSettings.string(forKey: probe), "/tmp/suite-only")
+        XCTAssertEqual(CFPreferencesCopyAppValue(probe as CFString, Self.appID) as? String, "/tmp/suite-only")
+
+        // Engine side (NWorkDir::CInfo::Save/Load through ZipRegistryMac) -> the same suite
+        let info = SZWorkDirSettings()
+        info.mode = .specified
+        info.path = "/tmp/suite-workdir"
+        info.forRemovableOnly = false
+        info.save()
+        XCTAssertEqual(SZWorkDirSettings.loadFromSettings().path, "/tmp/suite-workdir")
+        XCTAssertEqual(Settings.workDirPath, "/tmp/suite-workdir")
+        XCTAssertEqual(CFPreferencesCopyAppValue(engineProbe as CFString, Self.appID) as? String, "/tmp/suite-workdir")
+
+        // The real domain never saw any of it.
+        CFPreferencesAppSynchronize(Self.realAppID)
+        XCTAssertEqual(CFPreferencesCopyAppValue(probe as CFString, Self.realAppID) as? String, realProbeBefore)
+        XCTAssertEqual(CFPreferencesCopyAppValue(engineProbe as CFString, Self.realAppID) as? String, realEngineBefore)
+
+        // Switching back mid-process works too (the domain is resolved per access).
+        unsetenv(SZSettingsSuiteEnvironmentVariable)
+        XCTAssertEqual(SZSettings.applicationID, SZSettingsDefaultApplicationID)
+        XCTAssertEqual(SZSettings.string(forKey: probe), realProbeBefore)
+        setenv(SZSettingsSuiteEnvironmentVariable, Self.testSuite, 1)
+        XCTAssertEqual(SZSettings.string(forKey: probe), "/tmp/suite-only")
     }
 
     // MARK: FileTypes (03 section 3.1)

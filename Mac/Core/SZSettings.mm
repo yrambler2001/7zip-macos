@@ -3,6 +3,9 @@
 #import "SZSettings.h"
 #import "Internal/SZBridgeUtils.h"
 
+NSString * const SZSettingsSuiteEnvironmentVariable = @"SEVENZIP_DEFAULTS_SUITE";
+NSString * const SZSettingsDefaultApplicationID = @"com.yrambler2001.7zip";
+
 NSString * const SZSettingsKeyLang = @"Lang";
 NSString * const SZSettingsKeyFMPosition = @"FM.Position";
 NSString * const SZSettingsKeyFMMaximized = @"FM.Maximized";
@@ -39,7 +42,12 @@ using namespace NMacPrefs;
 
 + (NSString *)applicationID
 {
-  return @(kAppID);
+  return @(ApplicationID().Ptr());
+}
+
++ (BOOL)usesOverrideSuite
+{
+  return ![[self applicationID] isEqualToString:SZSettingsDefaultApplicationID];
 }
 
 + (NSString *)stringForKey:(NSString *)key

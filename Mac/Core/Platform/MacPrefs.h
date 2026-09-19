@@ -13,7 +13,21 @@
 
 namespace NMacPrefs {
 
-extern const char * const kAppID;   // "com.yrambler2001.7zip"
+extern const char * const kAppID;   // "com.yrambler2001.7zip" (the default domain)
+
+// Environment variable that replaces the preferences domain for the whole process, so that
+// concurrent agents and UI tests get an isolated settings domain instead of the user's real one:
+//
+//   SEVENZIP_DEFAULTS_SUITE=7zip-uitests  Mac/build/Debug/7-Zip.app/Contents/MacOS/7-Zip
+//
+// It is read on every access (cached by value), so a test can set it with setenv() at any time.
+// Empty or unset means kAppID. Everything that stores settings -- SZSettings, the Swift Settings
+// facade and the engine-side ZipRegistry accessors (Extraction.*, Compression.*, Options.*,
+// the work directory) -- goes through this one domain.
+extern const char * const kSuiteEnvVar;   // "SEVENZIP_DEFAULTS_SUITE"
+
+// The domain actually in use (kAppID unless the environment variable is set).
+AString ApplicationID();
 
 bool GetUInt32(const char *key, UInt32 &value);
 bool GetBool(const char *key, bool &value);

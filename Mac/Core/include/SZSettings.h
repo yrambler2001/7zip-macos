@@ -1,4 +1,5 @@
-// SZSettings.h -- typed access to the shared preferences domain (com.yrambler2001.7zip).
+// SZSettings.h -- typed access to the shared preferences domain (com.yrambler2001.7zip, or the
+// domain named by the SEVENZIP_DEFAULTS_SUITE environment variable).
 // Keys mirror the Windows registry value names with the key path as a dotted prefix
 // (01b-fm-dialogs-settings.md section 5.7): "Lang", "FM.PanelPath0", "Extraction.ExtractMode",
 // "Compression.Options.7z.Level", "Options.WorkDirType". The engine-side ZipRegistry accessors
@@ -44,9 +45,26 @@ FOUNDATION_EXPORT NSString * const SZSettingsKeyWorkDirType;          // "Option
 FOUNDATION_EXPORT NSString * const SZSettingsKeyWorkDirPath;          // "Options.WorkDirPath"
 FOUNDATION_EXPORT NSString * const SZSettingsKeyTempRemovableOnly;    // "Options.TempRemovableOnly"
 
+/// Environment variable that replaces the preferences domain for the whole process:
+///
+///     SEVENZIP_DEFAULTS_SUITE=7zip-uitests  open -a 7-Zip
+///
+/// Unset or empty means the default domain. It is honoured by everything that stores settings:
+/// this class, the Swift `Settings` facade built on it, and the engine-side ZipRegistry accessors
+/// (`Extraction.*`, `Compression.*`, `Options.*`, the work directory). The value is re-read on
+/// every access, so a test can switch domains with `setenv()` at any point.
+FOUNDATION_EXPORT NSString * const SZSettingsSuiteEnvironmentVariable;   // "SEVENZIP_DEFAULTS_SUITE"
+
+/// The default domain, used when the environment variable is not set.
+FOUNDATION_EXPORT NSString * const SZSettingsDefaultApplicationID;       // "com.yrambler2001.7zip"
+
 @interface SZSettings : NSObject
 
+/// The domain actually in use right now.
 @property (class, nonatomic, readonly) NSString *applicationID;
+
+/// YES when SEVENZIP_DEFAULTS_SUITE names a domain other than the default one.
+@property (class, nonatomic, readonly) BOOL usesOverrideSuite;
 
 + (nullable NSString *)stringForKey:(NSString *)key NS_SWIFT_NAME(string(forKey:));
 + (void)setString:(nullable NSString *)value forKey:(NSString *)key;   ///< nil removes
