@@ -244,8 +244,14 @@ final class SevenZipKitTests: XCTestCase {
         XCTAssertEqual(folder.sizeOfItem(at: i), (attrs[.size] as? NSNumber)?.uint64Value)
         XCTAssertEqual(folder.fullPathOfItem(at: i), fixture("test.7z"))
         XCTAssertFalse(folder.isDirectory(at: i))
-        XCTAssertEqual(folder.properties.map { $0.localizedName }, ["Name", "Size", "Modified", "Created", "Accessed", "Attributes"])
-        XCTAssertEqual(folder.properties.map { $0.propID }, [.name, .size, .mtime, .ctime, .atime, .attrib])
+        // full FSFolder column set (FSFolder.cpp kProps); see FSFolderTests for the details
+        XCTAssertEqual(folder.properties.map { $0.localizedName },
+                       ["Name", "Size", "Modified", "Created", "Accessed", "Metadata Changed", "Attributes",
+                        "Packed Size", "Mode", "User", "Group", "Link", "iNode", "Links", "Comment", "Folders", "Files"])
+        XCTAssertEqual(folder.properties.map { $0.propID },
+                       [.name, .size, .mtime, .ctime, .atime, .changeTime, .attrib,
+                        .packSize, .posixAttrib, .user, .group, .ntReparse, .inode, .links, .comment,
+                        .numSubDirs, .numSubFiles])
         XCTAssertTrue(folder.displayStringOfItem(at: i, propID: .attrib, timestampLevel: .min).contains("-rw"))
         XCTAssertNotNil(folder.propertyOfItem(at: i, propID: .mtime) as? Date)
         XCTAssertTrue(folder.supportsCompare)

@@ -18,13 +18,26 @@ using namespace NMacFolders;
   return folder;
 }
 
-+ (SZFolder *)volumesFolder
++ (SZRootFolder *)volumesFolder
 {
   CVolumesFolderMac *spec = new CVolumesFolderMac;
   CMyComPtr<IFolderFolder> raw = spec;
   SZRootFolder *folder = [[SZRootFolder alloc] initWithRawFolder:raw archive:nil];
   [folder loadItems:NULL];
   return folder;
+}
+
+- (BOOL)isVolumesFolder
+{
+  return [self.folderType isEqualToString:@"FSDrives"];
+}
+
+- (NSString *)mountPathOfItemAtIndex:(NSInteger)index
+{
+  if (!self.isVolumesFolder || index < 0 || index >= self.itemCount)
+    return nil;
+  id v = [self propertyOfItemAtIndex:index propID:SZPropIDPath];
+  return [v isKindOfClass:[NSString class]] && ((NSString *)v).length ? v : nil;
 }
 
 + (NSArray<NSString *> *)rootEntryNames

@@ -9,6 +9,8 @@
 #include <pwd.h>
 #include <unistd.h>
 
+#include <vector>
+
 #include <errno.h>
 #include <string.h>
 #include "../../../CPP/Common/ComTry.h"
@@ -21,6 +23,7 @@
 #include "../../../CPP/7zip/PropID.h"
 
 #include "FSFolderMac.h"
+#include "MacFileOps.h"
 
 using namespace NWindows;
 using namespace NFile;
@@ -253,46 +256,35 @@ Z7_COM7F_IMF(CVolumesFolderMac::LoadItems())
 {
   COM_TRY_BEGIN
   _volumes.Clear();
-  DIR *dir = opendir("/Volumes");
-  if (!dir)
-    return GetLastError_noZero_HRESULT();
-  for (;;)
+  _mountsFingerprint = NMacFileOps::MountsFingerprint();
+  std::vector<NMacFileOps::CVolumeInfo> volumes;
+  NMacFileOps::GetMountedVolumes(volumes);
+  for (size_t i = 0; i < volumes.size(); i++)
   {
-    errno = 0;
-    const struct dirent *de = readdir(dir);
-    if (!de)
-      break;
-    if (de->d_name[0] == '.')
-      continue;
-    FString path("/Volumes/");
-    path += de->d_name;
-    struct statfs fs;
-    if (statfs(path, &fs) != 0)
-      continue;
-    struct stat st;
-    if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode))
-      continue;
+    const NMacFileOps::CVolumeInfo &src = volumes[i];
     CVolumeItem v;
-    v.Name = MultiByteToUnicodeString(de->d_name, CP_UTF8);
-    v.MountPath = fs.f_mntonname;
+    v.Name = MultiByteToUnicodeString(AString(src.Name.c_str()), CP_UTF8);
+    v.MountPath = src.MountPath.c_str();
     NName::NormalizeDirPathPrefix(v.MountPath);
-    v.FileSystem = MultiByteToUnicodeString(fs.f_fstypename, CP_UTF8);
-    v.TotalSize = (UInt64)fs.f_blocks * fs.f_bsize;
-    v.FreeSpace = (UInt64)fs.f_bavail * fs.f_bsize;
-    v.ClusterSize = fs.f_bsize;
-    if (strcmp(fs.f_fstypename, "cd9660") == 0 || strcmp(fs.f_fstypename, "udf") == 0)
-      v.Type = "CD-ROM";
-    else if ((fs.f_flags & MNT_LOCAL) == 0)
-      v.Type = "Remote";
-    else if (fs.f_flags & MNT_REMOVABLE)
-      v.Type = "Removable";
-    else
-      v.Type = "Fixed";
+    v.Label = MultiByteToUnicodeString(AString(src.Label.c_str()), CP_UTF8);
+    v.FileSystem = MultiByteToUnicodeString(AString(src.FileSystem.c_str()), CP_UTF8);
+    v.Type = MultiByteToUnicodeString(AString(src.Type.c_str()), CP_UTF8);
+    v.TotalSize = src.TotalSize;
+    v.FreeSpace = src.FreeSpace;
+    v.ClusterSize = src.ClusterSize;
     _volumes.Add(v);
   }
-  closedir(dir);
   return S_OK;
   COM_TRY_END
+}
+
+// IFolderWasChanged: the FSDrives equivalent of "poll the drive mask" (01 section 6.3).
+Z7_COM7F_IMF(CVolumesFolderMac::WasChanged(Int32 *wasChanged))
+{
+  const UInt64 fingerprint = NMacFileOps::MountsFingerprint();
+  *wasChanged = BoolToInt(fingerprint != _mountsFingerprint);
+  _mountsFingerprint = fingerprint;
+  return S_OK;
 }
 
 Z7_COM7F_IMF(CVolumesFolderMac::GetNumberOfItems(UInt32 *numItems))
@@ -311,12 +303,15 @@ Z7_COM7F_IMF(CVolumesFolderMac::GetProperty(UInt32 itemIndex, PROPID propID, PRO
   {
     case kpidIsDir: prop = true; break;
     case kpidName: prop = v.Name; break;
-    case kpidVolumeName: prop = v.Name; break;
+    case kpidVolumeName: prop = v.Label.IsEmpty() ? v.Name : v.Label; break;
     case kpidTotalSize: prop = v.TotalSize; break;
     case kpidFreeSpace: prop = v.FreeSpace; break;
-    case kpidClusterSize: prop = v.ClusterSize; break;
+    case kpidClusterSize: prop = (UInt32)v.ClusterSize; break;
     case kpidType: prop = v.Type; break;
     case kpidFileSystem: prop = v.FileSystem; break;
+    // The name to use when copying the volume out (FSDrives.cpp uses "<drive>.<fs>").
+    case kpidOutName: prop = v.Name; break;
+    // The mount point, so the panel can show and navigate to it.
     case kpidPath: prop = fs2us(v.MountPath); break;
     default: break;
   }

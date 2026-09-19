@@ -1,9 +1,12 @@
 // FSEventsWatcher.cpp -- see FSEventsWatcher.h
 
 #include "FSEventsWatcher.h"
+#include "MacFileOps.h"
 
 #include <CoreServices/CoreServices.h>
 #include <dispatch/dispatch.h>
+
+#include <string.h>
 
 #include <atomic>
 #include <memory>
@@ -11,13 +14,24 @@
 
 namespace NMacFolders {
 
-typedef std::shared_ptr<std::atomic<bool> > CFlagPtr;
+// Shared with the running stream: the stream keeps its own reference through the context
+// release callback, so a callback in flight is safe even after the owner is gone.
+struct CWatchState
+{
+  std::atomic<bool> Changed;
+  std::atomic<bool> RootChanged;
+  bool Recursive;
+  std::string Path;      // as given, no trailing '/' (except "/")
+  std::string RealPath;  // realpath() of Path: FSEvents reports canonical paths
+  CWatchState(): Changed(false), RootChanged(false), Recursive(false) {}
+};
+
+typedef std::shared_ptr<CWatchState> CStatePtr;
 
 struct CFSEventsWatcher::Impl
 {
   FSEventStreamRef stream;
-  CFlagPtr flag;
-  std::string path;   // normalized, no trailing slash (except "/")
+  CStatePtr state;
   Impl(): stream(NULL) {}
 };
 
@@ -35,30 +49,74 @@ static std::string NormalizeDir(const char *p)
   return s;
 }
 
-// The stream owns one heap-allocated shared_ptr to the flag (context info). It is freed by
-// the release callback when the stream is invalidated; no retain callback (FSEvents stores
-// the original info pointer regardless of what a retain callback returns).
-static void ReleaseFlag(const void *info)
+// The stream owns one heap-allocated shared_ptr (context info), freed by the release callback
+// when the stream is invalidated. No retain callback (FSEvents stores the original info
+// pointer regardless of what a retain callback returns).
+static void ReleaseState(const void *info)
 {
-  delete (const CFlagPtr *)info;
+  delete (const CStatePtr *)info;
+}
+
+static bool SameDir(const std::string &dir, const char *eventPath)
+{
+  if (dir.empty() || !eventPath)
+    return false;
+  size_t len = strlen(eventPath);
+  while (len > 1 && eventPath[len - 1] == '/')
+    len--;
+  return len == dir.size() && memcmp(eventPath, dir.c_str(), len) == 0;
 }
 
 static void Callback(ConstFSEventStreamRef, void *info, size_t numEvents,
-    void *eventPaths, const FSEventStreamEventFlags[], const FSEventStreamEventId[])
+    void *eventPaths, const FSEventStreamEventFlags flags[], const FSEventStreamEventId[])
 {
-  // The flag is shared with the owner; the stream keeps its own reference through the
-  // context retain/release callbacks, so this is safe even after the owner is gone.
-  CFlagPtr *flag = (CFlagPtr *)info;
-  (void)numEvents; (void)eventPaths;
-  (*flag)->store(true);
+  CWatchState &st = **(CStatePtr *)info;
+  const char * const *paths = (const char * const *)eventPaths;
+  for (size_t i = 0; i < numEvents; i++)
+  {
+    const FSEventStreamEventFlags f = flags[i];
+    if (f & kFSEventStreamEventFlagRootChanged)
+    {
+      // The watched directory itself was deleted, renamed or moved.
+      st.RootChanged.store(true);
+      st.Changed.store(true);
+      continue;
+    }
+    if (f & (kFSEventStreamEventFlagMustScanSubDirs
+           | kFSEventStreamEventFlagKernelDropped
+           | kFSEventStreamEventFlagUserDropped
+           | kFSEventStreamEventFlagMount
+           | kFSEventStreamEventFlagUnmount))
+    {
+      st.Changed.store(true);
+      continue;
+    }
+    if (st.Recursive)
+    {
+      st.Changed.store(true);
+      continue;
+    }
+    // Without kFSEventStreamCreateFlagFileEvents there is one event per changed directory,
+    // so "the current directory only" == the event path is our own directory
+    // (FindFirstChangeNotification(bWatchSubtree = false) semantics, 01 section 6.4).
+    const char *p = paths[i];
+    if (SameDir(st.Path, p) || SameDir(st.RealPath, p))
+      st.Changed.store(true);
+  }
 }
 
-CFSEventsWatcher::CFSEventsWatcher(const char *dirPath): _impl(new Impl)
+CFSEventsWatcher::CFSEventsWatcher(const char *dirPath, bool recursive): _impl(new Impl)
 {
-  _impl->path = NormalizeDir(dirPath);
-  _impl->flag = CFlagPtr(new std::atomic<bool>(false));
+  _impl->state = CStatePtr(new CWatchState);
+  CWatchState &st = *_impl->state;
+  st.Recursive = recursive;
+  st.Path = NormalizeDir(dirPath);
+  if (!NMacFileOps::RealPath(st.Path.c_str(), st.RealPath))
+    st.RealPath = st.Path;
+  else
+    st.RealPath = NormalizeDir(st.RealPath.c_str());
 
-  CFStringRef cfPath = CFStringCreateWithCString(kCFAllocatorDefault, _impl->path.c_str(), kCFStringEncodingUTF8);
+  CFStringRef cfPath = CFStringCreateWithCString(kCFAllocatorDefault, st.Path.c_str(), kCFStringEncodingUTF8);
   if (!cfPath)
     return;
   const void *paths[1] = { cfPath };
@@ -67,18 +125,16 @@ CFSEventsWatcher::CFSEventsWatcher(const char *dirPath): _impl(new Impl)
   if (!pathArray)
     return;
 
-  CFlagPtr *ctxInfo = new CFlagPtr(_impl->flag);
+  CStatePtr *ctxInfo = new CStatePtr(_impl->state);
   FSEventStreamContext ctx;
   ctx.version = 0;
   ctx.info = ctxInfo;
   ctx.retain = NULL;
-  ctx.release = ReleaseFlag;
+  ctx.release = ReleaseState;
   ctx.copyDescription = NULL;
 
-  // Without kFSEventStreamCreateFlagFileEvents the callback receives one event per changed
-  // directory; changes inside sub-directories arrive with the sub-directory's path. We only
-  // care that *something* changed under our own directory, so no filtering is needed: the
-  // panel reloads and compares. Latency 0.5 s coalesces bursts.
+  // Latency 0.5 s coalesces bursts into one flag (the panel polls once per second);
+  // WatchRoot reports deletion / renaming of the watched directory itself.
   FSEventStreamRef stream = FSEventStreamCreate(kCFAllocatorDefault, Callback, &ctx,
       pathArray, kFSEventStreamEventIdSinceNow, 0.5,
       kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagWatchRoot);
@@ -121,7 +177,12 @@ bool CFSEventsWatcher::IsActive() const
 
 bool CFSEventsWatcher::ConsumeChanged()
 {
-  return _impl->flag->exchange(false);
+  return _impl->state->Changed.exchange(false);
+}
+
+bool CFSEventsWatcher::RootChanged() const
+{
+  return _impl->state->RootChanged.load();
 }
 
 }
