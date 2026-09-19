@@ -41,7 +41,9 @@ open class SevenZipUITestCase: XCTestCase {
     }
 
     open override func tearDown() {
-        if let run = testRun, !run.hasSucceeded {
+        // `hasSucceeded` is only valid once the run has stopped, and tearDown runs before that,
+        // so it would attach a "failure" screenshot to every passing test: count failures instead.
+        if let run = testRun, run.totalFailureCount > 0 {
             _ = sevenZip?.screenshot("failure-" + Self.slug(name), prefix: screenshotPrefix, test: self)
         }
         sevenZip?.terminate()

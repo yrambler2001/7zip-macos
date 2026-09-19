@@ -12,12 +12,12 @@
 #   -k, --keep-prefs       do not clear com.yrambler2001.7zip before a UI run
 #   -h, --help             this text
 #
-# UI runs: the app saves its own settings when it quits, so the preferences domain
-# com.yrambler2001.7zip is exported to Mac/build/prefs-backup.plist, cleared (Lang forced to
-# English), and imported back when the run ends -- the developer's settings survive. If a 7-Zip
-# instance is already running (another worktree), the domain is left alone and a warning is
-# printed; XCUITest will still terminate that instance. Screenshot attachments are exported from
-# the result bundle into Mac/docs/reports/screenshots/. Only one UI run at a time.
+# UI runs take the shared app-launch lock (<worktrees>/.app-lock, override with SEVENZIP_APP_LOCK)
+# so only one agent drives the app at a time; it waits up to 15 minutes, breaks a lock older than
+# 30 minutes, and releases it on any exit. The app saves its own settings when it quits, so the
+# preferences domain com.yrambler2001.7zip is exported to Mac/build/prefs-backup.plist, cleared
+# (Lang forced to English) and imported back when the run ends -- the developer's settings survive.
+# Screenshot attachments are exported from the result bundle into Mac/docs/reports/screenshots/.
 # Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA.
 # Logs: Mac/build/test-<target>.log. Exit: 0 when everything passed, else xcodebuild's code.
 set -euo pipefail
@@ -63,24 +63,73 @@ if [ ! -d "$MAC/Tests/Fixtures" ] || [ -z "$(ls -A "$MAC/Tests/Fixtures" 2>/dev/
   exit 2
 fi
 
-# --- preferences safety net (UI runs launch the real app, which saves its state) -------------
+# --- shared app-launch lock + preferences safety net (a UI run owns the app) -------------------
+# Every worktree builds the same bundle id, so only one agent may drive the app at a time:
+# Mac/docs/api/harness.md "App-launch lock".
+APP_LOCK="${SEVENZIP_APP_LOCK:-$(
+  if [ -d "$ROOT/.worktrees" ]; then echo "$ROOT/.worktrees/.app-lock"
+  elif [ "$(basename "$(dirname "$ROOT")")" = ".worktrees" ]; then echo "$(dirname "$ROOT")/.app-lock"
+  else echo "${TMPDIR:-/tmp}/7zip-app-lock"; fi)}"
+APP_LOCK_HELD=0
+LOCK_SCOPE="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 PREFS_BACKUP="$MAC/build/prefs-backup.plist"
 PREFS_SAVED=0
+
+lock_owner() { cat "$APP_LOCK/owner" 2>/dev/null || echo "unknown"; }
+
+acquire_app_lock() {
+  if [ -n "${SEVENZIP_APP_LOCK_HELD:-}" ]; then return 0; fi     # already held by verify.sh
+  local i age
+  for i in $(seq 1 180); do                                      # 180 * 5s = 15 min
+    if mkdir "$APP_LOCK" 2>/dev/null; then
+      echo "$LOCK_SCOPE (pid $$, $(date '+%Y-%m-%d %H:%M:%S'))" >"$APP_LOCK/owner"
+      APP_LOCK_HELD=1
+      export SEVENZIP_APP_LOCK_HELD=1
+      echo "== app lock acquired: $APP_LOCK"
+      return 0
+    fi
+    age=$(( $(date +%s) - $(stat -f %m "$APP_LOCK" 2>/dev/null || date +%s) ))
+    if [ "$age" -gt 1800 ]; then
+      echo "== app lock $APP_LOCK is $((age / 60)) min old (owner: $(lock_owner)) -- stale, breaking it"
+      rm -rf "$APP_LOCK"
+      continue
+    fi
+    if [ "$i" = 1 ]; then echo "== waiting for the app lock $APP_LOCK (owner: $(lock_owner))"; fi
+    sleep 5
+  done
+  echo "test.sh: app lock $APP_LOCK still held after 15 min (owner: $(lock_owner))." >&2
+  echo "         Wait for that run, or remove the directory if it is stale." >&2
+  return 3
+}
+
+release_app_lock() {
+  if [ "$APP_LOCK_HELD" = 1 ]; then
+    APP_LOCK_HELD=0
+    rm -rf "$APP_LOCK"
+    echo "== app lock released"
+  fi
+}
+
 restore_prefs() {
   [ "$PREFS_SAVED" = 1 ] || return 0
+  PREFS_SAVED=0
   defaults import "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null || true
   echo "== preferences of $APP_DOMAIN restored from $PREFS_BACKUP"
 }
+
+cleanup() { restore_prefs; release_app_lock; }
+
 if printf '%s\n' $TARGETS | grep -q "$UI_TARGET"; then
-  # The preferences domain is shared by every worktree's build. Another agent running the app
-  # would be disturbed by clearing it (and XCUITest terminates any running instance anyway).
+  trap cleanup EXIT INT TERM
+  acquire_app_lock || exit 3
+  # The preferences domain is shared by every worktree's build; with the lock held no other agent
+  # should be using the app, so it is safe to clear it and put it back afterwards.
   OTHER="$(pgrep -f '7-Zip\.app/Contents/MacOS/7-Zip' | head -1 || true)"
   if [ -n "$OTHER" ]; then
-    echo "== warning: 7-Zip is already running (pid $OTHER); the UI tests will terminate it"
-    echo "            and $APP_DOMAIN is left untouched"
+    echo "== warning: 7-Zip is already running (pid $OTHER) although the lock is held;"
+    echo "            the UI tests will terminate it and $APP_DOMAIN is left untouched"
   elif [ "$KEEP_PREFS" = 0 ]; then
     defaults export "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null && PREFS_SAVED=1 || true
-    trap restore_prefs EXIT INT TERM
     defaults delete "$APP_DOMAIN" >/dev/null 2>&1 || true
     defaults write "$APP_DOMAIN" Lang -string -      # English resource strings for the assertions
     echo "== preferences of $APP_DOMAIN backed up to $PREFS_BACKUP and cleared"

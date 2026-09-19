@@ -10,7 +10,10 @@
 #   -s, --scope <NAME>     name the scope in the summary (default: the git branch)
 #   -o, --out <PATH>       summary file (default Mac/docs/reports/verify-latest.md)
 #   -h, --help             this text
-# Env: DEVELOPER_DIR (default /Applications/Xcode.app).
+# Unless --no-ui is given it takes the shared app-launch lock (<worktrees>/.app-lock) for the whole
+# run, so two agents never drive the app at once; it waits up to 15 minutes, breaks a lock older
+# than 30 minutes and releases it on any exit.
+# Env: DEVELOPER_DIR (default /Applications/Xcode.app), SEVENZIP_APP_LOCK.
 set -euo pipefail
 
 usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"; }
@@ -37,6 +40,52 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -n "$SCOPE" ] || SCOPE="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+
+# --- shared app-launch lock (held for the whole run; Mac/docs/api/harness.md) -------------------
+APP_LOCK="${SEVENZIP_APP_LOCK:-$(
+  if [ -d "$ROOT/.worktrees" ]; then echo "$ROOT/.worktrees/.app-lock"
+  elif [ "$(basename "$(dirname "$ROOT")")" = ".worktrees" ]; then echo "$(dirname "$ROOT")/.app-lock"
+  else echo "${TMPDIR:-/tmp}/7zip-app-lock"; fi)}"
+APP_LOCK_HELD=0
+lock_owner() { cat "$APP_LOCK/owner" 2>/dev/null || echo "unknown"; }
+
+release_app_lock() {
+  if [ "$APP_LOCK_HELD" = 1 ]; then
+    APP_LOCK_HELD=0
+    rm -rf "$APP_LOCK"
+    echo "== app lock released"
+  fi
+}
+
+acquire_app_lock() {
+  if [ -n "${SEVENZIP_APP_LOCK_HELD:-}" ]; then return 0; fi
+  local i age
+  for i in $(seq 1 180); do                                      # 180 * 5s = 15 min
+    if mkdir "$APP_LOCK" 2>/dev/null; then
+      echo "$SCOPE (verify.sh, pid $$, $(date '+%Y-%m-%d %H:%M:%S'))" >"$APP_LOCK/owner"
+      APP_LOCK_HELD=1
+      export SEVENZIP_APP_LOCK_HELD=1                            # test.sh below must not re-take it
+      echo "== app lock acquired: $APP_LOCK"
+      return 0
+    fi
+    age=$(( $(date +%s) - $(stat -f %m "$APP_LOCK" 2>/dev/null || date +%s) ))
+    if [ "$age" -gt 1800 ]; then
+      echo "== app lock $APP_LOCK is $((age / 60)) min old (owner: $(lock_owner)) -- stale, breaking it"
+      rm -rf "$APP_LOCK"
+      continue
+    fi
+    if [ "$i" = 1 ]; then echo "== waiting for the app lock $APP_LOCK (owner: $(lock_owner))"; fi
+    sleep 5
+  done
+  echo "verify.sh: app lock $APP_LOCK still held after 15 min (owner: $(lock_owner))." >&2
+  echo "           Wait for that run, or remove the directory if it is stale." >&2
+  return 3
+}
+
+if [ "$NO_UI" = 0 ]; then
+  trap release_app_lock EXIT INT TERM
+  acquire_app_lock || exit 3
+fi
 
 mkdir -p "$MAC/build" "$(dirname "$OUT")"
 STAMP="$(date '+%Y-%m-%d %H:%M:%S %z')"

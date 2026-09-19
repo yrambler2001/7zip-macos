@@ -67,6 +67,9 @@ public final class SevenZipApp {
         var env = environment
         env["SEVENZIP_UITEST"] = "1"
         app.launchEnvironment = env
+        // An instance from another worktree (or a previous test) is attached to instead of being
+        // replaced, and its death then fails the test with "Lost connection to the application".
+        if isRunning { app.terminate() }
         app.launch()
         if !window.waitForExistence(timeout: timeout) {
             // Rare flake: "Application has not loaded accessibility" / no window. One retry.
