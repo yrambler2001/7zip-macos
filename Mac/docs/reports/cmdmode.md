@@ -235,11 +235,140 @@ touched.
 
 ### 4.1 Unit tests
 
-<!--UNIT-->
+`Mac/scripts/test.sh` after `rm -rf Mac/build`: **311 of 311 pass** (the 286 of the audit's baseline
+plus the 25 new ones in `CommandModeTests`), with the app-launch lock held for the whole run. The
+clean build produces **no warning from `Mac/` source**; the one line the log carries,
+`SevenZipKit: ld: warning: ignoring duplicate libraries: '-lc++'`, is pre-existing — it is in the
+main checkout's build log too and comes from `OTHER_LDFLAGS` in `Mac/project.yml`, which this scope
+does not own.
+
+The 25 tests, by what they hold down:
+
+| test | asserts |
+|---|---|
+| `testExitCodeValues` | `NExitCode::EEnum` including the 8 that had no other reference in the tree |
+| `testFailureLadderConstantsMatchTheBridge` | the four constants the Foundation-only ladder mirrors still equal `SZErrorDomain`, `SZErrorHRESULTKey`, `SZPathExceptionUserInfoKey` and the two `SZError.Code` values, and that `SZErrors.errorWithHRESULT:` really maps `E_ABORT` / `E_OUTOFMEMORY` to them |
+| `testExitCodeLadder` | every arm of `GUI.cpp:437-494`: out of memory by code, by HRESULT and by POSIX `ENOMEM` → 8 + IDS_MEM_ERROR; the path exception → 7 + its text; `E_ABORT` by code and by HRESULT → 255 + **no** box; another engine error → 2 + `MyFormatMessage`'s text; a string exception → 2 + the string; `Internal Error #17` → `"Error: 17"`; an empty text → `"Unknown error"`; a plain Swift error → 2 |
+| `testMemoryErrorMessageComesFromLangID3000` | the ladder's default text is the built-in English of lang id 3000, and the lang table really carries that id, so the app's `Lang.text(3000, …)` resolves rather than falls back |
+| `testRenameCommandParsesPairs` | `rn a.7z o1 n1 o2 n2` → two pairs, and nothing in the item censor |
+| `testRenameCommandRefusesAnOddNumberOfNames` | `"There is no second file name for rename pair:"` + the offending name |
+| `testRenameCommandRefusesAWildcardInTheOldName` | `"Unsupported rename command:"`, and that `-spd` makes the same name literal and accepted |
+| `testRenameCommandReadsPairsFromAListFile` | `@listfile` pairs with CRLF and LF, the file recorded in `consumedListFiles`, and an odd count refused |
+| `testRenameRewritesTheArchive` | the real rename: two members in, `README.1st` out, `readme.txt` gone, cross-checked with `7zz l -slt` |
+| `testRenameBridgeRefusesAnUnsupportedPair` | `isSupported` / `unsupportedDetail`, the bridge refusing an unsupported pair and an empty pair list |
+| `testIncludeSwitchModifiersAreRecorded` | `-i!`, `-ir!`, `-xr0!`, `-iw-!`, `-spd`, `-im2!`, `-xm-!` and `-r` each land on the right `SevenZipPathSpec` field, and that a literal selection does **not** trigger a directory walk |
+| `testExpandPathSpecsWalksTheRealTreeLikeTheEngine` | against a real four-file tree: non-recursed, `-r`, `-r0`, an exclude entry, `*` at the top level, a literal name that does not exist (→ 7), and both of the engine's walks |
+| `testLiteralSpecKeepsAStarInARealFileName` | a file really named `we*rd.txt` survives `SZPathSpec.literal` — the reason `-aiw-!` exists |
+| `testArchiveCensorExpandsWildcards` | three archives, `-ai!*.7z` minus `-ax!two.7z` → the other two, sorted |
+| `testUpdateWithSpecsKeepsTheRelativePathsTheEngineComputes` | `-ir!*.txt` stores `sub/big.txt` and `sub/deep/inner.txt`, not `big.txt`, and skips `notes.md`; `7zz t` passes on the result |
+| `testDeleteWithNoIncludeEntryIsRefused` | an exclude-only censor cannot empty an archive, and an include entry deletes exactly its members |
+| `testScrcIsParsedForExtractAndTest` | `-scrcSHA256`, a bare `-scrc`, and two `-scrc` switches on `x` / `t` |
+| `testChecksumsWhileExtractingAndTesting` | the digest the command path produces for an extraction equals the one for a test equals `7zz t -scrcSHA256`, and `testSummary` is nil when the hash list runs |
+| `testSfxSwitchIsParsedWithAndWithoutAModule` | `-sfx`, `-sfx7zCon.sfx`, and no `-sfx` at all |
+| `testSfxModuleResolution` | `formatSupportsSFX` for 7z / 7Z / zip; the default stub; a bare name; an absolute path; a missing module (→ "cannot find specified SFX module"); a text file, a 2-byte `MZ` file and a directory (→ "cannot open SFX module") |
+| `testSfxArchiveIsBuiltFromTheNamedModule` | the produced `.exe` starts with `7zCon.sfx` byte for byte, is bigger than the stub, holds `readme.txt`, `7zz l` reads it, and the default stub differs from the named one |
+| `testSfxFailsInsteadOfWritingSomethingElse` | `-tzip -sfx` and a missing module both fail with **nothing written** |
+| `testDockDropRoutesOneArchiveToOpenAndEverythingElseToCompress` | one archive → open; two archives, a folder, an unknown file, an excluded extension → add to archive; nothing → nothing |
+| `testDockDropCompressCommandIsTheFinderMenuCommand` | the verb's argv is `a <sel> -ad -saa -- <dir><name>` and parses back into an `add` command with `showDialog` and `-saa` |
+| `testInfoPlistClaimsAnyItemForTheDockDropOnly` | one `public.item` + `public.folder` group, `Viewer` + `None`, no `CFBundleTypeExtensions`, and it is the last entry |
 
 ### 4.2 The real argv paths
 
-<!--ARGV-->
+Command mode was exercised **against the built app**, not only through the bridge: each case runs
+`Mac/build/Debug/7-Zip.app/Contents/MacOS/7-Zip <argv>` in its own throwaway preferences domain
+(`SEVENZIP_DEFAULTS_SUITE`) and its exit code is compared with the one `03 §2.7` prescribes. 25 cases,
+**0 failures**; one case is documented below rather than counted as a pass.
+
+```
+== 03 section 2.2 / 2.7: exit codes from the real argv
+  ok    a  create an archive                                       exit 0
+  ok    t  test it                                                 exit 0
+  ok    x  extract it                                              exit 0
+  ok    u  update it                                               exit 0
+  ok    d  delete a member                                         exit 0
+  STUCK t  archive that does not exist                             still on screen after 40 s (expected exit 2)
+  ok    a  no items at all                                         exit 7
+  ok    unknown switch                                             exit 7
+  ok    -i! with nothing after the marker                          exit 7
+  ok    -i# map: no shared memory on macOS                         exit 7
+  ok    l  unsupported command in the GUI                          exit 2
+  ok    i  unsupported command in the GUI                          exit 2
+  ok    -t with an unknown format                                  exit 2
+== 03 section 2.2: rn
+  ok    rn one pair                                                exit 0
+  ok    rn odd number of names                                     exit 7
+  ok    rn wildcard in the old name                                exit 7
+  ok    7zz lists README.1st after rn
+== 03 section 2.2: -i / -x wildcards, expanded by the engine
+  ok    a -ir!*.txt (recursed wildcard)                            exit 0
+  ok    7zz sees sub/big.txt and sub/deep/inner.txt, and no notes.md
+  ok    a -i!* -x!*.log (exclude applied)                          exit 0
+  ok    noise.log excluded
+  ok    a -i! wildcard that matches nothing                        exit 7
+  ok    t -ai! wildcard that matches nothing                       exit 7
+  ok    t -an -ai!*.7z (archive censor)                            exit 0
+  ok    t -an -ai!*.7z -ax!two.7z                                  exit 0
+== 01b section 4.23: -sfx<module>
+  ok    a -sfx (bundled 7z.sfx)                                    exit 0
+  ok    a -sfx7zCon.sfx (named module)                             exit 0
+  ok    a -sfx/nonexistent (missing module)                        exit 2
+  ok    a -sfx<bogus> (not an executable)                          exit 2
+  ok    a -tzip -sfx (format has no kFF_SFX)                       exit 2
+  ok    named.exe starts with 7zCon.sfx byte for byte
+  ok    7zz lists readme.txt inside named.exe
+== 0 failure(s), 1 case(s) left a window on screen
+```
+
+The exact command lines, in the order above:
+
+```sh
+APP=Mac/build/Debug/7-Zip.app/Contents/MacOS/7-Zip
+$APP a  -y  $W/plain.7z $SRC/readme.txt $SRC/notes.md      # 0
+$APP t  -y  $W/plain.7z                                     # 0
+$APP x  -y  -o$W/out1 $W/plain.7z                           # 0
+$APP u  -y  $W/plain.7z $SRC/sub/big.txt                    # 0
+$APP d  -y  $W/plain.7z big.txt                             # 0
+$APP t  -y  $W/no-such.7z                                   # 2, but see below
+$APP a  -y  $W/empty.7z                                     # 7  IDS_SELECT_FILES
+$APP x  -y  -zzz $W/plain.7z                                # 7  unknown switch
+$APP a  -y  $W/e.7z '-i!'                                   # 7  "Too short switch"
+$APP a  -y  $W/e.7z '-i#nope'                               # 7  "Incorrect Map command"
+$APP l  -y  $W/plain.7z                                     # 2  "Unsupported command"
+$APP i  -y                                                  # 2  "Unsupported command"
+$APP t  -y  -tnosuchformat $W/plain.7z                      # 2  IDS_UNSUPPORTED_ARCHIVE_TYPE
+$APP rn -y  $W/rn.7z readme.txt README.1st                  # 0
+$APP rn -y  $W/rn.7z only-one                               # 7  "There is no second file name..."
+$APP rn -y  $W/rn.7z '*.txt' new.txt                        # 7  "Unsupported rename command:"
+$APP a  -y  $W/wild.7z "-ir!$SRC/*.txt"                     # 0, stores sub/big.txt + sub/deep/inner.txt
+$APP a  -y  $W/excl.7z "-i!$SRC/*" "-x!$SRC/*.log"          # 0, noise.log excluded
+$APP a  -y  $W/none.7z "-i!$SRC/*.nothing"                  # 7  nothing matched -> IDS_SELECT_FILES
+$APP t  -y  -an "-ai!$W/arcs-none/*.7z"                     # 7  "Cannot find archive"
+$APP t  -y  -an "-ai!$W/arcs/*.7z"                          # 0  two archives, one progress window
+$APP t  -y  -an "-ai!$W/arcs/*.7z" "-ax!$W/arcs/two.7z"     # 0  one archive
+$APP a  -y  -sfx $W/dflt.exe $SRC/readme.txt                # 0  bundled 7z.sfx, no -ad needed
+$APP a  -y  -sfx7zCon.sfx $W/named.exe $SRC/readme.txt      # 0  the named module
+$APP a  -y  -sfx/nonexistent/none.sfx $W/bad.exe …          # 2  "cannot find specified SFX module"
+$APP a  -y  "-sfx$W/bogus.sfx" $W/bogus.exe …               # 2  "cannot open SFX module"
+$APP a  -y  -tzip -sfx $W/zip.exe $SRC/readme.txt           # 2  no kFF_SFX for zip
+```
+
+`bad.exe`, `bogus.exe` and `zip.exe` were asserted **not to exist** after their runs, which is the
+whole point of item 11's "an error rather than a surprise".
+
+**The one STUCK case, and why it is not a bug of this scope.** `t -y <archive that does not exist>`
+never exits: the run collects a message ("cannot open file"), and the Progress dialog then stays open
+with Cancel relabelled Close — `01b §4.17`'s "keep the window open when there were messages", which
+is `CProgressDialog::MessagesDisplayed` and is **not** gated by `g_DisableUserQuestions`, so upstream
+7zG behaves the same way. The exit code on the other side of that window is the right one; what an
+unattended caller sees is a window. It is pre-existing, it belongs to `opsinfra`'s progress dialog
+rather than to the command layer, and changing it would be a deliberate divergence from 7zG, so this
+scope left it and recorded it here. The script kills the process after 40 s and reports it rather than
+hanging.
+
+**Exit code 8 cannot be provoked this way.** No argv makes the engine fail to allocate, and `-smemx`
+is accepted and ignored by this port, so there is no lever. It is unit-tested arm by arm instead, and
+it travels the same single code path (`SevenZipFailureLadder`) as the codes above, all of which the
+real process does return.
 
 ### 4.3 UI suite
 
@@ -247,7 +376,27 @@ touched.
 
 ### 4.4 Cross-checks against the console tool
 
-<!--XCHECK-->
+`CPP/7zip/Bundles/Alone2/b/m_arm64/7zz` (7-Zip 26.03, arm64, built from this tree) is the reference
+in five places:
+
+1. **A produced archive** — `7zz l -slt` on the archive `a -ir!<dir>/*.txt` wrote lists
+   `sub/big.txt` and `sub/deep/inner.txt` and **not** `notes.md`, which is the whole claim about
+   handing censor specs to `UpdateArchive` rather than pre-expanded paths.
+   (`CommandModeTests.testUpdateWithSpecsKeepsTheRelativePathsTheEngineComputes` asserts the same
+   thing through the bridge and then runs `7zz t` on the result.)
+2. **A checksum** — `7zz t -scrcSHA256 <archive>` prints the same SHA-256 "for data" digest the
+   bridge reports for `x -scrcSHA256` and for `t -scrcSHA256`
+   (`CommandModeTests.testChecksumsWhileExtractingAndTesting`), and the two commands agree with each
+   other.
+3. **The rename** — `7zz l -slt` after `rn readme.txt README.1st` lists `README.1st`, lists
+   `notes.md` and no longer lists `readme.txt`.
+4. **The self-extracting archive** — the first 194 048 bytes of the produced `named.exe` are
+   `Mac/Resources/SFX/7zCon.sfx` byte for byte (`cmp`), the produced file is larger than the stub, and
+   `7zz l named.exe` reads `readme.txt` out of the payload behind it. The unit test additionally
+   asserts that the default stub's first 4 KiB differ from `7zCon.sfx`'s, so "the **named** module was
+   used" is a real assertion and not a tautology.
+5. **The exclude** — `7zz l` on the archive `a -i!<dir>/* -x!<dir>/*.log` wrote does not list
+   `noise.log`.
 
 ---
 
