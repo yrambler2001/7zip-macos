@@ -1,21 +1,21 @@
-# Verification run — 2026-09-20 00:49:14 +0200
+# Verification run — 2026-09-20 14:33:41 +0200
 
-* scope / branch: `macos`  (commit `d4afec7`)
+* scope / branch: `mac/harness2`  (commit `da57e12`)
 * configuration: Debug (clean)
-* command: `Mac/scripts/verify.sh`  → exit 65
+* command: `Mac/scripts/verify.sh`  → exit 0
 * toolchain: `DEVELOPER_DIR=/Applications/Xcode.app`, Xcode 26.6
 
 | result | step | time | detail |
 |---|---|---|---|
-| ok | clean build (Debug) | 22s | OK: ~/things/a.noindex/7zip/Mac/build/Debug/7-Zip.app -> ~/things/a.noindex/7zip/Mac/build/DerivedData/Build/Products/Debug/7-Zip.app |
-| ok | unit tests | 36s | OK: tests passed |
-| **FAIL** | UI tests | 377s | rc=65: ~/things/a.noindex/7zip/Mac/Tests/UITests/PanelTests.swift:136: error: -[SevenZipUITests.PanelTests testCopyBetweenPanels] : XCTAssertTrue fai |
+| ok | clean build (Debug) | 36s | OK: ~/things/a.noindex/7zip/.worktrees/harness2/Mac/build/Debug/7-Zip.app -> ~/things/a.noindex/7zip/.worktrees/harness2/Mac/build/DerivedData/Build/Products/Debug/7-Zip.app |
+| ok | unit tests | 51s | OK: tests passed |
+| ok | UI tests | 278s | OK: tests passed |
 
 ## Parity (Mac/docs/PROGRESS.md)
 
 ```
 scope          done  total    pct
-scaffold          0     57     0%
+scaffold         28     57    49%
 fsfolder         24     58    41%
 panel           106    108    98%
 extract          52     57    91%
@@ -25,7 +25,7 @@ options          44     46    96%
 finder            0     36     0%
 packaging         1     22     5%
 icons            20     20   100%
-TOTAL           334    496    67%
+TOTAL           362    496    73%
 ```
 
 Logs: `Mac/build/build-Debug.log`, `Mac/build/test-SevenZipKitTests.log`, `Mac/build/test-7-ZipUITests.log`.

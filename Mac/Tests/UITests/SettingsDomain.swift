@@ -1,84 +1,141 @@
-// SettingsDomain.swift -- deterministic settings for UI tests.
+// SettingsDomain.swift -- deterministic, per-test settings for UI tests.
 //
-// The app keeps everything in the preferences domain `com.yrambler2001.7zip`
-// (`UserDefaults.standard` in the app, `SZSettings`/CFPreferences in the bridge; architecture.md
-// "As built"). Two channels exist, and which one works depends on the sandbox:
+// The app resolves its whole preferences domain from the `SEVENZIP_DEFAULTS_SUITE` environment
+// variable (`NMacPrefs::ApplicationID`, `Mac/docs/api/options.md`): `SZSettings`, the Swift
+// `Settings` facade and the engine-side `ZipRegistry` accessors all read and write that one domain.
 //
-//   1. `SettingsSeed` -> launch arguments (`-FM.PanelPath0 /path`). They land in NSUserDefaults'
-//      argument domain, which has priority over everything stored, are gone when the process
-//      exits, and work from the sandboxed test runner. This is what tests use.
-//      Limits, measured (see Mac/docs/reports/harness.md): an argument value is a *string*, so a
-//      key the app reads as `object(forKey:) as? Int/Bool` or as a `stringArray` falls back to the
-//      app's built-in default -- which is what a "clean" launch wants anyway. Values containing
-//      `{}` are parsed as an old-style plist, so a window frame must be passed as
-//      "x y w h" (NSRectFromString accepts it) instead of "{{x, y}, {w, h}}".
-//      `Lang` is read through CFPreferences, so it cannot be seeded this way; Mac/scripts/test.sh
-//      writes it into the real domain for the duration of a UI run instead.
-//   2. `SettingsDomain` -> the real CFPreferences domain. Only from an unsandboxed process:
-//      Xcode's XCTRunner.app is app-sandboxed, so preference reads/writes made from a UI test are
-//      redirected into the runner's own container and the app never sees them (`isRedirected`
-//      reports that). `Mac/scripts/test.sh` and `verify.sh` therefore back up, clear and restore
-//      the domain around a UI run with `defaults export/import`, which is what keeps the
-//      developer's real settings safe.
+// **CFPreferences accepts an absolute path as an application ID**, and then reads and writes
+// exactly that property-list file (measured: `CFPreferencesCopyAppValue(key, "/a/b/seed")` and
+// `".../seed.plist"` both resolve to `/a/b/seed.plist`; a missing file behaves as an empty domain).
+// So a UI test does not need to write a CFPreferences domain at all -- which it cannot, because
+// Xcode's XCTRunner.app is app-sandboxed and every domain it touches is redirected into its own
+// container. It writes a plain plist **file** into that container and points the app at it:
+//
+//   1. `SettingsSeed` -> a `SettingsSeedFile` in `TestPaths.artifacts`, handed to the app as
+//      `SEVENZIP_DEFAULTS_SUITE=<path>`. Values are **typed**, so `FM.Panels.numPanels`,
+//      `FM.Toolbars`, `FM.ListMode*`, `FM.AutoRefresh` and `Lang` -- everything the old launch
+//      argument channel could not express -- finally work, and each test gets a domain of its own
+//      that nothing else in the run can see. That is what makes the app's save-on-quit harmless:
+//      it writes the throwaway file, never `com.yrambler2001.7zip` and never the next test's state
+//      (`FM.Columns.<FolderTypeID>` used to leak the sort order into the following test).
+//   2. Launch arguments still win over the file for keys whose value is a string, and
+//      `SevenZipApp.launch(arguments:)` passes extra ones through, so a one-off override needs no
+//      seed file.
+//   3. `SettingsDomain` -> the real CFPreferences domain. Only useful from an unsandboxed process
+//      (the scripts); `isRedirected` reports when it is not. `Mac/scripts/test.sh` still backs the
+//      real domain up and restores it around a UI run as a safety net for a test that launches the
+//      app without a seed.
 
 import Foundation
 
-/// What the app's settings should be when it is launched, expressed as launch arguments.
+
+/// What the app's settings are when it is launched. Written as a property-list file that the app
+/// uses as its whole preferences domain, so the values are typed and private to one test.
 public enum SettingsSeed {
-    /// The app's defaults for every key the harness knows: English-style details view, one panel,
-    /// both panels in the home directory, a 1200x800 window, no favorites, no history.
+    /// The app's defaults for every key the harness knows: English strings, details view, one
+    /// panel, both panels in the home directory, a 1200x800 window, no favorites, no history.
     case clean
-    /// `.clean` plus these overrides: preference key -> argument value
+    /// `.clean` plus these string overrides
     /// (`[SettingsDomain.Key.panelPath0: TestPaths.fixtures]`).
     case values([String: String])
-    /// No overrides at all: the app starts from whatever is stored. Used by `relaunch()` to prove
-    /// that something persisted.
+    /// `.clean` plus these **typed** overrides -- `Int`, `Bool`, `[String]` and `String` all reach
+    /// the app as themselves (`[SettingsDomain.Key.numPanels: 2]`).
+    case typed([String: Any])
+    /// Exactly these values and nothing else: the escape hatch for a test that must assert what
+    /// the app does with an empty or hand-built domain.
+    case only([String: Any])
+    /// Keep the domain of the previous `launch()` untouched: the app starts from whatever it saved
+    /// when it quit. `relaunch()` uses this to prove that something persisted.
     case keep
 }
 
 public extension SettingsSeed {
 
-    /// `-key value` pairs for `XCUIApplication.launchArguments`.
-    var launchArguments: [String] {
+    /// The settings the app must find in its domain, or nil for `.keep` (reuse the previous file).
+    var preferences: [String: Any]? {
         switch self {
         case .keep:
-            return []
+            return nil
         case .clean:
-            return Self.arguments(from: Self.cleanValues)
+            return Self.cleanValues
         case .values(let overrides):
-            var values = Self.cleanValues
-            for (key, value) in overrides { values[key] = value }
-            return Self.arguments(from: values)
+            return Self.cleanValues.merging(overrides.mapValues { $0 as Any }) { _, new in new }
+        case .typed(let overrides):
+            return Self.cleanValues.merging(overrides) { _, new in new }
+        case .only(let values):
+            return values
         }
     }
 
-    /// The values `.clean` sets. Keys whose type an argument cannot express (Int / Bool object /
-    /// array) are passed anyway: they shadow the stored value and the app falls back to its
-    /// built-in default (1 panel, details view, default toolbars, no favorites).
-    static var cleanValues: [String: String] {
+    /// `-key value` pairs for `XCUIApplication.launchArguments`. Empty now that the seed is a
+    /// typed plist: a launch argument can only carry a string and would shadow the typed value.
+    /// `SevenZipApp.launch(arguments:)` still passes caller-supplied arguments through.
+    var launchArguments: [String] { [] }
+
+    /// The values `.clean` sets, with the types the app reads them as (`Settings.swift`).
+    static var cleanValues: [String: Any] {
         let home = TestPaths.realHome
         return [
+            SettingsDomain.Key.lang: "-",                      // built-in English, so titles match
             SettingsDomain.Key.position: "100 100 1200 800",   // NSRectFromString, no braces
-            SettingsDomain.Key.maximized: "0",
-            SettingsDomain.Key.numPanels: "1",
-            SettingsDomain.Key.currentPanel: "0",
-            SettingsDomain.Key.splitterPos: "0.5",
+            SettingsDomain.Key.maximized: false,
+            SettingsDomain.Key.numPanels: 1,
+            SettingsDomain.Key.currentPanel: 0,
+            SettingsDomain.Key.splitterPos: "0.500000",        // stored as a string (setDouble)
             SettingsDomain.Key.panelPath0: home,
             SettingsDomain.Key.panelPath1: home,
-            SettingsDomain.Key.listMode0: "3",
-            SettingsDomain.Key.listMode1: "3",
-            SettingsDomain.Key.flatView0: "0",
-            SettingsDomain.Key.flatView1: "0",
-            SettingsDomain.Key.showDots: "0",
-            SettingsDomain.Key.showGrid: "0",
-            SettingsDomain.Key.folderHistory: "",
-            SettingsDomain.Key.folderShortcuts: "",
-            SettingsDomain.Key.timestampShowUTC: "0",
+            SettingsDomain.Key.listMode0: 3,                   // details
+            SettingsDomain.Key.listMode1: 3,
+            SettingsDomain.Key.flatView0: false,
+            SettingsDomain.Key.flatView1: false,
+            SettingsDomain.Key.showDots: false,
+            SettingsDomain.Key.showGrid: false,
+            SettingsDomain.Key.fullRow: false,
+            SettingsDomain.Key.autoRefresh: true,
+            SettingsDomain.Key.folderHistory: [String](),
+            SettingsDomain.Key.folderShortcuts: [String](),
+            SettingsDomain.Key.timestampShowUTC: false,
         ]
     }
+}
 
-    private static func arguments(from values: [String: String]) -> [String] {
-        values.keys.sorted().flatMap { ["-" + $0, values[$0] ?? ""] }
+/// One test's preferences domain: a property-list file the app is pointed at with
+/// `SEVENZIP_DEFAULTS_SUITE`. See the file comment for why a file works and a domain name does not.
+public struct SettingsSeedFile {
+
+    public let url: URL
+
+    public init(url: URL) { self.url = url }
+
+    /// A fresh file in `TestPaths.artifacts` holding `values`; `name` only makes it recognisable.
+    public static func make(name: String, values: [String: Any]) throws -> SettingsSeedFile {
+        let safe = name.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "-" }
+        let file = "seed-\(String(safe))-\(UUID().uuidString.prefix(8)).plist"
+        try FileManager.default.createDirectory(atPath: TestPaths.artifacts, withIntermediateDirectories: true)
+        let seed = SettingsSeedFile(url: URL(fileURLWithPath: TestPaths.artifacts).appendingPathComponent(file))
+        try seed.write(values)
+        return seed
+    }
+
+    /// What the app is launched with so it treats this file as its whole settings domain.
+    public var launchEnvironment: [String: String] { [SettingsDomain.suiteEnvironmentVariable: url.path] }
+
+    public func write(_ values: [String: Any]) throws {
+        let data = try PropertyListSerialization.data(fromPropertyList: values, format: .xml, options: 0)
+        try data.write(to: url, options: .atomic)
+    }
+
+    /// The file as it stands now -- after a graceful quit this is what the app saved.
+    public var values: [String: Any] {
+        guard let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) else {
+            return [:]
+        }
+        return (plist as? [String: Any]) ?? [:]
+    }
+
+    public func remove() {
+        try? FileManager.default.removeItem(at: url)
     }
 }
 
@@ -110,6 +167,10 @@ public struct SettingsDomain {
         public static let timestampLevel = "FM.TimestampLevel"
         public static let timestampShowUTC = "FM.TimestampShowUTC"
     }
+
+    /// The environment variable the app resolves to its preferences domain: a domain name, or an
+    /// absolute path to a property-list file (`SettingsSeedFile`).
+    public static let suiteEnvironmentVariable = "SEVENZIP_DEFAULTS_SUITE"
 
     public let applicationID: String
 

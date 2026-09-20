@@ -98,11 +98,18 @@ final class SmokeTests: SevenZipUITestCase {
     /// Clicking a column header sorts by it; size columns start descending and the second click
     /// reverses (PanelSort.cpp OnColumnClick).
     func testSortByColumnHeaderReordersRows() throws {
+        // The default order is only name-ascending when nothing is stored for this folder type:
+        // the app saves the sort column under `FM.Columns.FSFolder` when it quits, so a test that
+        // clicked Size or chose Unsorted used to make this one start from that order. Each launch
+        // now gets a settings domain of its own (SettingsSeedFile), which is what keeps the
+        // assertion below honest -- do not relax it, it is the isolation regression test.
         launch(seed: .values([SettingsDomain.Key.panelPath0: fixtures]))
         let panel = sevenZip.panel(0)
         XCTAssertTrue(panel.waitForRow(named: "test.7z"))
         XCTAssertEqual(panel.columnTitles.first, "Name")
         XCTAssertTrue(panel.columnTitles.contains("Size"), "columns: \(panel.columnTitles)")
+        XCTAssertNil(sevenZip.seedFile?.values["FM.Columns.FSFolder"],
+                     "the seeded domain must not carry a stored column layout")
 
         let byName = try expectedOrder(bySizeDescending: nil)
         XCTAssertEqual(panel.names, byName, "default order is name ascending")
@@ -167,8 +174,20 @@ final class SmokeTests: SevenZipUITestCase {
 
         // items are addressable by the selector they send, whatever language the titles are in
         XCTAssertTrue(sevenZip.menuItem(selector: "viewTwoPanels:").exists)
-        XCTAssertTrue(sevenZip.menuItem(selector: "helpAbout:").exists)
+        // IDM_ABOUT 961 is wired to MenuActions.helpAbout in MainMenu.swift, but
+        // ToolsCommands.install() retargets both About items at the real IDD_ABOUT 2900 dialog on
+        // didFinishLaunching, and an NSMenuItem's accessibility identifier is its *current* action
+        // -- so the built menu shows `toolsShowAbout:`. Accept either, and assert the item is there
+        // and enabled by its menu path (requests.md: harness -> tools/panel).
+        XCTAssertTrue(sevenZip.menuItem("Help", "About 7-Zip...").isEnabled, "Help > About 7-Zip...")
+        XCTAssertTrue(sevenZip.menuItem(selector: "helpAbout:").exists
+                          || sevenZip.menuItem(selector: "toolsShowAbout:").exists,
+                      "no About item addressable by selector")
         XCTAssertTrue(sevenZip.menuItem("File", "CRC", "MD5").exists, "nested CRC submenu")
+        XCTAssertEqual(sevenZip.itemTitles(in: "File", "CRC"),
+                       ["CRC-32", "CRC-64", "XXH64", "MD5", "SHA-1", "SHA-256", "SHA-384",
+                        "SHA-512", "SHA3-256", "BLAKE2sp", "*"],
+                       "the CRC submenu is titled from lang id 553, which no .ttt translates")
     }
 
     /// The seven 7zFM toolbar buttons exist and Add is wired to the Compress dialog
@@ -201,7 +220,10 @@ final class SmokeTests: SevenZipUITestCase {
     }
 
     /// The fixture file names in the order the panel must show them: directories first, then by
-    /// size (nil = by name ascending), ties broken by name.
+    /// size (nil = by name ascending), ties broken by name — in the *same* direction as the sort,
+    /// because `CompareItems` (PanelSort.cpp:220) applies `_ascending ? res : -res` to the whole
+    /// comparison, the `kpidName` tie-break round included. `multi.7z.001` and `multi.7z.002` are
+    /// both exactly 12 000 bytes, which is the only place in the fixtures where this shows.
     private func expectedOrder(bySizeDescending descending: Bool?) throws -> [String] {
         let fm = FileManager.default
         let names = try fm.contentsOfDirectory(atPath: fixtures)
@@ -214,7 +236,8 @@ final class SmokeTests: SevenZipUITestCase {
             if a.isDir != b.isDir { return a.isDir }
             guard let descending else { return a.name.lowercased() < b.name.lowercased() }
             if a.size != b.size { return descending ? a.size > b.size : a.size < b.size }
-            return a.name.lowercased() < b.name.lowercased()
+            return descending ? a.name.lowercased() > b.name.lowercased()
+                              : a.name.lowercased() < b.name.lowercased()
         }.map { $0.name }
     }
 }

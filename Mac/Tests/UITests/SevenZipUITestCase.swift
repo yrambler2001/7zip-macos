@@ -2,11 +2,12 @@
 // `SevenZipApp` to launch with clean or seeded settings, screenshots a failure, and kills the app
 // afterwards.
 //
-// Settings hygiene: the app is launched with its settings as launch arguments
-// (`SettingsSeed`), which never touch what is stored, so a test cannot corrupt the developer's
-// preferences. The app itself still saves its state when it quits, so `Mac/scripts/test.sh` backs
-// the domain up before a UI run and restores it afterwards. If the runner is ever *not* sandboxed
-// this class additionally snapshots and restores the domain itself.
+// Settings hygiene: every `launch(...)` writes the seed to a property-list file of its own and
+// hands it to the app as its whole preferences domain (`SettingsSeed` / `SettingsSeedFile`), so a
+// test can neither read nor corrupt the developer's preferences, and the state the app saves when
+// it quits cannot reach the next test. `Mac/scripts/test.sh` still backs the real domain up and
+// restores it around a run as a safety net, and if the runner is ever *not* sandboxed this class
+// snapshots and restores the domain itself.
 //
 //   final class MyTests: SevenZipUITestCase {
 //       override var screenshotPrefix: String { "panel" }      // screenshots/panel-*.png
@@ -36,6 +37,7 @@ open class SevenZipUITestCase: XCTestCase {
         try super.setUpWithError()
         continueAfterFailure = false
         sevenZip = SevenZipApp()
+        sevenZip.seedName = Self.slug(name)      // the seed file says which test wrote it
         // Only meaningful outside the sandbox; inside it the snapshot is the runner's own copy.
         savedSettings = sevenZip.settings.isRedirected ? nil : sevenZip.settings.snapshot()
     }
@@ -43,10 +45,13 @@ open class SevenZipUITestCase: XCTestCase {
     open override func tearDown() {
         // `hasSucceeded` is only valid once the run has stopped, and tearDown runs before that,
         // so it would attach a "failure" screenshot to every passing test: count failures instead.
-        if let run = testRun, run.totalFailureCount > 0 {
+        let failed = (testRun?.totalFailureCount ?? 0) > 0
+        if failed {
             _ = sevenZip?.screenshot("failure-" + Self.slug(name), prefix: screenshotPrefix, test: self)
         }
         sevenZip?.terminate()
+        // A passing test's per-test settings domain is throwaway; a failing one's is evidence.
+        if !failed { sevenZip?.seedFile?.remove() }
         if let savedSettings { sevenZip?.settings.restore(savedSettings) }
         super.tearDown()
     }
