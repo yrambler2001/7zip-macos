@@ -122,3 +122,11 @@ a command scope learns what the active panel has selected:
 they never reach into panel internals and the four scopes can be built in parallel. Main thread
 only; the `folder` it hands you belongs to the panel's serial queue, so pass it to an off-main
 operation rather than calling it directly.
+
+## Frozen shared contract: test support
+
+`Mac/docs/test-support-contract.md` is owned by the orchestrator and frozen. It defines the
+environment variables the app honours for testing, the `sevenzip://test/reset` command that returns
+a running app to a known state without relaunching, how a test observes that the reset finished, and
+the rule that several instances with different bundle identifiers must coexist. The `resetcmd` scope
+implements it; the `fastui` scope consumes it. Neither changes its shape alone.
