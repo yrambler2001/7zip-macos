@@ -15,7 +15,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     private var refreshTimer: Timer?
     private var autoRefresh = Settings.autoRefresh     // AutoRefresh_Mode
     private var toolbarsMask = Settings.toolbarsMask
-    private var pendingSplitterRatio: Double?
+
+    /// FM.Panels.splitterPos -- the share of the *usable* width (the split view minus the divider)
+    /// that panel 0 gets. This value is authoritative: the divider position is always derived from
+    /// it, and it is only ever recomputed from the live subview frames after the user has dragged
+    /// the divider. Deriving it during a layout pass is what collapsed the split, because a
+    /// subview that has just been inserted still has a zero-width frame (Mac/docs/reports/polish.md).
+    private var splitterRatio = 0.5
+    private var isApplyingSplitter = false
+    /// kPanelSizeMin (App.cpp): neither panel may be narrower than this.
+    private static let panelSizeMin: CGFloat = 120
 
     var focusedPanel: PanelViewController { panels[min(focusedPanelIndex, panels.count - 1)] }
 
@@ -115,7 +124,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         }
         numPanels = Settings.numPanels
         focusedPanelIndex = min(Settings.currentPanel, numPanels - 1)
-        pendingSplitterRatio = Settings.splitterPos
+        splitterRatio = Settings.splitterPos
         if numPanels == 2 { showSecondPanel() }
         for (i, panel) in panels.enumerated() {
             // 7zFM starts in the root folder when nothing is stored; on macOS the home
@@ -140,10 +149,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         Settings.maximized = window.isZoomed
         Settings.numPanels = numPanels
         Settings.currentPanel = focusedPanelIndex
-        if numPanels == 2 && splitView.arrangedSubviews.count == 2 {
-            let w = splitView.bounds.width
-            if w > 0 { Settings.splitterPos = Double(splitView.arrangedSubviews[0].frame.width / w) }
-        }
+        captureSplitterRatio()
+        Settings.splitterPos = splitterRatio
         for (i, panel) in panels.enumerated() {
             Settings.setPanelPath(panel.pathToPersist, i)
             Settings.setListMode(panel.listViewMode, i)
@@ -165,16 +172,59 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         window?.makeFirstResponder(nil)
+        // The window only gets its real width here, so put the divider where the stored ratio
+        // says once more; `splitterRatio` is unchanged, so this is idempotent.
+        applySplitterRatio()
         DispatchQueue.main.async { [self] in
-            applyPendingSplitter()
+            applySplitterRatio()
             focusedPanel.focusList()
         }
     }
 
-    private func applyPendingSplitter() {
-        guard numPanels == 2, let ratio = pendingSplitterRatio else { return }
-        pendingSplitterRatio = nil
-        splitView.setPosition(splitView.bounds.width * ratio, ofDividerAt: 0)
+    // MARK: - Divider position (7zFM stores it as a ratio, CApp::Save / MoveSubWindows)
+
+    /// The width the two panels share: everything but the divider.
+    private var splitUsableWidth: CGFloat {
+        max(splitView.bounds.width - splitView.dividerThickness, 0)
+    }
+
+    /// Puts the divider where `splitterRatio` says, never closer than kPanelSizeMin to either
+    /// edge. `adjustSubviews()` first, because `setPosition(_:ofDividerAt:)` needs subview frames
+    /// that already add up to the split view's width: called with a freshly inserted, zero-width
+    /// subview it collapses *both* panels to zero (measured -- see Mac/docs/reports/polish.md).
+    @discardableResult
+    private func applySplitterRatio() -> Bool {
+        guard !isApplyingSplitter else { return true }       // setPosition can re-enter the layout
+        guard numPanels == 2, splitView.arrangedSubviews.count == 2 else { return false }
+        let usable = splitUsableWidth
+        guard usable > 1 else { return false }
+        isApplyingSplitter = true
+        defer { isApplyingSplitter = false }
+        splitView.adjustSubviews()
+        let minimum = min(Self.panelSizeMin, usable / 2)
+        let position = min(max(usable * CGFloat(splitterRatio), minimum), usable - minimum)
+        splitView.setPosition(position, ofDividerAt: 0)
+        // Last resort: if the split view still has not distributed the width (both frames zero),
+        // lay the two panels out directly so the window is never left with no visible panel.
+        let widths = splitView.arrangedSubviews.map { $0.frame.width }
+        if widths.reduce(0, +) < usable - 1 {
+            let height = splitView.bounds.height
+            splitView.arrangedSubviews[0].frame = NSRect(x: 0, y: 0, width: position, height: height)
+            splitView.arrangedSubviews[1].frame = NSRect(x: position + splitView.dividerThickness, y: 0,
+                                                        width: usable - position, height: height)
+        }
+        return true
+    }
+
+    /// The user has dragged the divider: the frames are the truth now.
+    private func captureSplitterRatio() {
+        let views = splitView.arrangedSubviews
+        guard numPanels == 2, views.count == 2 else { return }
+        let usable = splitUsableWidth
+        guard usable > 1 else { return }
+        let ratio = Double(views[0].frame.width / usable)
+        guard ratio > 0, ratio < 1 else { return }       // a degenerate pass must not be stored
+        splitterRatio = ratio
     }
 
     // MARK: - Panels (CApp::SwitchOnOffOnePanel, App.cpp:360-380)
@@ -193,14 +243,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         }
         for panel in panels { panel.view.isHidden = false }
         numPanels = 2
-        DispatchQueue.main.async { [self] in
-            if let ratio = pendingSplitterRatio {
-                pendingSplitterRatio = nil
-                splitView.setPosition(splitView.bounds.width * ratio, ofDividerAt: 0)
-            } else {
-                splitView.setPosition(splitView.bounds.width * 0.5, ofDividerAt: 0)
-            }
-        }
+        // Synchronously, on this turn of the run loop: the old code deferred the position with
+        // `DispatchQueue.main.async`, and whether that block or the split view's own layout pass
+        // ran first was a coin toss. When the block won, `setPosition` ran against a zero-width
+        // new subview and left both panels at zero width -- the "2 Panels collapses" report.
+        applySplitterRatio()
     }
 
     func switchOnOffOnePanel() {
@@ -209,10 +256,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         } else {
             // close the non-focused panel (it is kept alive and reused later)
             let closing = focusedPanelIndex == 0 ? 1 : 0
-            if numPanels == 2 && splitView.arrangedSubviews.count == 2 {
-                let w = splitView.bounds.width
-                if w > 0 { Settings.splitterPos = Double(splitView.arrangedSubviews[0].frame.width / w) }
-            }
+            captureSplitterRatio()              // reopening restores what the user last set
+            Settings.splitterPos = splitterRatio
             splitView.removeArrangedSubview(panels[closing].view)
             panels[closing].view.removeFromSuperview()
             numPanels = 1
@@ -291,23 +336,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     // MARK: - NSSplitViewDelegate
 
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        120   // kPanelSizeMin
+        min(Self.panelSizeMin, splitUsableWidth / 2)   // kPanelSizeMin, but never past the middle
     }
 
     func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        splitView.bounds.width - 120
+        let usable = splitUsableWidth
+        return max(usable - Self.panelSizeMin, usable / 2)
     }
 
     func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {
-        // keep the stored ratio while the window resizes (7zFM stores the position as a ratio)
-        let views = splitView.arrangedSubviews
-        guard views.count == 2, oldSize.width > 0 else {
-            splitView.adjustSubviews()
-            return
-        }
-        let ratio = views[0].frame.width / max(oldSize.width - splitView.dividerThickness, 1)
-        splitView.adjustSubviews()
-        splitView.setPosition((splitView.bounds.width - splitView.dividerThickness) * ratio, ofDividerAt: 0)
+        // Keep the stored ratio while the window resizes (7zFM stores the position as a ratio).
+        // The ratio comes from `splitterRatio`, never from the live frames: during the layout pass
+        // that follows an insertion the new subview is still zero wide, which used to turn the
+        // ratio into ~1.0 and flash a collapsed panel.
+        if !applySplitterRatio() { splitView.adjustSubviews() }
+    }
+
+    /// A divider drag is the only thing that changes the ratio (the userInfo key is only there
+    /// when the user moved a divider, AppKit's own layout passes leave it out).
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        guard notification.userInfo?["NSSplitViewDividerIndex"] != nil else { return }
+        captureSplitterRatio()
     }
 
     // MARK: - NSToolbarDelegate (App.cpp CreateToolbar / ReloadToolbars)
