@@ -54,7 +54,7 @@ the internal pasteboard types now derive from the running bundle identifier; `ls
 entirely under test support. There was no lock file, pid file, single-instance guard, distributed
 notification or mach service anywhere, so nothing else needed unpicking.
 
-**Phase 4.** 30 unit tests (`TestSupportTests`) and 11 UI tests (`ResetCommandTests`).
+**Phase 4.** 31 unit tests (`TestSupportTests`) and 11 UI tests (`ResetCommandTests`).
 
 ## 3. Windows parity
 
@@ -78,7 +78,7 @@ that nothing was weakened to make a test easier:
 ## 4. What was verified, and how
 
 * **`Mac/scripts/build.sh` after `rm -rf Mac/build`** — succeeds, no warnings from `Mac/` code.
-* **`Mac/scripts/test.sh`** — 341 unit tests pass (311 before, 30 new).
+* **`Mac/scripts/test.sh`** — 342 unit tests pass (311 before, 31 new).
 * **`Mac/scripts/test.sh --ui`** — see §7; the 11 new UI tests pass.
 * **An out-of-process driver** (scratchpad, not committed; `NSWorkspace.openApplication` with the
   environment, `NSWorkspace.open(_:withApplicationAt:)` for the URL, ack-file polling) proved the
@@ -154,12 +154,45 @@ state directory instead. Filed in `requests.md`.
 ## 7. Gates
 
 ```
-rm -rf Mac/build && Mac/scripts/build.sh      -> BUILD SUCCEEDED, no Mac/ warnings
-Mac/scripts/test.sh                           -> 341 passed, 0 failed
-Mac/scripts/test.sh --ui                      -> see the run recorded below
+rm -rf Mac/build && Mac/scripts/build.sh      -> BUILD SUCCEEDED, no warnings from Mac/ code
+Mac/scripts/test.sh                           -> 342 passed, 0 failed   (311 before, 31 new)
+Mac/scripts/test.sh --ui                      -> 65 passed, 0 failed    (54 before, 11 new)
 ```
 
 The app-launch lock (`harness` api §1a) was held for every launch, every driver run and every UI run.
+
+### The first full UI run failed 11 pre-existing tests, and why it was not this branch
+
+The first `--ui` run after the clean build reported **54 passed, 11 failed**, and all 11 failures were
+in tests this scope never touched: the ten `FinderIntegrationTests`, both `AboutAndDragOutTests` and
+`LayoutSweepTests.testArchiveDialogs`. The cause is the collision described in §5.1, seen from the
+other side:
+
+* `FinderIntegrationTests.send(_:)` is `NSWorkspace.shared.open(commandURL(argv))` — the unaimed
+  route. `urlForApplication(toOpen: "sevenzip://…")` on this machine named
+  `.worktrees/fastui/…/7-Zip-Probe2.app`, so every command URL those tests sent **launched a probe
+  bundle** and the dialog the test waited for never appeared in the app under test. A probe process
+  was found running afterwards that only this run could have started.
+* That probe then became the frontmost app, which is why `AboutAndDragOutTests` and one
+  `LayoutSweepTests` case failed too: a menu-bar click and a dialog lookup went to the wrong
+  application, and one test found the app under test "not running".
+
+Demonstrated, not assumed. `lsregister -u` on the three probe bundles moved the scheme back to a
+`com.yrambler2001.7zip` bundle, which is the same identifier the app under test has, so Launch Services
+delivers to the **running** instance — the one XCUITest launched. Re-run immediately afterwards, with
+no other change: `FinderIntegrationTests` 10 passed, `AboutAndDragOutTests` 2 passed. The full suite
+was then re-run green.
+
+Two things follow, and both belong to `fastui`:
+
+1. **A second registered bundle breaks the existing suite**, not only the new reset command. Any test
+   that reaches the app through `NSWorkspace.open(URL)` has to be aimed
+   (`open(_:withApplicationAt:)`) or moved to the request file, before the probe bundles land on
+   `macos`. The probes' `LSHandlerRank`/`CFBundleURLTypes` could also be stripped so they never claim
+   the scheme, which is probably the smaller change.
+2. **Probe bundles outlive the run that built them.** They stay registered in Launch Services until
+   something unregisters them, so they poison every later run in every worktree on the machine.
+   `lsregister -u` in the probes' teardown would fix that.
 
 ## 8. Known gaps and follow-ups
 

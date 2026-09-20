@@ -7,7 +7,7 @@ watcher), `Mac/App/Integration/CommandURL.swift` (`TestResetRequest`, the `test`
 `Mac/App/Support/Settings.swift` (`TestSupport`, the domain replacement), `Mac/Core/SZSettings.*`
 (the state directory and the temporary root, so ObjC++ and Swift cannot disagree),
 `Mac/App/MainWindow/MainWindowController.swift` and `Mac/App/Panel/PanelViewController.swift`
-(`resetForTest`). Tests: `Mac/Tests/SevenZipKitTests/TestSupportTests.swift` (30, no GUI) and
+(`resetForTest`). Tests: `Mac/Tests/SevenZipKitTests/TestSupportTests.swift` (31, no GUI) and
 `Mac/Tests/UITests/ResetCommandTests.swift` (11, the real app).
 
 **The headline numbers.** A reset costs **0.41 s** (no parameters beyond a path) to **0.55 s** (a

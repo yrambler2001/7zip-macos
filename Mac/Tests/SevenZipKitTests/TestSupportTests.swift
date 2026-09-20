@@ -160,6 +160,37 @@ final class TestSupportTests: XCTestCase {
         XCTAssertNotEqual(listA, listB)
     }
 
+    /// The bridge's own temp-folder machinery has to follow the state directory too, or the app and
+    /// the engine would disagree about where `7zO*` / `7zE*` live -- and `temporaryDirectories`,
+    /// which Tools > Delete Temporary Files and the launch sweep enumerate, would list and delete
+    /// another instance's live folders.
+    func testStateDirectoryRedirectsTheBridgeTemporaryFolders() throws {
+        enableTestSupport()
+        setenv(SZSettingsStateDirectoryEnvironmentVariable, scratch.path, 1)
+        let root = scratch.appendingPathComponent("tmp").path
+
+        let opened = try XCTUnwrap(
+            SZTempOpen.createTemporaryDirectory(prefix: SZTempOpen.openDirectoryPrefix))
+        let extracted = try XCTUnwrap(
+            SZTempOpen.createTemporaryDirectory(prefix: SZTempOpen.extractDirectoryPrefix))
+        defer {
+            SZTempOpen.removeTemporaryDirectory(atPath: opened)
+            SZTempOpen.removeTemporaryDirectory(atPath: extracted)
+        }
+        XCTAssertTrue(opened.hasPrefix(root), "\(opened) is not inside \(root)")
+        XCTAssertTrue(extracted.hasPrefix(root), "\(extracted) is not inside \(root)")
+        XCTAssertFalse(opened.hasPrefix(NSTemporaryDirectory()))
+
+        // Both are enumerated, and nothing from the shared temp root is.
+        let listed = SZTempOpen.temporaryDirectories()
+        XCTAssertTrue(listed.contains(opened), "\(opened) missing from \(listed)")
+        XCTAssertTrue(listed.contains(extracted))
+        XCTAssertTrue(listed.allSatisfy { $0.hasPrefix(root) }, "leaked outside the state dir: \(listed)")
+
+        // The removal guard is scoped to the same root: a path outside it is refused.
+        XCTAssertFalse(SZTempOpen.removeTemporaryDirectory(atPath: NSTemporaryDirectory() + "7zO-foreign"))
+    }
+
     /// A relative value is refused rather than resolved against the current directory, which would
     /// be a path the app could not reason about.
     func testRelativeStateDirectoryIsIgnored() {
