@@ -314,6 +314,24 @@ limitations, and where every document lives.
 
 ---
 
+## Final verification
+
+`Mac/scripts/verify.sh` on this branch, clean, with no `--fast` and no `--no-ui`:
+
+| step | time | result |
+|---|---|---|
+| clean build (Debug) | 39 s | ok, no warnings from `Mac/` code |
+| unit tests | 41 s | **286 of 286 passed** |
+| UI tests | 1095 s | **35 of 35 passed** |
+
+`OK: verify passed` (`Mac/docs/reports/verify-latest.md`). The UI suite was 29 tests and is now 35:
+the six added here are the five language-sweep chunks and the layout/screenshot test. They cost
+roughly nine minutes of the eighteen — 93 app launches and 25 more — which is the price of the
+localization QA running on every verification instead of rotting. `--no-ui` still skips them.
+
+Release was verified separately, because `verify.sh` is a Debug gate: clean Release build with no
+warnings from `Mac/` code, and `Mac/scripts/test.sh --config Release` green at **286 of 286**.
+
 ## Known gaps and follow-ups
 
 1. **The Developer ID and notarization paths have never been run.** No identity exists here
