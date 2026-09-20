@@ -524,22 +524,39 @@ public struct SevenZipPanel {
     }
 
     /// The Name cell (StaticText) of the row called `name` -- the thing to click.
+    ///
+    /// The leftmost match, because a value can repeat across columns (a file called "12" and a size
+    /// of 12). How many matches there are comes from **one snapshot** rather than from
+    /// `allElementsBoundByAccessibilityElement`, which resolves every match over the accessibility
+    /// bus one element at a time; with one match -- the normal case -- nothing but `firstMatch` is
+    /// resolved at all.
     public func nameCell(named name: String) -> XCUIElement {
-        let matches = table.descendants(matching: .staticText)
+        let query = table.descendants(matching: .staticText)
             .matching(NSPredicate(format: "value == %@", name))
-            .allElementsBoundByAccessibilityElement
-        if matches.count > 1, let leftmost = matches.min(by: { $0.frame.minX < $1.frame.minX }) {
-            return leftmost
+        if let snap = try? table.snapshot(), Self.countOfText(name, in: snap) > 1 {
+            let all = query.allElementsBoundByAccessibilityElement
+            if let leftmost = all.min(by: { $0.frame.minX < $1.frame.minX }) { return leftmost }
         }
-        return table.descendants(matching: .staticText)
-            .matching(NSPredicate(format: "value == %@", name)).firstMatch
+        return query.firstMatch
     }
 
-    public func hasRow(named name: String) -> Bool { nameCell(named: name).exists }
+    /// Is there a row with this name? Read from one snapshot of the list: an element query costs a
+    /// round trip per candidate and, before it, a wait for the app to go idle.
+    public func hasRow(named name: String) -> Bool {
+        guard let snap = try? table.snapshot() else { return false }
+        return Self.rows(of: snap).contains { Self.nameOfRow($0) == name }
+    }
 
+    /// Wait for a row to appear, polling the same snapshot. The listing arrives on the panel's own
+    /// queue, so this is a condition wait and never a delay.
     @discardableResult
     public func waitForRow(named name: String, timeout: TimeInterval = 20) -> Bool {
-        nameCell(named: name).waitForExistence(timeout: timeout)
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if hasRow(named: name) { return true }
+            usleep(100_000)
+        } while Date() < deadline
+        return hasRow(named: name)
     }
 
     /// Wait until the address bar shows `path` (a trailing "/" is ignored).
@@ -668,6 +685,14 @@ public struct SevenZipPanel {
         guard let first = row.children.filter({ $0.elementType == .cell })
             .min(by: { $0.frame.minX < $1.frame.minX }) else { return "" }
         return firstText(in: first)
+    }
+
+    /// How many static texts of this subtree carry `text` as their value -- the snapshot answer to
+    /// "is this name ambiguous across columns?".
+    private static func countOfText(_ text: String, in node: XCUIElementSnapshot) -> Int {
+        var count = node.elementType == .staticText && (node.value as? String) == text ? 1 : 0
+        for child in node.children { count += countOfText(text, in: child) }
+        return count
     }
 
     private static func firstText(in cell: XCUIElementSnapshot) -> String {

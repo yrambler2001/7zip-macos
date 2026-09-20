@@ -54,7 +54,75 @@ both needed *objects*.
 
 ## 3. Before and after
 
-<!--MEASUREMENTS-->
+### 3.1 The suite as a whole
+
+Machine: the Apple Silicon VM of `04-toolchain.md` §1, Xcode 26.6, Debug, ad-hoc signed. The
+**before** column is `Mac/scripts/test.sh` followed by `Mac/scripts/test.sh --ui` on this branch
+before any change; the **after** column is `Mac/scripts/test.sh --shards`, which is one
+`build-for-testing` and then the read-only targets concurrently and the input shard alone.
+
+| | tests | wall clock |
+|---|---|---|
+| **before**: unit tests, then the UI suite | 311 + 54 = 365 | 44 s + 1604 s = **1648 s** (27.5 min) |
+| **after**: `--shards`, three consecutive runs | 311 + 24 + 6 + 6 + 25 = **372** | **851 s / 862 s / 1049 s** (14.2 / 14.4 / 17.5 min) |
+
+The UI suite's own number, which is what the 28.7 s per test was about:
+
+| | XCUITest cases | wall clock | per case |
+|---|---|---|---|
+| before | 54 | 1604 s | 29.7 s |
+| after (input shard) | 25 | 621–708 s | 26.5 s |
+| after (probe shards, concurrent with everything else) | 12 | 91–280 s | — |
+
+The per-case cost of an XCUITest did **not** change, and that is expected: the reset that removes the
+relaunch needs the app side of the contract, which is not on this branch (§5). What changed is how
+many cases have to pay it — 54 became 37, and the 17 that left became 24 cases in a target where
+they cost 68 s in total rather than about 1118 s.
+
+### 3.2 The split, per target
+
+One run of each target on its own (uncontended), and then what the same target costs inside the
+four-way concurrent group:
+
+| target | tests | alone | in the concurrent group | notes |
+|---|---|---|---|---|
+| `SevenZipKitTests` | 311 | 44 s | 115 / 152 / 199 s | unchanged; it joins the group because it can |
+| `SevenZipAppTests` | 24 | 88 s (68 s of tests) | 153 / 235 / 331 s | the 93-language dialog sweep is 55 s of that |
+| `7-ZipUITestsProbe1` | 6 | — | 107 / 142 / 280 s | read-only, URL-driven Finder commands |
+| `7-ZipUITestsProbe2` | 6 | — | 91 / 118 / 271 s | read-only, launch state + the contract |
+| **concurrent group wall clock** | 347 | — | **153 / 235 / 332 s** | four `xcodebuild`s at once |
+| `7-ZipUITests` (input shard, alone) | 25 | 690 / 621 / 708 s | — | every case clicks, drags or types |
+| `build-for-testing` (incremental) | — | 7–20 s | — | once per run, not once per shard |
+
+Four targets at once cost each of them two to four times its solo time on this VM, so the group's
+wall clock is about a third of the sequential sum (471 s → 153 s in the best run) rather than a
+quarter. The three runs get progressively slower because a sibling agent's own test run was sharing
+the machine (§8), which is also why the honest summary of the *after* number is "14–17 minutes,
+against 27.5".
+
+### 3.3 What it will be once the reset lands
+
+Arithmetic, not a measurement, and marked as such. The input shard's 25 cases cost 621 s in the best
+run. A launch-and-first-listing is 12–13 s of that per case (measured directly:
+`LaunchStateTests.testLaunchesAndListsHomeDirectory`, which launches and reads, is 12.9 s). The
+shard has six test classes, so with a working reset it pays six launches instead of 25:
+
+```
+621 s − (25 − 6) × 12 s ≈ 393 s        input shard, projected
+393 s + 153 s + 20 s    ≈ 566 s        whole suite, projected (9.4 min)
+```
+
+That is the number to re-measure after `mac/resetcmd` merges; the reset's own cost (a URL round trip
+plus an ack file, which the contract requires the app to write last) is assumed to be under a second
+and is the one thing this projection cannot check here.
+
+### 3.4 Assertions moved off the GUI path
+
+17 XCUITest cases (of 54) stopped needing a live app, and are now 24 cases in the app-hosted target:
+the 6 localization cases, the 11 layout-sweep cases (one of which audited two windows), 3 of the 4
+split-view cases and 2 `SmokeTests` cases, less the two that moved to a probe shard rather than in
+process. Counted as *windows audited*, the dialog sweep went from 32 to 36 per run; counted as
+*languages fitted*, from 5 to 93.
 
 ## 4. What moved where, assertion by assertion
 

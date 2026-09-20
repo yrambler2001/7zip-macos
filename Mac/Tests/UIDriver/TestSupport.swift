@@ -228,12 +228,23 @@ public extension SevenZipApp {
 
     /// Send a `sevenzip://` URL to **this shard's** instance.
     ///
-    /// `NSWorkspace.open(URL)` alone routes by LaunchServices, which picks one registered handler
-    /// for the scheme -- with several worktrees and several shard variants built on this machine
-    /// that is not necessarily the instance the test is driving. Naming the bundle removes the
-    /// guess; the plain form stays as the fallback for a shard whose app cannot be located.
+    /// Three channels, in this order, and the first one is the only one that is aimed by
+    /// construction:
+    ///
+    /// 1. **`<SZ_STATE_DIR>/reset-request`** -- the app watches that file and treats its contents as
+    ///    the URL (`Mac/docs/api/resetcmd.md` section 5). The state directory belongs to exactly one
+    ///    instance, so a request left there cannot reach another; the watcher is a `Timer` in
+    ///    `.common` mode, so it also arrives while `NSApp.runModal` is on the stack, which no Apple
+    ///    event does. Any `sevenzip://` URL works, not only a reset.
+    /// 2. `NSWorkspace.open(_:withApplicationAt:)` -- aimed, but a sandboxed XCUITest runner cannot
+    ///    always resolve a bundle URL outside its container to aim with.
+    /// 3. `NSWorkspace.open(URL)` -- the last resort, and the one that caused real damage: Launch
+    ///    Services hands the URL to whichever registered bundle owns the scheme, which with the
+    ///    probe copies registered turned out to be a *probe*. That is why the copies no longer claim
+    ///    the scheme at all (`Mac/Tests/AppVariants/Info.plist`) and why this is last.
     @discardableResult
     func open(_ url: URL, timeout: TimeInterval = 10) -> Bool {
+        if writeRequest(url) { return true }
         guard let appURL = TestShard.appURL else { return NSWorkspace.shared.open(url) }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
@@ -245,5 +256,18 @@ public extension SevenZipApp {
         let deadline = Date().addingTimeInterval(timeout)
         while outcome == nil, Date() < deadline { usleep(20_000) }
         return outcome ?? false
+    }
+
+    /// Channel 1: the URL as the contents of `<SZ_STATE_DIR>/reset-request`. False when the file
+    /// cannot be written, so `open` can fall through.
+    func writeRequest(_ url: URL) -> Bool {
+        let directory = TestShard.stateDirectory(for: owner)
+        let request = URL(fileURLWithPath: directory).appendingPathComponent("reset-request")
+        do {
+            try Data(url.absoluteString.utf8).write(to: request, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
 }

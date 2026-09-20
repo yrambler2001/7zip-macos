@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist of the three test-only copies of the app (7-Zip-Host, 7-Zip-Probe1, 7-Zip-Probe2;
+  see the SevenZipTestApp template in Mac/project.yml). It is Mac/App/Info.plist with everything
+  that makes a claim on the *system* removed:
+
+      CFBundleURLTypes              the sevenzip:// and x-7zip:// schemes
+      CFBundleDocumentTypes         the 40 archive extensions
+      UTImportedTypeDeclarations    the 23 type declarations behind them
+      NSServices                    the five Services menu items
+
+  Why, measured: macOS registers an app bundle with Launch Services the moment it is launched, and
+  `NSWorkspace.open(URL)` hands a sevenzip:// URL to whichever registered bundle owns the scheme.
+  With the probes registered, that turned out to be a probe -- and eleven UI tests of another scope
+  that used an unaimed `NSWorkspace.open` were answered by a probe, which then took the frontmost
+  menu bar (Mac/docs/api/resetcmd.md section 5, Mac/docs/reports/fastui.md section 6.7). A copy that
+  claims nothing cannot be chosen, whether it is registered or not.
+
+  The tests drive these copies through the state-directory channel
+  (`<SZ_STATE_DIR>/reset-request`, resetcmd api section 5) instead, which is aimed by construction.
+
+  Keep in step with Mac/App/Info.plist: `HostTargetTests.testTheVariantInfoPlistMatchesTheApps`
+  fails if any other key drifts, and names the command that regenerates this file.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>7-Zip</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>7-Zip</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>26.03</string>
+	<key>CFBundleVersion</key>
+	<string>2603</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>7-Zip needs access to your Desktop to compress and extract files stored there.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>7-Zip needs access to your Documents to compress and extract files stored there.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>7-Zip needs access to your Downloads to compress and extract files stored there.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>7-Zip Copyright (c) 1999-2026 Igor Pavlov. macOS port Copyright (c) 2026 Yurii Synyshyn.</string>
+	<key>NSMainNibFile</key>
+	<string></string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>7-Zip needs access to network volumes to compress and extract files stored there.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>7-Zip needs access to removable volumes to compress and extract files stored there.</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+</dict>
+</plist>

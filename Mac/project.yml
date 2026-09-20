@@ -77,7 +77,12 @@ targetTemplates:
         # `SevenZipAppTests` imports the host's name (`@testable import SevenZipAppHost`).
         PRODUCT_MODULE_NAME: ${moduleName}
         PRODUCT_BUNDLE_IDENTIFIER: ${bundleId}
-        INFOPLIST_FILE: App/Info.plist
+        # NOT App/Info.plist: a copy that claims the sevenzip:// scheme, the 40 archive document
+        # types or the five Services is a copy Launch Services can route a real URL to. It happened
+        # -- with the probes registered, `NSWorkspace.open(sevenzip://…)` from another scope's tests
+        # was answered by a probe, which then stole the frontmost menu bar and failed eleven of their
+        # tests. Mac/Tests/AppVariants/Info.plist is App/Info.plist with those four keys removed.
+        INFOPLIST_FILE: Tests/AppVariants/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
         SWIFT_STRICT_CONCURRENCY: minimal

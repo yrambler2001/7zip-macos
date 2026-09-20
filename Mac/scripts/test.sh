@@ -221,7 +221,24 @@ restore_prefs() {
   echo "== preferences of $APP_DOMAIN restored from $PREFS_BACKUP"
 }
 
-cleanup() { restore_prefs; release_app_lock; }
+# macOS registers an app bundle with Launch Services the moment it is launched, so running the
+# app-hosted target or a probe shard registers that copy. The copies claim no URL scheme, no document
+# type and no Service any more (Mac/Tests/AppVariants/Info.plist), so a registration is harmless --
+# but it still puts a "7-Zip-Probe1" in Finder's Open With list, so they are unregistered on the way
+# out. Before that plist change, a registered probe *did* own the sevenzip:// scheme and answered
+# another scope's unaimed NSWorkspace.open, failing eleven of their tests.
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+unregister_test_apps() {
+  local products="$MAC/build/DerivedData/Build/Products/$CONFIG" app
+  [ -x "$LSREGISTER" ] || return 0
+  for app in 7-Zip-Host.app 7-Zip-Probe1.app 7-Zip-Probe2.app; do
+    [ -d "$products/$app" ] || continue
+    "$LSREGISTER" -u "$products/$app" >/dev/null 2>&1 || true
+  done
+}
+
+cleanup() { restore_prefs; release_app_lock; unregister_test_apps; }
 trap cleanup EXIT INT TERM
 
 needs_input_shard() { printf '%s\n' $TARGETS | grep -qx "$UI_TARGET"; }

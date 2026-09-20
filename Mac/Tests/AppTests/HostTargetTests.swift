@@ -36,6 +36,44 @@ final class HostTargetTests: AppHostTestCase {
         XCTAssertNotNil(NSApp.mainMenu, "the host app finished launching before the tests ran")
     }
 
+    /// The three test-only app copies must claim **nothing** on this machine. macOS registers an app
+    /// bundle with Launch Services the moment it is launched, and `NSWorkspace.open(URL)` hands a
+    /// `sevenzip://` URL to whichever registered bundle owns the scheme -- with the probes registered
+    /// that turned out to be a probe, and eleven UI tests of another scope that used an unaimed
+    /// `NSWorkspace.open` were answered by it and failed (`Mac/docs/api/resetcmd.md` section 5). So the
+    /// copies use `Mac/Tests/AppVariants/Info.plist`, which is `Mac/App/Info.plist` with the URL
+    /// schemes, the 40 document types, their 23 type declarations and the five Services removed --
+    /// and nothing else. This fails if either half drifts.
+    func testTheVariantInfoPlistMatchesTheApps() throws {
+        let root = try XCTUnwrap(TestPaths.repoRoot, "the worktree root was not found")
+        let app = try plist(root + "/Mac/App/Info.plist")
+        let variant = try plist(root + "/Mac/Tests/AppVariants/Info.plist")
+        let claims = ["CFBundleURLTypes", "CFBundleDocumentTypes", "NSServices",
+                      "UTImportedTypeDeclarations", "UTExportedTypeDeclarations"]
+        for key in claims {
+            XCTAssertNil(variant[key], "a test-only copy of the app must not declare \(key)")
+        }
+        // The running host app is one of those copies, so the claims are gone from *this* process too.
+        for key in claims {
+            XCTAssertNil(Bundle.main.infoDictionary?[key],
+                         "the host app declares \(key); it is not built from the variant plist")
+        }
+        let expected = Set(app.keys).subtracting(claims)
+        XCTAssertEqual(Set(variant.keys), expected,
+                       "regenerate with: python3 - <<'PY'  (see the comment in "
+                       + "Mac/Tests/AppVariants/Info.plist; strip \(claims) from Mac/App/Info.plist)")
+        for key in expected where !(variant[key] as? String ?? "").hasPrefix("$(") {
+            XCTAssertEqual(String(describing: variant[key] ?? ""), String(describing: app[key] ?? ""),
+                           "\(key) drifted between Mac/App/Info.plist and the variant plist")
+        }
+    }
+
+    private func plist(_ path: String) throws -> [String: Any] {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let any = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        return try XCTUnwrap(any as? [String: Any], "not a plist dictionary: \(path)")
+    }
+
     /// The fixtures and the screenshot directory resolve, so the sweeps have something to work with
     /// and their PNGs land in the report directory rather than in a temporary folder.
     func testPathsResolve() {
