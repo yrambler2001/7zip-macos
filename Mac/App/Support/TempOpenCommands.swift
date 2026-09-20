@@ -235,12 +235,16 @@ enum ArchiveDragOut {
     ///     caller must remove with `removeTemporaryDirectory(_:)` once the receiver is done.
     ///   - showsProgress: false keeps the Progress dialog hidden for a run that finishes in under
     ///     500 ms (WaitMode), which is what a drag of a few small files does.
+    ///   - password: the password the caller has already been given for this archive chain
+    ///     (7zFM remembers it per `CFolderLink`), so dragging out of an archive the panel has
+    ///     unlocked does not ask a second time. nil = ask if the engine needs one.
     /// - Returns: the destination directory and the extracted top-level paths, or nil when the
     ///   user cancelled (the runner has already reported any error).
     @discardableResult
     static func extract(indices: [Int], from folder: SZFolder, to directory: String? = nil,
                         archiveDisplayPath: String = "", parentWindow: NSWindow? = nil,
-                        overwriteMode: SZOverwriteMode = .overwrite)
+                        overwriteMode: SZOverwriteMode = .overwrite,
+                        password: String? = nil)
         -> (directory: String, paths: [String])? {
 
         let destination: String
@@ -258,6 +262,7 @@ enum ArchiveDragOut {
         runnerOptions.initialStatus = .extracting
         runnerOptions.parentWindow = parentWindow
         runnerOptions.titleFileName = archiveDisplayPath
+        runnerOptions.password = password       // PasswordIsDefined: the runner answers without asking
         let numbers = indices.map { NSNumber(value: $0) }
         let result = OperationRunner.run(runnerOptions) { runner -> SZOperationSummary in
             try folder.extractItems(at: numbers, toPath: destination, pathMode: .curPaths,
