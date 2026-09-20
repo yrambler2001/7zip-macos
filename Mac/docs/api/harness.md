@@ -26,12 +26,22 @@ Mac/scripts/parity-check.sh --list panel      # the open items of one scope
 ```
 
 Every script takes `--help`, works from any directory, exports `DEVELOPER_DIR` itself and exits
-non-zero on failure. `build.sh` prints the first real compiler error with context instead of the
+non-zero on failure.
+
+`--only` no longer guesses which target owns the test from its name (which sent every UI class but
+`*Smoke*`/`*UI*` to the unit target, where the filter matched nothing, `xcodebuild` still exited 0
+and the empty run read as a pass). It looks the class up in `Mac/Tests/UITests` and
+`Mac/Tests/SevenZipKitTests` and uses the target that declares it. A `--only` naming a class or a
+test function that does not exist exits **2** before anything is built, and a run that executed no
+test at all — no pass, no failure, no skip — exits **4** instead of reporting success. `build.sh` prints the first real compiler error with context instead of the
 whole log; the full logs stay in `Mac/build/*.log`.
 
 A UI run needs the real app, so `test.sh`/`verify.sh` **back up `com.yrambler2001.7zip` to
 `Mac/build/prefs-backup.plist`, clear it, force `Lang = "-"` (English) and import the backup back
-when the run ends** (`--keep-prefs` opts out). Do not use the app by hand while UI tests run.
+when the run ends** (`--keep-prefs` opts out). Since every test now seeds its own settings file
+(§3) this is only a safety net for a test that launches the app without a seed, but it is kept:
+it costs nothing and it is the difference between a stray launch and a wiped settings domain.
+Do not use the app by hand while UI tests run.
 Screenshot attachments are exported from the result bundle into `Mac/docs/reports/screenshots/`.
 
 ## 1a. App-launch lock (read this before running UI tests)
@@ -98,16 +108,22 @@ final class ExtractDialogTests: SevenZipUITestCase {
 `launch(...)`, `screenshot(_:)`, `screenshotPrefix`; it screenshots a failing test, kills the app
 in `tearDown` and restores the preferences domain when the runner is not sandboxed.
 
-## 3. `SettingsSeed` — deterministic settings
+## 3. `SettingsSeed` — deterministic, per-test settings
 
-Settings are passed as launch arguments (they beat anything stored and never modify it).
+Every `launch(...)` writes the seed to a **property-list file of its own** and hands it to the app
+as its whole preferences domain, so values are typed, the developer's settings are never read or
+written, and nothing a test leaves behind can reach the next one.
 
 ```swift
 launch()                                                   // .clean
-launch(seed: .clean)                                       // 1 panel, home dir, 1200x800 window
+launch(seed: .clean)                                       // English, 1 panel, home dir, 1200x800
 launch(seed: .values([SettingsDomain.Key.panelPath0: TestPaths.fixtures,
-                      SettingsDomain.Key.showDots: "1"]))  // clean + overrides
-launch(seed: .keep)                                        // whatever is stored (persistence tests)
+                      SettingsDomain.Key.showDots: "1"]))  // clean + string overrides
+launch(seed: .typed([SettingsDomain.Key.numPanels: 2,      // clean + *typed* overrides
+                     SettingsDomain.Key.toolbars: 0x8000000D,
+                     SettingsDomain.Key.folderHistory: ["/tmp", "/usr"]]))
+launch(seed: .only([:]))                                   // an empty domain, nothing else
+launch(seed: .keep)                                        // reuse the previous launch's file
 launch(path: TestPaths.fixture("test.7z"), formatHint: "7z")   // 7zFM.exe [path] [-t<type>] argv
 launch(arguments: ["-FM.ShowGrid", "1"], environment: ["MY_VAR": "1"])
 ```
@@ -115,30 +131,46 @@ launch(arguments: ["-FM.ShowGrid", "1"], environment: ["MY_VAR": "1"])
 Keys: `SettingsDomain.Key.{lang, position, maximized, numPanels, currentPanel, splitterPos,
 panelPath0, panelPath1, listMode0, listMode1, flatView0, flatView1, folderHistory,
 folderShortcuts, showDots, showGrid, fullRow, toolbars, autoRefresh, timestampLevel,
-timestampShowUTC}` (the Windows registry value names).
+timestampShowUTC}` (the Windows registry value names), and any other key the app reads — the file
+is the domain, so `Extraction.*`, `Compression.*`, `Options.*` and `FM.Columns.<FolderTypeID>`
+work the same way.
 
-Two limits to know (details in the report): an argument value is a **string**, so keys the app
-reads as an `Int`/`Bool` object or as an array (`numPanels`, `listMode*`, `toolbars`,
-`timestampLevel`, `autoRefresh`, `folderHistory`, `folderShortcuts`) end up at the app's built-in
-default — use `sevenZip.ensurePanelCount(2)` for two panels — and `Lang` cannot be seeded from a
-test at all (the scripts do it).
+### How it works, and why there is no app-side hook
 
-**When `SEVENZIP_DEFAULTS_SUITE` lands** (a sibling scope is adding it: the app reads its
-preferences from the domain that environment variable names), switching over is a small, local
-change — nothing in your tests moves. `SettingsSeed.launchArguments` is the only producer of the
-seed and `SevenZipApp.launch(seed:)` its only consumer, so it means: pass
-`launchEnvironment["SEVENZIP_DEFAULTS_SUITE"] = "com.yrambler2001.7zip.uitest.<run>"`, fill that
-domain with `SettingsDomain(applicationID: …).replace(with:)` — typed values, so `numPanels`,
-`toolbars` and `Lang` finally work — and drop the `-key value` arguments. Two details:
+`SEVENZIP_DEFAULTS_SUITE` is handed straight to CFPreferences by `NMacPrefs::ApplicationID()`
+(`Mac/docs/api/options.md`), and **CFPreferences accepts an absolute path as an application ID**:
+it then reads and writes exactly that plist file. Measured on this machine —
+`CFPreferencesCopyAppValue(key, "/a/b/seed")` and `".../seed.plist"` both resolve to
+`/a/b/seed.plist`, a missing file behaves as an empty domain, and a launch **argument** still wins
+over the file. So the plist-path seeding the harness asked `options` for needs no product change
+at all; `requests.md` records that row as done.
 
-* the app's real domain is then untouched, so the `test.sh` preferences backup/restore and the
-  `Lang` write are no longer needed (keep them until the hook is on the branch);
-* the **sandboxed test runner cannot write any CFPreferences domain the app can see** (the sandbox
-  redirects every domain into the runner's container, measured), so the per-run domain has to be
-  filled by `test.sh`/`verify.sh` before the run, or the hook has to accept a *plist path* instead
-  of a domain name — a path inside the runner's container, which the test can write and the
-  non-sandboxed app can read. Per-test seeding only works with the second variant; that is
-  recorded in `Mac/docs/requests.md`.
+The file lives in `TestPaths.artifacts`, inside the sandboxed runner's container, which the runner
+may write and the unsandboxed app may read — the reason a *domain name* could not work: every
+CFPreferences domain the runner touches is redirected into that container and the app never sees it.
+
+```swift
+sevenZip.seedFile?.url        // where this test's domain is
+sevenZip.seedFile?.values     // the file as it stands -- after quit(), what the app saved
+sevenZip.seedName             // goes into the file name; the base class sets it to the test name
+SettingsSeedFile.make(name:values:)   // build one by hand
+```
+
+`.keep` reuses the same file, which is what makes `relaunch()` a real persistence assertion: the
+app quits, writes its state into that file, and starts again from it. A `.keep` launch with no
+previous launch has no file and falls back to the real domain (which `test.sh` backs up).
+A failing test's seed file is left on disk as evidence; a passing test's is deleted in `tearDown`.
+
+Consequences worth knowing:
+
+* `Lang` **can** be seeded now (`.clean` sets `"-"`, built-in English), so title assertions no
+  longer depend on `test.sh` writing it into the real domain.
+* `FM.Panels.numPanels`, `FM.ListMode*`, `FM.Toolbars`, `FM.AutoRefresh` and the `Bool` keys reach
+  the app as themselves. `sevenZip.ensurePanelCount(2)` still exists and is still the safer way to
+  get two panels, because it also waits for the second panel to appear.
+* The app saving its state on quit is harmless: it writes the throwaway file. That is what fixed
+  `testSortByColumnHeaderReordersRows`, which used to inherit `FM.Columns.FSFolder` from whichever
+  test last clicked a column header.
 
 ## 4. `SevenZipApp` (the driver)
 
@@ -183,7 +215,7 @@ dumpTree("after-open")                      // whole accessibility tree -> a tex
 
 ```swift
 let p = sevenZip.panel(0)
-p.table, p.addressBar, p.upButton, p.statusText        // raw elements
+p.table, p.addressBar, p.upButton, p.statusText        // raw elements, always of *this* panel
 p.path                       // address bar text ("" = root folder)
 p.status                     // "1 / 7 object(s) selected    838    ..."
 p.rowCount, p.columnTitles   // ["Name", "Size", "Modified", "Created"]
@@ -196,9 +228,33 @@ p.select("test.7z")          // click (scrolls into view first)
 p.open("test.7z")            // double click: enter a folder / open an archive
 p.goUp()                     // "Up One Level"
 p.clickColumnHeader("Size")  // sort; size and time columns start descending
-p.navigate(to: TestPaths.fixtures)   // type into the address bar + Return
+p.navigate(to: TestPaths.fixtures)   // type into the address bar + Return (-> Bool)
 p.focusList()                // so Enter / Backspace / "\" reach the list
+p.openContextMenu(onRow: "test.7z")     // right-click the row -> the list context menu, or nil
+p.menuItemTitles(of: menu)              // its item titles top to bottom ("" = separator)
 ```
+
+**Addressing one panel.** AppKit flattens each panel's container view away: the Up button, the
+folder icon, the address combo, the list's scroll view and the status label are all *siblings*
+inside the window's `SplitGroup`, panel 0's first and panel 1's after the `NSSplitView` divider (an
+AX element of type `.splitter`). `children(matching: .comboBox).element(boundBy: panelIndex)` is
+therefore only right while there is one panel — it is the index over *both* panels' combo boxes
+that matters once the second one exists, which is what stopped `testCopyBetweenPanels` navigating
+panel 1. `SevenZipPanel` now works that index out from one snapshot of the split group, sorted left
+to right and cut at the divider, so `addressBar`, `upButton` and `statusText` always belong to the
+panel you asked for.
+
+**The list context menu is a child of the table**, because it is the `NSTableView`'s own
+`menu(for:)`. Do not reach for `app.menus`: every menu-bar menu is in there too — all of them with
+an *empty* title and a zero frame while closed — so `app.menus.firstMatch` is the **Apple menu**,
+which is what `testListContextMenuContents` used to assert against. `openContextMenu(onRow:)`
+scrolls the row into view, right-clicks it and returns `table.descendants(matching: .menu)`.
+
+**An editable `NSComboBox` has no child text field.** Its only child is the disclosure button, so
+`dialog.comboBoxes.firstMatch.textFields.firstMatch` never matches. `ComboDialog.run()` focuses the
+combo and selects its text exactly as 7zFM does, so `app.typeText(...)` replaces the default —
+and read `combo.value` back afterwards, so a miss fails the test instead of leaving the default in
+place (that is how `testSelectionCommands` came to assert 2 of 4 and see 4 of 4).
 
 `names` costs one accessibility query per row, and every row of a folder is in the tree even when
 scrolled out of sight — use it for short listings and `row(named:)` / `waitForRow` for big ones.

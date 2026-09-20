@@ -524,18 +524,37 @@ public struct SevenZipPanel {
         button.click()
     }
 
-    /// Type a path into the address bar and press Return (CPanel::OnNotifyComboEnter). Inline
-    /// completion from the folder history is undone before Return so the typed path wins.
+    /// Type a path into the address bar and press Return (CPanel::OnNotifyComboEnter); `false` when
+    /// the bar never showed exactly `newPath`, so a half-typed path cannot be mistaken for a
+    /// navigation that simply did not happen.
+    ///
+    /// Two traps, both of which used to leave the old text in place and append to it:
+    ///
+    /// * **Cmd+A never reaches the field editor.** It is the key equivalent of the app's
+    ///   Edit > Select All (IDM_SELECT_ALL 600), and AppKit offers a key equivalent to the menu
+    ///   bar before the key window's responder chain, so the panel selected all its *rows* and the
+    ///   typed path was appended to the path already in the combo. The existing text is selected
+    ///   with the standard line motions instead -- Cmd+Right to the end, Shift+Cmd+Left back to the
+    ///   start -- which `MainMenu.swift` does not bind (it binds Cmd+Up/Down, Cmd+[/], Cmd+A,
+    ///   Cmd+Backspace, Cmd+R, Cmd+Z, Cmd+N, and the numeric-pad and function keys).
+    /// * **`pathCombo.completes = true`**, so inline completion appends a *selected* suffix while
+    ///   the path is typed. One Delete drops it -- but only when the value really is `newPath` plus
+    ///   a suffix, otherwise Delete eats the last character that was meant to be there.
     @discardableResult
-    public func navigate(to newPath: String) -> Bool {
+    public func navigate(to newPath: String, attempts: Int = 3) -> Bool {
         let bar = addressBar
         guard bar.waitForExistence(timeout: 10) else { return false }
         bar.click()
-        bar.typeKey("a", modifierFlags: .command)
-        bar.typeText(newPath)
-        if let shown = bar.value as? String, shown != newPath {
-            bar.typeKey(.delete, modifierFlags: [])      // drop the selected completion
+        for _ in 0..<attempts {
+            bar.typeKey(.rightArrow, modifierFlags: .command)                 // caret to the end
+            bar.typeKey(.leftArrow, modifierFlags: [.command, .shift])        // select back to the start
+            bar.typeText(newPath)
+            if let shown = bar.value as? String, shown != newPath, shown.hasPrefix(newPath) {
+                bar.typeKey(.delete, modifierFlags: [])
+            }
+            if (bar.value as? String) == newPath { break }
         }
+        guard (bar.value as? String) == newPath else { return false }
         bar.typeKey(.return, modifierFlags: [])
         return true
     }

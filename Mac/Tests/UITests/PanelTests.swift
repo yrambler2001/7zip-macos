@@ -16,11 +16,20 @@ final class PanelTests: SevenZipUITestCase {
 
     private var fixtures: String { TestPaths.fixtures }
 
-    /// A fresh scratch directory with three files and one sub-folder.
-    private func makeScratch(_ name: String) throws -> String {
+    /// A fresh scratch directory with three files and one sub-folder, or an empty one.
+    ///
+    /// `contents: false` matters for the copy test: two scratch directories hold the *same* three
+    /// names, so copying between them raises the Confirm File Replace prompt (IDD_OVERWRITE 3400),
+    /// which blocks the rest of the test — and makes "the file is now in the other panel" true
+    /// before the copy even runs.
+    private func makeScratch(_ name: String, contents: Bool = true) throws -> String {
         let base = (TestPaths.artifacts as NSString).appendingPathComponent("panel-\(name)-\(UUID().uuidString)")
         let manager = FileManager.default
         try manager.createDirectory(atPath: base, withIntermediateDirectories: true)
+        guard contents else {
+            addTeardownBlock { try? manager.removeItem(atPath: base) }
+            return base
+        }
         try manager.createDirectory(atPath: (base as NSString).appendingPathComponent("sub"),
                                     withIntermediateDirectories: true)
         for (file, size) in [("alpha.txt", 10), ("beta.txt", 2000), ("gamma.md", 100)] {
@@ -134,7 +143,7 @@ final class PanelTests: SevenZipUITestCase {
     /// F5 / File > Copy To... proposes the other panel and copies there (CApp::OnCopy, 01 §3.10).
     func testCopyBetweenPanels() throws {
         let source = try makeScratch("copy-src")
-        let destination = try makeScratch("copy-dst")
+        let destination = try makeScratch("copy-dst", contents: false)
         launch(seed: .values([SettingsDomain.Key.panelPath0: source]))
         XCTAssertTrue(sevenZip.ensurePanelCount(2))
         let left = sevenZip.panel(0)
@@ -144,6 +153,7 @@ final class PanelTests: SevenZipUITestCase {
         XCTAssertTrue(right.waitForPath(destination),
                       "panel 1 shows '\(right.path)', panel 0 shows '\(left.path)'")
         XCTAssertTrue(left.waitForRow(named: "alpha.txt"), "panel 0 lists \(left.names)")
+        XCTAssertFalse(right.hasRow(named: "alpha.txt"), "the destination panel must start empty")
         left.select("alpha.txt")
         XCTAssertTrue(sevenZip.selectMenuItem("File", "Copy To..."))
         guard let dialog = sevenZip.waitForDialog(title: "Copy") else { return XCTFail("no Copy dialog") }
@@ -152,6 +162,10 @@ final class PanelTests: SevenZipUITestCase {
                       "the info text lists the item: \(sevenZip.texts(of: dialog))")
         XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "OK"))
         XCTAssertTrue(waitFor("copied") { right.hasRow(named: "alpha.txt") }, "right panel: \(right.names)")
+        XCTAssertTrue(FileManager.default
+            .fileExists(atPath: (destination as NSString).appendingPathComponent("alpha.txt")),
+                      "the file really is in the destination folder, not only in the listing")
+        XCTAssertTrue(sevenZip.waitForNoDialog(), "the copy finished without asking anything")
         XCTAssertTrue(sevenZip.ensurePanelCount(1))
     }
 

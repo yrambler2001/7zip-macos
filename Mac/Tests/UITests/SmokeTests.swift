@@ -220,7 +220,10 @@ final class SmokeTests: SevenZipUITestCase {
     }
 
     /// The fixture file names in the order the panel must show them: directories first, then by
-    /// size (nil = by name ascending), ties broken by name.
+    /// size (nil = by name ascending), ties broken by name — in the *same* direction as the sort,
+    /// because `CompareItems` (PanelSort.cpp:220) applies `_ascending ? res : -res` to the whole
+    /// comparison, the `kpidName` tie-break round included. `multi.7z.001` and `multi.7z.002` are
+    /// both exactly 12 000 bytes, which is the only place in the fixtures where this shows.
     private func expectedOrder(bySizeDescending descending: Bool?) throws -> [String] {
         let fm = FileManager.default
         let names = try fm.contentsOfDirectory(atPath: fixtures)
@@ -233,7 +236,8 @@ final class SmokeTests: SevenZipUITestCase {
             if a.isDir != b.isDir { return a.isDir }
             guard let descending else { return a.name.lowercased() < b.name.lowercased() }
             if a.size != b.size { return descending ? a.size > b.size : a.size < b.size }
-            return a.name.lowercased() < b.name.lowercased()
+            return descending ? a.name.lowercased() > b.name.lowercased()
+                              : a.name.lowercased() < b.name.lowercased()
         }.map { $0.name }
     }
 }
