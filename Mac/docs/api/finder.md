@@ -364,3 +364,155 @@ English resource text. A language change re-pushes the snapshot.
   asset would look better.
 * Finder's contextual menu itself cannot be asserted from a test on this machine (no Automation
   permission); the numbered manual checks in `Mac/docs/reports/finder.md` cover it.
+
+---
+
+## 12. Grammar and command-layer changes, 2026-09-20 (`mac/cmdmode`)
+
+Closing items 10, 11, 14 and the command half of item 4 of `Mac/docs/parity.md`. Nothing below
+removes or renames anything the sections above document; every addition is new API.
+
+### 12.1 `SevenZipCommandLine` now carries censor **entries**, not just names
+
+`includePaths` / `excludePaths` / `archivePaths` / `archiveExcludePaths` are unchanged. Beside them
+there are now four `[SevenZipPathSpec]` lists that keep the `r` / `w` / `m` modifiers of the switch
+each name came from (`CNameOption` + `AddNameToCensor`, `ArchiveCommandLine.cpp:459-495, :707-850`):
+
+```swift
+struct SevenZipPathSpec {                 // = the bridge's SZPathSpec
+    var path: String                      // the name as written, wildcards and all
+    var include: Bool                     // false for -x / -ax
+    var recursedType: SevenZipRecursedType // .recursed (-r) .wildcardOnlyRecursed (-r0) .nonRecursed
+    var wildcardMatching: Bool            // false for the `w-` postfix and for -spd
+    var markMode: SevenZipMarkMode         // kMark_FileOrDir / StrictFile / StrictFile_IfWildcard
+}
+
+command.includeSpecs / excludeSpecs / archiveIncludeSpecs / archiveExcludeSpecs
+command.itemSpecs        // includeSpecs + the positional paths with the global CNameOption + excludeSpecs
+command.archiveSpecs     // archiveIncludeSpecs + the archive name (never recursed) + archiveExcludeSpecs
+command.defaultRecursedType / .defaultWildcardMatching    // the `nop` of :1485-1491
+SevenZipCommandLine.needsCensorWalk(specs)   // a wildcard to expand, or any exclude entry
+```
+
+**Wildcards are expanded by the engine, never by us.** `SZUpdater.expandPathSpecs(_:sortedArchiveList:)`
+runs `EnumerateDirItemsAndSort` (`sortedArchiveList: true`, the extract group's archive list, which is
+the call `GUI.cpp:285-304` makes) or `EnumerateItems` (`false`, the walk `UpdateArchive` and
+`HashCalc` do). The update, delete and rename paths hand the specs straight to `UpdateArchive` via
+`SZUpdater.update(with:pathSpecs:progress:)` / `deleteItems(specs:…)` / `renameItems(…itemSpecs:…)`,
+so `-ir!src/*.c` still stores `sub/x.c` rather than `x.c`. A censor with no wildcard and no exclude
+entry — which is every Finder selection, because the transport writes `-aiw-!<path>` — takes the old
+literal path and touches no disk.
+
+Two measured differences between the two walks, both upstream's:
+
+* `EnumerateDirItemsAndSort` throws `CMessagePathException("Cannot find archive")` when **nothing**
+  matched (`EnumDirItems.cpp:1496-1500`) and "Duplicate archive path:" for a duplicate; `WinMain`
+  puts both on the **exit 7** arm. `EnumerateItems` has no such rule.
+* Both report files only. A *matched directory* is walked whole even without `-r` (`7z a arc *`
+  behaves the same way).
+
+### 12.2 `rn` is implemented (this replaces §10 point 7)
+
+`SevenZipArguments.parse` turns the positional strings of an `rn` command into
+`[SevenZipRenamePair]` (`CRenamePair`) instead of item paths, exactly as
+`AddToCensorFromNonSwitchesStrings` does with `renamePairs`:
+
+* `rn a.7z old1 new1 old2 new2` — pairs in order;
+* a `@listfile` among the positional strings contributes pairs and must hold an **even** number of
+  names, else `"Incorrect item in listfile.…"`;
+* an odd number of names is `"There is no second file name for rename pair:"` + the name (exit 7);
+* a wildcard in an **old** name is `"Unsupported rename command:"` + old, new (`CRenamePair::Prepare`,
+  `Update.cpp:288-295`); `-spd` turns wildcard parsing off and the name is then literal;
+* the `-i` / `-x` masks stay the mask over the **archive's own** item names; empty means `*`.
+
+`SZUpdater.renameItems(pairs:inArchiveAt:itemSpecs:options:progress:)` fills
+`CUpdateOptions::RenamePairs` and `RenameMode` and lets `UpdateArchive` rewrite the archive.
+Upstream dispatches `rn` through `UpdateGUI`, so the progress window is the **Compressing** one
+(`IDS_PROGRESS_COMPRESSING 3301`; there is no "Renaming" string in the 33xx block) and a failed file
+is exit code 1.
+
+### 12.3 The exit-code ladder
+
+`SevenZipFailureLadder` (in `ArgumentGrammar.swift`, Foundation only) is `WinMain`'s catch chain
+(`GUI.cpp:437-494`) as a pure function, and **every** failure site in `CommandExecutor` goes through
+it:
+
+```swift
+SevenZipFailureLadder.classify(error, memoryMessage: Lang.text(3000, …))  // -> SevenZipFailure
+SevenZipFailureLadder.exitCode(for: error)                               // when the box is already up
+```
+
+| cause | exit | box |
+|---|---|---|
+| `CNewException` / `E_OUTOFMEMORY` / POSIX `ENOMEM` | **8** | IDS_MEM_ERROR 3000 |
+| `SevenZipArgumentError` (`CMessagePathException`) | 7 | message + path |
+| bridge error flagged `SZPathExceptionUserInfoKey` | 7 | the engine's text |
+| `E_ABORT` / `SZError.Code.cancelled` | 255 | none |
+| any other engine error | 2 | `localizedDescription` (= `MyFormatMessage`) |
+| `"Internal Error #N"` (the bridge's `catch (int n)`) | 2 | `"Error: N"` |
+| no text at all | 2 | `"Unknown error"` |
+
+`CNewException` **is** `std::bad_alloc` on this platform (`Common/NewHandler.h:99-102`), so the
+bridge's `SZHandleCurrentException` maps an allocation failure to `E_OUTOFMEMORY` and exit 8 is
+reachable. `SZUpdater` and `SZHasher` also substitute IDS_MEM_ERROR for `MyFormatMessage`'s errno
+text on `E_OUTOFMEMORY`, which is what `HResultToMessage` does, so the Progress dialog's own final
+message says what Windows says too. `SZExtractor` still does not — filed in `requests.md`.
+
+### 12.4 `-scrc` on `x` / `t`
+
+`CommandExecutor.runExtractGroup` sets `SZExtractOptions.hashMethods` from
+`command.hashMethods` (a bare `-scrc` = CRC32, an unsupported method = exit 2) and shows
+`SZExtractResult.hashResults` in `HashResultsDialog` **instead of** the test summary
+(`ExtractGUI.cpp:129-152`). Like upstream's `ShowHashResults`, that list is **not** suppressed by
+`-y`: `g_DisableUserQuestions` gates only the error boxes, so an unattended `t -scrc` run shows it,
+exactly as 7zG does.
+
+### 12.5 `-sfx<module>`
+
+`SZUpdater.resolvedSFXModulePath(_:)` is `Update.cpp:1167-1191`: nil/empty is the bundled
+`7z.sfx` (`kDefaultSfxModule`), a bare name is looked up in the bundle's `Resources/SFX` first
+(`NDLL::GetModuleDirPrefix()`'s equivalent) and then relative to the current directory, anything else
+is used as given. It must exist ("cannot find specified SFX module") and look like a stub — a regular
+file of at least 1 KiB starting with `MZ` or a Mach-O / universal magic ("cannot open SFX module").
+`SZUpdater.formatSupportsSFX(_:)` is `kFF_SFX`, i.e. 7z only.
+
+`CommandExecutor` resolves and validates **before** any dialog, and sets `sfxMode` whether or not
+`-ad` was given (`UpdateGUI.cpp:561-565` fills the default module either way), so the two surprises
+are gone: `a -sfx …` without `-ad` now produces an SFX, and a missing module, a bogus module or a
+non-7z `-t` is an error with nothing written instead of a quietly plain archive. As upstream
+(`UpdateGUI.cpp:517`, `if (di.SFXMode) options.SfxMode = true;`), the Compress dialog can turn SFX
+**on** but cannot turn a command-line `-sfx` off.
+
+### 12.6 Dropping on the Dock icon (this refines §1 "document open" and §10 point 1)
+
+`application(_:open:)` now classifies the request's **source** before acting:
+
+```swift
+DockDropDetector.currentSource            // .document or .dockDrop
+DockDropRouter.action(paths:directoryFlags:isRecognisedArchive:)  // .open / .addToArchive / .nothing
+URLCommands.openDocuments(_:formatHint:source:)
+```
+
+macOS has no delegate callback for "dropped on the Dock icon" — Finder, the Dock, `open(1)` and
+`NSWorkspace` all cause the same `kAEOpenDocuments`. `DockDropDetector` therefore reads the current
+Apple event's `keyOriginalAddressAttr` / `keyAddressAttr`, coerces it to `typeKernelProcessID` and
+resolves the pid to a bundle identifier; `com.apple.dock` means a Dock drop. Anything else — a
+missing attribute included — is treated as an ordinary open, because opening what the user asked to
+open is never destructive while compressing it unasked would be.
+
+The routing rule, and why: **one single archive still opens** (the Dock is a legitimate way to open an
+archive without Finder, and the event is indistinguishable from a double-click), where "archive" is
+Block A's own condition — one item, not a directory, `needsExtract` (extension not in
+`kExtractExcludeExtensions`) — **plus** the engine recognising the extension
+(`SZCodecs.format(forArchiveName:)`), so a dropped `notes` or `image.png` is not opened into an empty
+panel. **Everything else is "Add to archive…"**: several items, a folder, or one non-archive file.
+That is Windows' drop-handler gesture (`03 §1.7`), and the argv is literally
+`FinderMenuModel.command(verb: "SevenZipCompress", …)`, so the Dock and Finder's own menu cannot
+drift. If the user has switched that context-menu item off, the drop falls back to opening rather
+than doing nothing.
+
+`Mac/App/Info.plist` gains one last `CFBundleDocumentTypes` group claiming
+`public.item` + `public.folder` with `CFBundleTypeRole: Viewer` and `LSHandlerRank: None`, because the
+Dock highlights the icon only for types the app claims and the compress gesture has to accept
+anything. Rank `None` keeps it out of "Open With" and out of every default-handler race; it grants
+the drop and nothing else.

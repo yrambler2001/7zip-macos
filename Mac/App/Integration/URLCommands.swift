@@ -49,10 +49,61 @@ enum URLCommands {
     /// The document-open path: `application(_:open:)` for file URLs, `Open With`, a drop on the
     /// Dock icon and a double-click in Finder. Each archive opens in its own window, which is what
     /// `7zFM.exe "%1"` does per file (03 section 6.2, 01 section 9 #32).
-    static func openDocuments(_ urls: [URL], formatHint: String? = nil) {
-        let paths = urls.filter(\.isFileURL).map(\.path)
-        guard !paths.isEmpty else { return }
+    ///
+    /// `source` is `.dockDrop` only when the `kAEOpenDocuments` event came from the Dock
+    /// (`DockDropDetector`). Windows answers that gesture with the compress items, because 7-Zip is
+    /// registered as an Explorer drop handler (03 section 1.7), so a Dock drop of anything but one
+    /// single archive starts "Add to archive…" instead of opening.
+    @discardableResult
+    static func openDocuments(_ urls: [URL], formatHint: String? = nil,
+                              source: DocumentOpenSource = .document) -> SevenZipExitCode {
+        let fileURLs = urls.filter(\.isFileURL)
+        let paths = fileURLs.map(\.path)
+        guard !paths.isEmpty else { return .success }
+
+        if source == .dockDrop, formatHint == nil {
+            let action = DockDropRouter.action(
+                paths: paths,
+                directoryFlags: fileURLs.map { isDirectory($0) },
+                isRecognisedArchive: { SZCodecs.format(forArchiveName: $0) != nil })
+            switch action {
+            case .nothing:
+                return .success
+            case .addToArchive:
+                return addToArchive(droppedPaths: paths, directoryFlags: fileURLs.map { isDirectory($0) })
+            case .open(let openPaths):
+                CommandExecutor.openInFileManager(paths: openPaths, formatHint: nil)
+                return .success
+            }
+        }
+
         CommandExecutor.openInFileManager(paths: paths, formatHint: formatHint)
+        return .success
+    }
+
+    /// The `SevenZipCompress` verb ("Add to archive…", `a <SEL> -ad -saa -- <dir><name>`) for a set
+    /// of dropped items — the same command line Finder's own 7-Zip menu builds, so the two cannot
+    /// drift (03 section 1.4 item B5). Falls back to opening the items when the user has switched
+    /// that menu item off, so the drop is never a silent no-op.
+    private static func addToArchive(droppedPaths paths: [String],
+                                     directoryFlags: [Bool]) -> SevenZipExitCode {
+        let selection = FinderSelection(paths: paths, directoryFlags: directoryFlags)
+        guard let command = FinderMenuModel.command(verb: "SevenZipCompress", selection: selection,
+                                                    settings: IntegrationSettings.loadFromPreferences())
+        else {
+            CommandExecutor.openInFileManager(paths: paths, formatHint: nil)
+            return .success
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let built = command.argv(for: selection.paths)
+        return CommandExecutor.run(argv: built.argv, temporaryFiles: built.temporaryFiles,
+                                   parentWindow: NSApp.mainWindow)
+    }
+
+    /// `URL.hasDirectoryPath` is only reliable for a URL Finder handed out with a trailing slash;
+    /// the Dock does not always add one, so ask the file system.
+    private static func isDirectory(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }
 }
 

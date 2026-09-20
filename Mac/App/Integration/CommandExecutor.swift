@@ -58,9 +58,11 @@ enum CommandExecutor {
     /// engine's own directory walk expands the wildcards, sorts the result and applies the excludes.
     /// Only called when the censor actually needs it, so a Finder selection (`-aiw-!` per item)
     /// still never touches the disk.
-    private static func expand(_ specs: [SevenZipPathSpec], fallback: [String]) throws -> [String] {
+    private static func expand(_ specs: [SevenZipPathSpec], fallback: [String],
+                               sortedArchiveList: Bool) throws -> [String] {
         guard SevenZipCommandLine.needsCensorWalk(specs) else { return fallback }
-        return try SZUpdater.expandPathSpecs(specs.map(bridgeSpec))
+        return try SZUpdater.expandPathSpecs(specs.map(bridgeSpec),
+                                            sortedArchiveList: sortedArchiveList)
     }
 
     // MARK: - Entry point
@@ -180,7 +182,9 @@ enum CommandExecutor {
                                         parentWindow: NSWindow?) -> SevenZipExitCode {
         let archives: [String]
         do {
-            archives = try expand(command.archiveSpecs, fallback: command.resolvedArchivePaths)
+            // The archive list is the sorted one, so "Cannot find archive" is exit 7 as upstream.
+            archives = try expand(command.archiveSpecs, fallback: command.resolvedArchivePaths,
+                                  sortedArchiveList: true)
         } catch {
             return report(error, parent: parentWindow)
         }
@@ -370,7 +374,9 @@ enum CommandExecutor {
         // hash writer and for `-thash`. `expand` is a no-op unless a censor entry needs the walk.
         let sources: [String]
         do {
-            sources = try expand(itemSpecs, fallback: command.resolvedItemPaths)
+            // The item censor's walk: an empty result is "nothing to add", not an error.
+            sources = try expand(itemSpecs, fallback: command.resolvedItemPaths,
+                                 sortedArchiveList: false)
         } catch {
             return report(error, parent: parentWindow)
         }
@@ -632,7 +638,8 @@ enum CommandExecutor {
                                 parentWindow: NSWindow?) -> SevenZipExitCode {
         let paths: [String]
         do {
-            paths = try expand(command.itemSpecs, fallback: command.resolvedItemPaths)
+            paths = try expand(command.itemSpecs, fallback: command.resolvedItemPaths,
+                               sortedArchiveList: false)
         } catch {
             return report(error, parent: parentWindow)
         }

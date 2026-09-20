@@ -924,6 +924,11 @@ enum SevenZipFailureLadder {
     static let errorDomain = "com.yrambler2001.7zip.SevenZipKit"
     /// `SZErrorHRESULTKey` (Mac/Core/SZError.mm:7).
     static let hresultUserInfoKey = "SZErrorHRESULT"
+    /// `SZPathExceptionUserInfoKey` (Mac/Core/SZUpdater.mm): the bridge saw a
+    /// `CMessagePathException` — a censor path that named nothing, a duplicate archive path — which
+    /// `WinMain` maps to exit code **7**, not the generic 2 (GUI.cpp:452-456). It cannot be told from
+    /// any other `UString` exception once it is an HRESULT, so the bridge flags it.
+    static let pathExceptionUserInfoKey = "SZPathException"
     /// `SZErrorCodeCancelled` = 3, `SZErrorCodeOutOfMemory` = 4 (Mac/Core/include/SZError.h:23-24).
     static let cancelledErrorCode = 3
     static let outOfMemoryErrorCode = 4
@@ -956,6 +961,10 @@ enum SevenZipFailureLadder {
             // CNewException / CSystemException(E_OUTOFMEMORY) -> IDS_MEM_ERROR, 8 (:447-451).
             if nsError.code == outOfMemoryErrorCode || hresult == outOfMemoryHRESULT {
                 return SevenZipFailure(exitCode: .memoryError, message: memoryMessage)
+            }
+            // CMessagePathException -> the same arm as a command-line syntax error, exit 7.
+            if nsError.userInfo[pathExceptionUserInfoKey] != nil {
+                return SevenZipFailure(exitCode: .userError, message: text(of: nsError))
             }
             return SevenZipFailure(exitCode: .fatalError, message: text(of: nsError))
         }

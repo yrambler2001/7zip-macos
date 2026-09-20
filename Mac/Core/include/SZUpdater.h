@@ -22,6 +22,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// Set on an `NSError` whose cause was the engine's `CMessagePathException` — a censor path that
+/// named nothing, or a duplicate archive path. `WinMain` maps that exception to exit code 7
+/// (`NExitCode::kUserError`, GUI.cpp:452-456) rather than the generic 2, and a `UString`-derived
+/// exception cannot be told apart from any other once it is an HRESULT, so it is flagged here.
+FOUNDATION_EXPORT NSErrorUserInfoKey const SZPathExceptionUserInfoKey;
+
 /// The "Update mode:" combo (IDC_COMPRESS_UPDATE_MODE 103) mapped onto the engine's action
 /// sets (`NUpdateArchive::k_ActionSet_*`, `g_UpdateMode_Pairs` in UpdateGUI.cpp:290-296).
 /// `SZUpdateModeDelete` is not in the dialog: it is the console `d` command, used by
@@ -334,12 +340,24 @@ typedef NS_ENUM(NSInteger, SZWildcardMarkMode) {
 /// plus the archive name into its sorted archive list. **This is how a wildcard in an `-i!` or
 /// `-x!` switch gets expanded**: by the engine's own directory walk, not by a matcher of our own.
 ///
-/// Returns absolute paths in the engine's sort order. `specs` with no include entry returns an
-/// empty array without touching the disk. A path that matches nothing is not an error (upstream
-/// reports "no files" through the callback, which 7zG passes as NULL).
+/// Returns absolute paths, files only (a matched directory is walked, never reported). `specs` with
+/// no include entry returns an empty array without touching the disk.
+///
+/// `sortedArchiveList` picks which of the engine's two walks runs, because they differ in one way
+/// that matters:
+///  * **YES** — `EnumerateDirItemsAndSort`, the extract group's archive list: the result is sorted
+///    the way 7zG sorts it, a duplicate is "Duplicate archive path:" and **nothing matched is
+///    "Cannot find archive"** (EnumDirItems.cpp:1496-1500), a `CMessagePathException`, which
+///    `WinMain` turns into exit code **7**;
+///  * **NO** — `EnumerateItems`, the walk `UpdateArchive` and `HashCalc` do for the item censor,
+///    where an empty result is a legitimate "nothing to add".
+///
+/// A `CMessagePathException` comes back as an `NSError` carrying `SZPathExceptionUserInfoKey`, so
+/// the caller can put it on `WinMain`'s exit-7 arm instead of the generic exit-2 one.
 + (nullable NSArray<NSString *> *)expandPathSpecs:(NSArray<SZPathSpec *> *)specs
+                                sortedArchiveList:(BOOL)sortedArchiveList
                                             error:(NSError **)error
-    NS_SWIFT_NAME(expandPathSpecs(_:));
+    NS_SWIFT_NAME(expandPathSpecs(_:sortedArchiveList:));
 
 /// `updateWithOptions:sourcePaths:` with the censor entries spelled out, so include and exclude
 /// wildcards reach `UpdateArchive` unexpanded and the engine walks the directories itself — which

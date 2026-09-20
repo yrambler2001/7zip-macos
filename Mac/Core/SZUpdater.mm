@@ -29,6 +29,46 @@
 
 using namespace NWindows;
 
+NSErrorUserInfoKey const SZPathExceptionUserInfoKey = @"SZPathException";
+
+static NSError *SZUpdaterError(HRESULT hr, NSString *engineMessage);
+
+/// `SZRunCatching` plus the one distinction an HRESULT cannot carry: `CMessagePathException` derives
+/// from `UString`, so the generic handler flattens it into E_FAIL, while `WinMain` maps it to exit
+/// code 7 (GUI.cpp:452-456). Catching it first and flagging the error keeps that arm reachable.
+/// `engineMessageInOut` may already hold a message the lambda produced (`CUpdateErrorInfo::Message`);
+/// it wins over the one the catch handler derives.
+template <class F>
+static NSError *SZRunCatchingPathException(NSString * _Nullable * _Nullable engineMessageInOut, F &&f)
+{
+  NSString *pathMessage = nil;
+  NSString *caught = nil;
+  HRESULT hr = S_OK;
+  try
+  {
+    hr = f();
+  }
+  catch (const CMessagePathException &e)
+  {
+    pathMessage = SZStringFromUString(e);
+    hr = E_FAIL;
+  }
+  catch (...)
+  {
+    hr = SZHandleCurrentException(&caught);
+  }
+  if (hr == S_OK)
+    return nil;
+  if (pathMessage)
+    return [NSError errorWithDomain:SZErrorDomain
+                              code:SZErrorCodeInvalidArgument
+                          userInfo:@{ NSLocalizedDescriptionKey: pathMessage,
+                                      SZPathExceptionUserInfoKey: @YES }];
+  NSString *message = (engineMessageInOut && (*engineMessageInOut).length != 0)
+      ? *engineMessageInOut : caught;
+  return SZUpdaterError(hr, message);
+}
+
 // ---------------------------------------------------------------------------
 #pragma mark - SZPathSpec
 
@@ -833,6 +873,7 @@ static BOOL SZLooksLikeSFXStub(NSString *path)
 }
 
 + (nullable NSArray<NSString *> *)expandPathSpecs:(NSArray<SZPathSpec *> *)specs
+                                sortedArchiveList:(BOOL)sortedArchiveList
                                             error:(NSError **)error
 {
   BOOL thereIsInclude = NO;
@@ -843,28 +884,40 @@ static BOOL SZLooksLikeSFXStub(NSString *path)
     return @[];
 
   NSMutableArray<NSString *> *out = [NSMutableArray array];
-  NSString *engineMessage = nil;
-  const HRESULT hr = SZRunCatching(&engineMessage, [&]() -> HRESULT {
+  NSError *failure = SZRunCatchingPathException(NULL, [&]() -> HRESULT {
     NWildcard::CCensor censor;
     for (SZPathSpec *spec in specs)
       SZAddSpecToCensor(censor, spec);
-    // ArchiveCommandLine.cpp:1695-1701, then GUI.cpp:285-304.
+    // ArchiveCommandLine.cpp:1695-1701, then GUI.cpp:285-304 / Update.cpp:1159-1161.
     censor.AddPathsToCensor(NWildcard::k_RelatPath);
     censor.ExtendExclude();
-    UStringVector sortedPaths, sortedFullPaths;
-    CDirItemsStat stat;
-    const HRESULT res = EnumerateDirItemsAndSort(censor, NWildcard::k_RelatPath, UString(),
-                                                 sortedPaths, sortedFullPaths, stat, NULL);
+    if (sortedArchiveList)
+    {
+      UStringVector sortedPaths, sortedFullPaths;
+      CDirItemsStat stat;
+      const HRESULT res = EnumerateDirItemsAndSort(censor, NWildcard::k_RelatPath, UString(),
+                                                   sortedPaths, sortedFullPaths, stat, NULL);
+      if (res != S_OK)
+        return res;
+      for (unsigned i = 0; i < sortedFullPaths.Size(); i++)
+        [out addObject:SZStringFromUString(sortedFullPaths[i])];
+      return S_OK;
+    }
+    // The item-censor walk: `EnumerateItems`, what UpdateArchive and HashCalc run. Files only,
+    // like EnumDirItems.cpp:1488-1493.
+    CDirItems dirItems;
+    const HRESULT res = EnumerateItems(censor, NWildcard::k_RelatPath, UString(), dirItems);
     if (res != S_OK)
       return res;
-    for (unsigned i = 0; i < sortedFullPaths.Size(); i++)
-      [out addObject:SZStringFromUString(sortedFullPaths[i])];
+    for (unsigned i = 0; i < dirItems.Items.Size(); i++)
+      if (!dirItems.Items[i].IsDir())
+        [out addObject:SZStringFromFString(dirItems.GetPhyPath(i))];
     return S_OK;
   });
-  if (hr != S_OK)
+  if (failure)
   {
     if (error)
-      *error = SZUpdaterError(hr, engineMessage);
+      *error = failure;
     return nil;
   }
   return out;
@@ -949,7 +1002,7 @@ static BOOL SZLooksLikeSFXStub(NSString *path)
   NSString *finalPath = options.archivePath;
   NSString *engineMessage = nil;
 
-  const HRESULT hr = SZRunCatching(&engineMessage, [&]() -> HRESULT {
+  NSError *failure = SZRunCatchingPathException(&engineMessage, [&]() -> HRESULT {
     CUpdateOptions uo;
 
     // ---- the action set (the "Update mode:" combo) ----
@@ -1094,10 +1147,10 @@ static BOOL SZLooksLikeSFXStub(NSString *path)
     return S_OK;
   });
 
-  if (hr != S_OK)
+  if (failure)
   {
     if (error)
-      *error = SZUpdaterError(hr, engineMessage);
+      *error = failure;
     return nil;
   }
   result.archivePath = finalPath;

@@ -862,6 +862,28 @@
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
 		</dict>
+		<!-- Dropping on the Dock icon = "Add to archive..." (03-shell-integration-inventory.md
+		     section 1.7, section 6.2). The Dock highlights the icon only for types the app claims,
+		     and the compress gesture has to accept any file or folder, so this last group claims
+		     public.item and public.folder. `CFBundleTypeRole = Viewer` + `LSHandlerRank = None` is
+		     the documented "can open it, must never be its default handler" pair; `Shell` would
+		     also grant the drop but means "provides runtime services for other processes", which is
+		     not what this is. It claims no extension, so it never competes with the 39 association
+		     groups above. `DockDropRouter.action` then routes a single recognised archive to an
+		     open and everything else to the compress command. -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Any file or folder (drop to compress)</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.item</string>
+				<string>public.folder</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
