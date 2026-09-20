@@ -1,12 +1,14 @@
 # `harness2` — the UI suite green, and honest checklist numbers
 
 **19 of 19 UI tests and 209 of 209 unit tests pass, and `Mac/scripts/verify.sh` is green end to
-end for the first time.** None of the five failures was a product bug, as the triage said — but
-**three of the five diagnoses were wrong**, and two of those pointed at product code that turned
-out to be correct. Every one was confirmed against a dump of what the app really exposes before
-anything was changed.
+end for the first time.** None of the five failures was a product bug, as the triage said. But
+**two of the five diagnoses were wrong and a third only half right**: one of them named product
+code (`MainMenu.swift`'s CRC submenu title) that turned out to be correct, and following it would
+have changed a title that is already right while leaving the real cause — an About menu item whose
+accessibility identifier changes at runtime — in place. Every diagnosis was checked against a dump
+of what the app really exposes before anything was changed.
 
-Branch `mac/harness2`, worktree `.worktrees/harness2`, five commits.
+Branch `mac/harness2`, worktree `.worktrees/harness2`, six commits.
 Scope: `Mac/scripts/*`, `Mac/Tests/UITests/*`, `Mac/project.yml`, plus the two file exceptions in §6.
 
 ---
