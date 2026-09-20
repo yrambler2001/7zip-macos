@@ -11,7 +11,11 @@ the real bridge API and app layout to code against.
 ## Hard rules
 
 - `export DEVELOPER_DIR=/Applications/Xcode.app` for every build/test command. Never run
-  `xcode-select -s` (the global selection must stay on Xcode 15.4).
+  `xcode-select -s`; leave the global selection alone whatever it points at.
+- **Automation permission is not granted on this machine.** An `osascript` call that drives another
+  app raises a consent dialog and an unattended agent *hangs* on it rather than failing. Until the
+  user grants it (see `Mac/docs/reports/vmcheck.md`), drive the app through XCUITest, which works,
+  and take screenshots as XCUITest attachments; `screencapture` is denied too.
 - Do not edit `C/`, `CPP/`, `Asm/`, `DOC/` except for a patch that is unavoidable; it must be
   guarded by `#ifdef _WIN32` / `__APPLE__` and recorded in `Mac/docs/upstream-patches.md`.
 - Only edit files your scope owns (ownership table in `00-orchestration.md`). Additive-only
