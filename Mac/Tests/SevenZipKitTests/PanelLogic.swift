@@ -1,1 +1,0 @@
-../../App/Panel/PanelLogic.swift

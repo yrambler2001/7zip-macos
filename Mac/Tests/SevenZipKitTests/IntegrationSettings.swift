@@ -1,1 +1,0 @@
-../../App/Integration/IntegrationSettings.swift

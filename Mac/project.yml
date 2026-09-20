@@ -614,10 +614,25 @@ targets:
         excludes:
           - "Info.plist"
       # App sources the unit tests exercise directly, compiled into the test bundle instead of
-      # being symlinked into Tests/SevenZipKitTests (requests.md: options -> harness). Both are
-      # Foundation-only by contract, so they build outside the app target unchanged.
+      # being symlinked into Tests/SevenZipKitTests (requests.md: options -> harness, panel ->
+      # harness, finder -> packaging). All are Foundation-only by contract, so they build outside
+      # the app target unchanged. This is the ONE mechanism: there are no symlinks under
+      # Tests/SevenZipKitTests any more, and adding a file here as well as symlinking it would
+      # compile it twice into the test bundle.
       - path: App/Support/Settings.swift
       - path: App/Support/FileTypes.swift
+      # panel scope: the sort comparator, mask matcher, operated-items rule and column model.
+      - path: App/Panel/PanelRow.swift
+      - path: App/Panel/PanelLogic.swift
+      # compress scope: the Compress dialog's format/level/method model.
+      - path: App/Dialogs/CompressModel.swift
+      # finder scope: the pure-Foundation command layer (naming, argv grammar, URL transport,
+      # menu model, settings snapshot) shared with the two appex targets.
+      - path: App/Integration/ArchiveNaming.swift
+      - path: App/Integration/ArgumentGrammar.swift
+      - path: App/Integration/CommandURL.swift
+      - path: App/Integration/FinderMenuModel.swift
+      - path: App/Integration/IntegrationSettings.swift
       - path: Tests/Fixtures
         type: folder
         buildPhase: resources
