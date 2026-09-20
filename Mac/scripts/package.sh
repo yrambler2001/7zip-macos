@@ -208,6 +208,14 @@ mkdir -p "$SRC" "$MNT"
 /usr/bin/ditto "$APP" "$SRC/7-Zip.app"          # ditto preserves the signature; cp -R does not
 ln -s /Applications "$SRC/Applications"
 cp "$APP/Contents/Resources/AppIcon.icns" "$SRC/.VolumeIcon.icns"
+# 03 section 5 asks for License.txt, History.txt and the readme beside the app. The source
+# distribution has the first two of those under DOC/ (its change log is the *source* history,
+# `src-history.txt`; the binary distribution's History.txt is not in this tree), so the two that
+# exist are shipped and nothing is invented.
+for doc in License.txt readme.txt; do
+  [ -f "$ROOT/DOC/$doc" ] && cp "$ROOT/DOC/$doc" "$SRC/$doc"
+done
+[ -f "$SRC/License.txt" ] || die "DOC/License.txt is missing; the image must carry the licence"
 
 # ---------------------------------------------------------------------------
 # 4. Read/write image first, so the volume can be given its custom icon, then
@@ -273,11 +281,12 @@ if [ "$VERIFY" = 1 ]; then
   hdiutil attach "$OUT" -mountpoint "$MNT" -nobrowse -readonly -quiet || die "the finished image will not mount"
   [ -d "$MNT/7-Zip.app" ] || die "no 7-Zip.app on the mounted image"
   [ -L "$MNT/Applications" ] || die "no /Applications symlink on the mounted image"
+  [ -f "$MNT/License.txt" ] || die "no License.txt on the mounted image"
   codesign --verify --deep --strict "$MNT/7-Zip.app" 2>/dev/null \
     || die "the app on the image fails codesign --verify --deep --strict"
   SPCTL="$(spctl --assess --type execute -vv "$MNT/7-Zip.app" 2>&1 || true)"
   hdiutil detach "$MNT" -quiet; rm -rf "$MNT"
-  say "   mounts, holds 7-Zip.app and the Applications symlink, signature intact"
+  say "   mounts, holds 7-Zip.app, the Applications symlink and the licence, signature intact"
   if echo "$SPCTL" | grep -q accepted; then
     say "   spctl --assess: accepted"
   else
