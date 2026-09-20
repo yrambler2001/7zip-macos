@@ -179,7 +179,11 @@ final class TestSupportTests: XCTestCase {
         }
         XCTAssertTrue(opened.hasPrefix(root), "\(opened) is not inside \(root)")
         XCTAssertTrue(extracted.hasPrefix(root), "\(extracted) is not inside \(root)")
-        XCTAssertFalse(opened.hasPrefix(NSTemporaryDirectory()))
+        // The folder's parent is the state directory's own `tmp`, not the shared temp root. (A
+        // `hasPrefix(NSTemporaryDirectory())` check would not say that: this test's scratch
+        // directory is itself inside the shared temp root.)
+        XCTAssertEqual((opened as NSString).deletingLastPathComponent,
+                       (root as NSString).standardizingPath)
 
         // Both are enumerated, and nothing from the shared temp root is.
         let listed = SZTempOpen.temporaryDirectories()
