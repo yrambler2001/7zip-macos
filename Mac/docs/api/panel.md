@@ -223,3 +223,21 @@ model.layout()                                                       // Settings
 9. **Open Outside / View / Edit inside an archive** needs the temp-file extraction of the `extract`
    scope (PROGRESS §2.4, §4.6). While that is missing, those commands report lang 6008 for archive
    items; file-system items work (Viewer / Editor from Options > Editor, else the default app).
+
+---
+
+## Note — 2026-09-20 (`mac/cleanup`)
+
+`PanelDragDrop.swift` only: dragging an archive member out to Finder is fulfilled through the
+`extract` scope's `ArchiveDragOut.extract(indices:from:to:...)` (`api/extract.md` §5) instead of the
+panel's own `copyItems` call. Two consequences for this scope:
+
+* the drag now uses `kCurPaths`, so a dragged **directory keeps its subtree**, which is what
+  `CAgentFolder::CopyTo` does for a drag (01 §3.15);
+* `filePromiseProvider(_:writePromiseTo:)` runs on `PanelViewController.promiseQueue`, parks the
+  panel queue from *there* (never from the main thread, which `ArchiveDragOut` needs for the
+  Progress dialog) and makes the call on the main thread — the same one-thread-per-folder guarantee
+  `runFolderOperation` gives, which still applies to every other panel operation.
+
+Dragging file-system items (plain file URLs) and every drop path are untouched.
+`rememberedPassword` is no longer passed for the promise; see the open request in `requests.md`.

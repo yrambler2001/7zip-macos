@@ -248,3 +248,41 @@ Notes for the panel scope:
   used to post-process an extraction.
 * Diff across two panels needs the *other* panel's focused item, which the frozen
   `OperationContext` does not expose; only "two items selected in one panel" works.
+
+---
+
+## Note — 2026-09-20 (`mac/cleanup`)
+
+Two of §6's gaps are closed; this section is appended rather than rewritten, so the text above
+still describes what the `extract` scope shipped.
+
+* **`ArchiveDragOut` is now the only drag-out path.** `PanelViewController.extractForPromise`
+  (`Mac/App/Panel/PanelDragDrop.swift`) calls `ArchiveDragOut.extract(indices:from:to:...)`; the
+  panel's own `IFolderOperations::CopyTo` call is gone, and with it the wrong path mode (a dragged
+  directory now keeps its subtree, because §5's `kCurPaths` is used). `promisedNames` is *not*
+  called: the promise reports the row's cached name, since the folder must not be read on the main
+  thread (`api/panel.md` §1); it is the same string. The panel queue is parked from the promise
+  queue for the duration, which is the ownership rule `runFolderOperation` used to give.
+  **Open:** `extract(...)` has no `password:` parameter, so a drag-out of a member of an archive the
+  panel already unlocked asks for the password again (`requests.md`).
+* **`-scrc<method>` is wired.** `SZExtractOptions.hashMethods` (`NSArray<NSString *>`, **empty =
+  off**) hands `Extract()` a `CHashBundle` instead of NULL, and `SZExtractResult.hashResults` is an
+  `SZHashResults` ready for `HashResultsDialog.show(results:parent:)`. Its rows are the ones
+  `GUI/ExtractGUI.cpp:129-136` builds: `Archives:` = `statistics.archiveCount` and `Packed Size` =
+  `statistics.packSize`, then `AddHashBundleRes`. It is nil unless the run finished with `isOK`,
+  and when it is non-nil **`testSummary` is nil** — Windows shows the hash list *instead* of the
+  test statistics box (`if (HashBundle) … else if (TestMode) …`, `:131-152`). `fileResults` is
+  empty there: upstream's extract path has no per-file hash hook.
+  No command passes `hashMethods` yet; 7zFM's Extract dialog has no such control, so the call site
+  is the command-line front end (`requests.md`).
+
+```swift
+let options = SZExtractOptions()
+options.hashMethods = ["SHA256"]          // or ["*"]; [] (the default) changes nothing
+let result = try SZArchiveExtractor.testArchives(at: paths, options: options, progress: runner)
+if let hashes = result.hashResults { HashResultsDialog.show(results: hashes, parent: window) }
+```
+
+Covered by `Mac/Tests/SevenZipKitTests/{DragOutPromiseTests,ExtractHashTests}.swift`; the digests
+are cross-checked against `7zz x -scrcSHA256` / `7zz t -scrcSHA256`. See
+`Mac/docs/reports/cleanup.md`.

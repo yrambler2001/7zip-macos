@@ -476,7 +476,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] Text form of the results (`name: value` lines, `IDS_MESSAGE_NO_ERRORS` "There are no errors" after testing a hash file) for message boxes (01b §4.27)
 - [ ] `7zG h` path: `HashCalcGUI` with `CHashCallbackGUI` (`StartScanning` → `IDS_SCANNING`, `SetNumFiles`, `SetTotal`, `SetCompleted`, `OpenFileError`, `BeforeFirstFile`, `GetStream`, `SetOperationResult`, `AfterLastFile`), progress title `IDS_CHECKSUM_CALCULATING` "Checksum calculating...", scan / open errors in the list, results dialog shown over the progress window; `-scrc` repeatable, `*` = all (01 §8.6, 01b §4.27)
 - [x] `SHA-256 -> <hname>.sha256` (`a -thash -sae`) writes a checksum file named by `CreateArchiveName(isHash)`; `Test archive : Checksum` (`t -thash`) verifies a checksum file against the files it lists (01 §2.9, §8.6, 03 §1.4 C12–C13, §2.6)
-- [ ] `x` / `t` with `-scrc` show the hash of the extracted data in the same dialog (03 §2.6)
+- [x] `x` / `t` with `-scrc` show the hash of the extracted data in the same dialog (03 §2.6) — bridge side on `mac/cleanup` (`SZExtractOptions.hashMethods` → `SZExtractResult.hashResults` → `HashResultsDialog`); no command passes it yet, because 7zFM's Extract dialog has no such control and the call site is the command-line front end (`requests.md`)
 
 ### 6.2 Benchmark (`IDD_BENCH 7600`, resizable; `IDD_BENCH_TOTAL 7699` for `-mm=*`)
 

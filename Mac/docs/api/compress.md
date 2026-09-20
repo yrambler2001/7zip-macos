@@ -278,3 +278,19 @@ provider is untouched.
 * `Mac/Resources/SFX` is a resource of the **app** target only, so the unit tests locate the
   stubs through `SEVENZIP_SFX_DIR`. Adding the folder to the `SevenZipKit` framework's
   resources would remove the need.
+
+---
+
+## Note — 2026-09-20 (`mac/cleanup`)
+
+The multi-volume request this scope filed is done. `SZArchiveOpener` hands `CAgent::Open` the
+engine's own `COpenCallbackImp` with `Init2(dirPrefix, fileName)`, so
+`IArchiveOpenVolumeCallback::GetStream` finds `.002`, `.003`, `.r00`, `.z01` … next to the first
+volume. `SZFolder.folder(forPath: "x.7z.001")` and
+`SZArchiveOpener.openArchive(atPath:formatHint:passwordDelegate:)` therefore list the whole set;
+`archive.type` is the **innermost** handler (`"7z"`, not `"Split"` — `CArchiveLink::Arcs.Back()`),
+and `archive.arcProps?.levelCount >= 2` is what shows the Split level.
+
+`UpdaterOptionsTests.testSplitVolumes` can drop its "concatenate the volumes first" workaround; the
+new `MultiVolumeOpenTests` opens a `7zz a -v40k` set and an `SZUpdater` set directly. See
+`Mac/docs/reports/cleanup.md`.

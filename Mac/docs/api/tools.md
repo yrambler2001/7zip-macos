@@ -223,3 +223,33 @@ repeating, overflow fails.
   sort order (Windows does not persist it either).
 * No bundled HTML help ships yet, so `Help.show` falls back to the online documentation. Drop
   the CHM contents into `Mac/Resources/Help/` and the same topic paths resolve locally.
+
+---
+
+## Note — 2026-09-20 (`mac/cleanup`)
+
+* **§8's first gap is closed.** `ToolsPanelAccess.operatedItems(of:)` no longer reads the panel's
+  `NSTableView`: it calls `ActiveContext.current()`, the frozen `OperationContext` contract, like
+  the `extract` and `compress` command scopes. `ToolsPanelItems.rows: [PanelRow]` is therefore
+  gone; it is now `items: [ToolsPanelItems.Item]` with `index` / `name` / `path` / `isDirectory`
+  (`names` and `fullPaths` are unchanged). The panel argument is still taken, for `panel.flatMode`
+  alone — the contract does not carry it and `CApp::CalculateCrc2` needs it as
+  `CDirEnumerator::EnterToDirs = !flatMode`.
+* **The `extract` scope's `-scrc` now reuses this scope's rows.** The
+  `CHashBundle → SZHashResults` conversion stays in `SZHasher.mm` and is exported through the new
+  `Mac/Core/Internal/SZHashBundleBridge.h`:
+
+  ```objc
+  SZHashResults *SZHashResultsFromBundle(const CHashBundle &, NSArray<SZHashFileResult *> *,
+                                         NSArray<SZHashResultRow *> *leadingRows);
+  SZHashResultRow *SZMakeHashResultRow(NSString *name, NSString *value);
+  NSString *SZHashSizeValueString(uint64_t size);
+  ```
+
+  `leadingRows` is how `ExtractGUI` prepends `Archives:` / `Packed Size`; the CRC command passes
+  nil, so §3's row order is unchanged. Anyone else who has a `CHashBundle` should use this rather
+  than rebuild the rows.
+
+Verified in the running app: File > CRC > CRC-32 on a file-system selection, on a whole folder and
+on an item inside an archive, each matching the console `7zz` value — screenshots
+`Mac/docs/reports/screenshots/cleanup-01..03-*.png`, details in `Mac/docs/reports/cleanup.md`.
