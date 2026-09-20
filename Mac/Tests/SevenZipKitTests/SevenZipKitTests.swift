@@ -321,13 +321,20 @@ final class SevenZipKitTests: XCTestCase {
         XCTAssertEqual(volumes.folderType, "FSDrives")
         XCTAssertGreaterThanOrEqual(volumes.itemCount, 1)
         XCTAssertEqual(volumes.properties.map { $0.propID }, [.name, .totalSize, .freeSpace, .type, .volumeName, .fileSystem, .clusterSize])
-        let total = try XCTUnwrap(volumes.propertyOfItem(at: 0, propID: .totalSize) as? NSNumber)
+        // The listing order and the number of mounted volumes are both out of this test's hands:
+        // another agent attaching or detaching a RAM disk must not fail it (the flake the
+        // orchestrator found in FSFolderTests). Everything below is pinned to the boot volume.
+        func bootIndex(of folder: SZFolder) -> Int? {
+            (0..<folder.itemCount).first { (try? folder.bindToFolder(at: $0))?.path == "/" }
+        }
+        let boot = try XCTUnwrap(bootIndex(of: volumes), "no volume is mounted at /")
+        let total = try XCTUnwrap(volumes.propertyOfItem(at: boot, propID: .totalSize) as? NSNumber)
         XCTAssertGreaterThan(total.uint64Value, 0)
-        XCTAssertFalse((volumes.propertyOfItem(at: 0, propID: .fileSystem) as? String ?? "").isEmpty)
-        let vol0 = try volumes.bindToFolder(at: 0)
-        XCTAssertTrue(vol0.isFileSystem)
+        XCTAssertFalse((volumes.propertyOfItem(at: boot, propID: .fileSystem) as? String ?? "").isEmpty)
+        XCTAssertTrue(try volumes.bindToFolder(at: boot).isFileSystem)
         XCTAssertTrue(try volumes.bindToParentFolder().isRootFolder)
-        XCTAssertEqual(SZRootFolder.makeVolumesFolder().itemCount, volumes.itemCount)
+        XCTAssertNotNil(bootIndex(of: SZRootFolder.makeVolumesFolder()),
+                        "a second enumeration must list the boot volume too")
 
         // folderForPath variants
         XCTAssertTrue(try SZFolder.folder(forPath: "", passwordDelegate: nil).isRootFolder)
