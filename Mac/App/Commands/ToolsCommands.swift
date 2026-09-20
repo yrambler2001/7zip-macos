@@ -10,24 +10,36 @@ import SevenZipKit
 
 // MARK: - reading the operated items out of a panel
 
-/// What a command needs to know about the panel it acts on. The `panel` scope owns the panel
-/// internals, so this reads only its public surface: `snapshot` (folder path, kind, rows),
-/// `flatMode`, and the list selection through the panel's NSTableView.
-/// See Mac/docs/api/tools.md: once `panel` exposes `operatedItems` this helper becomes a
-/// one-line forward.
+/// What a command needs to know about the panel it acts on, read through the frozen
+/// `OperationContext` contract (Mac/App/Support/OperationContext.swift) exactly as the `extract`
+/// and `compress` command scopes read it. `ActiveContext.current()` is the single implementation
+/// of 7zFM's operated-items rule (`Get_ItemIndices_OperSmart`, PanelItems.cpp), so this scope no
+/// longer reads the panel's NSTableView.
 struct ToolsPanelItems {
+
+    /// One operated item, as the context reports it.
+    struct Item {
+        /// Item index in the panel's `SZFolder` (`OperationContext.indices`).
+        var index: Int
+        /// The item's name (`OperationContext.names`).
+        var name: String
+        /// Absolute file-system path; empty inside an archive (`OperationContext.paths`).
+        var path: String
+        /// `CPanel::IsItem_Folder(index)`. Only Split and Combine need it, and both refuse a
+        /// non-file-system folder first, so it is resolved from the file system.
+        var isDirectory: Bool
+    }
+
     /// CPanel::GetFsPath() / the address-bar path, always with a trailing "/".
     var folderPath: String
     var isFileSystem: Bool
     var isArchive: Bool
     var isFlatView: Bool
     /// Get_ItemIndices_OperSmart: the selected rows, or the focused row when none is selected.
-    var rows: [PanelRow]
+    var items: [Item]
 
-    var names: [String] { rows.map { $0.name } }
-    /// `<folder><prefix><name>` for a file-system folder (GetItemRelPath is prefix + name).
-    var relativePaths: [String] { rows.map { $0.name } }
-    var fullPaths: [String] { rows.map { folderPath + $0.name } }
+    var names: [String] { items.map { $0.name } }
+    var fullPaths: [String] { items.map { $0.path.isEmpty ? folderPath + $0.name : $0.path } }
 }
 
 enum ToolsPanelAccess {
@@ -47,43 +59,31 @@ enum ToolsPanelAccess {
         return found.sorted { $0.panelIndex < $1.panelIndex }
     }
 
-    /// The panel's list view (the only PanelTableView in its subtree).
-    static func tableView(of panel: PanelViewController) -> NSTableView? {
-        var stack: [NSView] = [panel.view]
-        while let view = stack.popLast() {
-            if let table = view as? NSTableView { return table }
-            stack.append(contentsOf: view.subviews)
-        }
-        return nil
-    }
-
-    /// Get_ItemIndices_OperSmart (PanelItems.cpp): the selected items, or the focused one.
+    /// The operated items of the active panel, straight from the frozen contract. `panel` is
+    /// only read for the flat-view flag, which `OperationContext` does not carry and which
+    /// `CApp::CalculateCrc2` needs as `CDirEnumerator::EnterToDirs = !flatMode` (01 §3.13).
+    /// Nil when there is no active panel; an empty `items` means nothing is operated.
     static func operatedItems(of panel: PanelViewController) -> ToolsPanelItems? {
-        guard let snapshot = panel.snapshot else { return nil }
-        var rows: [PanelRow] = []
-        if let table = tableView(of: panel) {
-            let nameColumn = table.tableColumns.firstIndex {
-                $0.identifier.rawValue == String(SZPropID.name.rawValue)
+        guard let context = ActiveContext.current() else { return nil }
+        let fm = FileManager.default
+        var items: [ToolsPanelItems.Item] = []
+        items.reserveCapacity(context.indices.count)
+        for (offset, index) in context.indices.enumerated() {
+            let name = offset < context.names.count ? context.names[offset] : ""
+            let path = offset < context.paths.count ? context.paths[offset] : ""
+            var isDirectory = false
+            if !path.isEmpty {
+                var isDir: ObjCBool = false
+                if fm.fileExists(atPath: path, isDirectory: &isDir) { isDirectory = isDir.boolValue }
             }
-            var indexes = table.selectedRowIndexes
-            if indexes.isEmpty, table.selectedRow >= 0 { indexes = IndexSet(integer: table.selectedRow) }
-            // The panel re-sorts its rows after loading, so the list index is not the snapshot
-            // index; match on the displayed name instead (names are unique inside a folder).
-            let byDisplayName = Dictionary(snapshot.rows.map { ($0.displayName, $0) },
-                                           uniquingKeysWith: { a, _ in a })
-            for index in indexes {
-                guard let column = nameColumn,
-                      let cell = table.view(atColumn: column, row: index, makeIfNecessary: true) as? NSTableCellView,
-                      let text = cell.textField?.stringValue,
-                      let row = byDisplayName[text], !row.isParentRow else { continue }
-                rows.append(row)
-            }
+            items.append(ToolsPanelItems.Item(index: index, name: name, path: path,
+                                              isDirectory: isDirectory))
         }
-        return ToolsPanelItems(folderPath: snapshot.fullPath,
-                               isFileSystem: snapshot.isFileSystem,
-                               isArchive: snapshot.isArchive,
+        return ToolsPanelItems(folderPath: context.displayPath,
+                               isFileSystem: context.isFileSystem,
+                               isArchive: context.isArchive,
                                isFlatView: panel.flatMode,
-                               rows: rows)
+                               items: items)
     }
 }
 
@@ -140,7 +140,7 @@ extension MainWindowController {
     /// CApp::CalculateCrc2 (PanelCrc.cpp:338-411).
     func calculateHash(method: String) {
         let panel = focusedPanel
-        guard let items = ToolsPanelAccess.operatedItems(of: panel), !items.rows.isEmpty else { return }
+        guard let items = ToolsPanelAccess.operatedItems(of: panel), !items.items.isEmpty else { return }
 
         // The progress title: the archive path uses the method name for a single named
         // method, everything else IDS_CHECKSUM_CALCULATING (PanelCopy.cpp:281-289).
@@ -193,13 +193,13 @@ extension MainWindowController {
             ToolsAlerts.unsupportedOperation(toolsWindow)
             return
         }
-        guard items.rows.count == 1, let row = items.rows.first, !row.isDirectory else {
-            if !items.rows.isEmpty {
+        guard items.items.count == 1, let row = items.items.first, !row.isDirectory else {
+            if !items.items.isEmpty {
                 ToolsAlerts.error(Lang.text(3014, "You must select one file"), toolsWindow)
             }
             return
         }
-        let sourcePath = items.folderPath + row.name
+        let sourcePath = items.fullPaths[0]
         var destination = items.folderPath
         let panels = ToolsPanelAccess.panels(in: toolsWindow)
         if panels.count > 1, let other = panels.first(where: { $0 !== panel }),
@@ -259,8 +259,8 @@ extension MainWindowController {
             ToolsAlerts.error(Lang.text(6008, "Operation is not supported."), toolsWindow)
             return
         }
-        guard items.rows.count == 1, let row = items.rows.first, !row.isDirectory else {
-            if !items.rows.isEmpty {
+        guard items.items.count == 1, let row = items.items.first, !row.isDirectory else {
+            if !items.items.isEmpty {
                 ToolsAlerts.error(Lang.text(7403, "Select only first part of split file"), toolsWindow)
             }
             return
@@ -336,8 +336,8 @@ extension MainWindowController {
             ToolsAlerts.unsupportedOperation(toolsWindow)
             return
         }
-        guard items.rows.count == 1, let row = items.rows.first else {
-            if !items.rows.isEmpty {
+        guard items.items.count == 1, let row = items.items.first else {
+            if !items.items.isEmpty {
                 ToolsAlerts.error(Lang.text(3014, "You must select one file"), toolsWindow)
             }
             return
