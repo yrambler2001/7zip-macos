@@ -272,11 +272,12 @@ seedFile                         // this test's settings domain (§3); .values i
 seedName                         // goes into its file name; the base class sets it to the test name
 owner                            // the test class; SZ_STATE_DIR is derived from it
 
-// the test-support contract (Mac/docs/test-support-contract.md)
+// the test-support contract (Mac/docs/test-support-contract.md, api/resetcmd.md)
 resetGeneration                  // the main window's AX value as an Int, nil when unimplemented
 testSupportIsImplemented         // a pure read: safe to ask of an app without the affordances
 reset(_ options: ResetOptions, seed:timeout:) -> ResetOutcome
-open(_ url: URL) -> Bool         // sends a sevenzip:// URL to *this shard's* instance
+open(_ url: URL, aimedOnly:) -> Bool   // a sevenzip:// URL to *this shard's* instance (see below)
+writeRequest(_ url: URL) -> Bool       // channel 1 on its own, with its delivery receipt
 
 // which app this shard drives (TestShard, Mac/Tests/UIDriver/TestSupport.swift)
 TestShard.appBundleIdentifier    // com.yrambler2001.7zip / -p1 / -p2, from the bundle's Info.plist
@@ -358,8 +359,13 @@ combo and selects its text exactly as 7zFM does, so `app.typeText(...)` replaces
 and read `combo.value` back afterwards, so a miss fails the test instead of leaving the default in
 place (that is how `testSelectionCommands` came to assert 2 of 4 and see 4 of 4).
 
-`names` costs one accessibility query per row, and every row of a folder is in the tree even when
-scrolled out of sight — use it for short listings and `row(named:)` / `waitForRow` for big ones.
+**Read from a snapshot; resolve an element only to act on it.** This is the single biggest lever on
+per-test cost, measured: `hasRow` and `waitForRow` used to go through `nameCell(named:)`, which
+resolved *every* matching static text of the list over the accessibility bus to pick the leftmost.
+Reading one `table.snapshot()` instead took the input shard from 547 s to 474 s over the same 25
+tests — four times what removing the relaunch will save. `names`, `columnTitles`, `cellText`,
+`hasRow`, `waitForRow`, `itemTitles`, `toolbarButtonTitles` and `menuItemTitles` are all one snapshot
+each; add new accessors the same way, and keep element queries for `click`, `typeText` and friends.
 
 ## 6. `TestPaths`
 
@@ -465,3 +471,31 @@ result. The screenshot is evidence for a human; the assertion is the number.
   `FM.Position`, `FM.Columns.<type>` and the splitter ratio as a matter of course.
 * `wait(for:timeout:until:)` pumps the main run loop until a condition holds. No `usleep`, no
   `DispatchQueue.main.async` without a wait: the panels read folders on their own queue.
+
+## 10. Sending a URL to the right instance
+
+`NSWorkspace.open(URL)` hands a `sevenzip://` URL to whichever bundle Launch Services considers the
+scheme's handler. That is **not** the instance a test is driving: several worktrees build the same
+app, and the test-only copies used to claim the scheme too — which is how a probe copy came to answer
+another scope's URLs and break eleven of their tests. So `SevenZipApp.open(_:aimedOnly:)` tries three
+channels in order:
+
+1. **`<SZ_STATE_DIR>/reset-request`** — the app watches that file and treats its contents as the URL
+   (`Mac/docs/api/resetcmd.md` §5). It belongs to one instance, so it is aimed by construction, and
+   the watcher is a `Timer` in `.common` mode so the URL also arrives while `NSApp.runModal` is on the
+   stack. **The app removes the file before acting on it, and that disappearance is the delivery
+   receipt** — a successful *write* is not: against an app without the watcher the file just sits
+   there and the command never runs (three tests failed exactly that way). `writeRequest` waits for
+   the receipt, cleans up and reports false when it does not come.
+2. `NSWorkspace.open(_:withApplicationAt:)` — aimed, but a sandboxed runner cannot always resolve a
+   bundle URL outside its container.
+3. `NSWorkspace.open(URL)` — the unaimed form, **available only when `aimedOnly` is false**. A
+   read-only shard must pass `aimedOnly: true`: its app copy claims no scheme, so an unaimed open
+   cannot reach its instance and would assert against somebody else's app.
+
+The three test-only app copies build from `Mac/Tests/AppVariants/Info.plist`, which is
+`Mac/App/Info.plist` without `CFBundleURLTypes`, `CFBundleDocumentTypes`,
+`UTImportedTypeDeclarations` and `NSServices` — a copy that claims nothing cannot be chosen, whether
+it is registered or not. `HostTargetTests.testTheVariantInfoPlistMatchesTheApps` fails if either half
+drifts, and `test.sh` also runs `lsregister -u` on the copies on every exit path so they do not
+linger in Finder's *Open With* list. **If you add an app target for a test, give it that plist.**
