@@ -30,6 +30,13 @@ settings:
       GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "DEBUG=1"]
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
       ENABLE_TESTABILITY: YES
+    Release:
+      # packaging scope. Xcode injects com.apple.security.get-task-allow into every signature
+      # unless this is NO, and Apple's notary service *rejects* a submission whose executables
+      # carry it ("The executable requests the com.apple.security.get-task-allow entitlement").
+      # A Release build is the one we ship, so it must not ask to be debuggable. Measured before
+      # the change: all four binaries in the Release bundle carried the key.
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 targets:
 
   # ---------------------------------------------------------------------------
