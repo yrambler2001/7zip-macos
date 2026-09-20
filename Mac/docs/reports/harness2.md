@@ -6,7 +6,7 @@ end for the first time.** None of the five failures was a product bug, as the tr
 out to be correct. Every one was confirmed against a dump of what the app really exposes before
 anything was changed.
 
-Branch `mac/harness2`, worktree `.worktrees/harness2`, three commits.
+Branch `mac/harness2`, worktree `.worktrees/harness2`, five commits.
 Scope: `Mac/scripts/*`, `Mac/Tests/UITests/*`, `Mac/project.yml`, plus the two file exceptions in §6.
 
 ---
@@ -224,13 +224,21 @@ in another scope's directory while that scope has open work invites a conflict.
 Everything ran with `DEVELOPER_DIR=/Applications/Xcode.app`; `xcode-select -s` was never run, and
 every UI run took the shared app lock.
 
-| Step | Result |
-|---|---|
-| `Mac/scripts/build.sh` | `** BUILD SUCCEEDED **`, no warnings from `Mac/` sources |
-| `Mac/scripts/test.sh` (unit) | 209 passed, 0 failed |
-| `Mac/scripts/test.sh --ui` | **19 passed, 0 failed** |
-| `Mac/scripts/verify.sh` | green end to end — `Mac/docs/reports/verify-latest.md` |
-| `Mac/scripts/parity-check.sh` | TOTAL **362 / 496 (73 %)**, `scaffold` 28 / 57 |
+`Mac/scripts/verify.sh` (clean build + unit + UI), commit `da57e12`, **exit 0**:
+
+| Step | Time | Result |
+|---|---|---|
+| clean build (Debug) | 36 s | `** BUILD SUCCEEDED **`; **0 warnings from `Mac/` sources** (33 remain, all upstream `C/`+`CPP/`, which the hard rules tolerate) |
+| unit tests | 51 s | **209 passed, 0 failed** |
+| UI tests | 278 s | **19 passed, 0 failed** — the first green UI run |
+| `parity-check.sh` | — | TOTAL **362 / 496 (73 %)**, up from 334 / 496; `scaffold` **28 / 57** |
+
+Per scope after the audit: `scaffold` 28/57, `fsfolder` 24/58, `panel` 106/108, `extract` 52/57,
+`compress` 50/52, `tools` 37/40, `options` 44/46, `finder` 0/36, `packaging` 1/22, `icons` 20/20.
+
+`Mac/docs/reports/verify-latest.md` records the run. The eight stale
+`*-failure-*.png` screenshots from earlier red runs are deleted — every test passes, so nothing
+regenerates them and leaving them in the report directory would be misleading.
 
 The diagnoses were established with a throwaway `ProbeTests` class that dumped the two-panel
 accessibility tree, the open context menu, the whole menu bar with every item's identifier, the Select
