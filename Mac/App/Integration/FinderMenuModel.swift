@@ -83,7 +83,7 @@ struct FinderMenuCommand: Equatable {
 
     /// The full argv for `paths`, plus the temporary list files the receiver must delete.
     func argv(for paths: [String],
-              listFileDirectory: String = NSTemporaryDirectory())
+              listFileDirectory: String = CommandURL.temporaryRoot)
         -> (argv: [String], temporaryFiles: [String]) {
         guard let kind = selectionKind else {
             return (prefixArguments + suffixArguments, [])

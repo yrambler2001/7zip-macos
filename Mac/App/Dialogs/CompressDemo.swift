@@ -98,7 +98,7 @@ enum CompressDemo {
             return given
         }
         let fm = FileManager.default
-        let dir = (NSTemporaryDirectory() as NSString).appendingPathComponent("compress-demo")
+        let dir = (TestSupport.temporaryDirectory as NSString).appendingPathComponent("compress-demo")
         let sub = (dir as NSString).appendingPathComponent("sub")
         do {
             try? fm.removeItem(atPath: dir)

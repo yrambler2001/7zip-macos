@@ -47,7 +47,7 @@ enum OpsInfraDemo {
             NSLog("opsinfra-demo: no fixture archive found (set SZ_OPSINFRA_ARCHIVE)")
             return
         }
-        let destination = (NSTemporaryDirectory() as NSString)
+        let destination = (TestSupport.temporaryDirectory as NSString)
             .appendingPathComponent("opsinfra-demo-\(Int(Date().timeIntervalSince1970))")
         try? FileManager.default.createDirectory(atPath: destination, withIntermediateDirectories: true)
         NSLog("opsinfra-demo: extracting %@ -> %@", archive, destination)

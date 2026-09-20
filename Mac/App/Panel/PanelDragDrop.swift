@@ -38,9 +38,16 @@ enum PanelDragDrop {
 
     /// Private type that identifies a drag started in one of our own panels
     /// ("7-Zip::SetTransfer" equivalent).
-    static let internalType = NSPasteboard.PasteboardType("com.yrambler2001.7zip.panel-items")
+    ///
+    /// Named after the **running** bundle identifier, not a literal: the general pasteboard is
+    /// system-wide, so two copies of the app built with different identifiers would otherwise
+    /// treat each other's copy and cut as their own (`Mac/docs/test-support-contract.md`, "Running
+    /// several instances at once"). For the shipped identifier the strings are unchanged.
+    static let internalType =
+        NSPasteboard.PasteboardType("\(SevenZipBundle.runningAppIdentifier).panel-items")
     /// Marks a clipboard set by Cut (Windows 7zFM has no Cut; macOS expects one, 01 §9 #13).
-    static let cutMarkerType = NSPasteboard.PasteboardType("com.yrambler2001.7zip.cut")
+    static let cutMarkerType =
+        NSPasteboard.PasteboardType("\(SevenZipBundle.runningAppIdentifier).cut")
 
     static var acceptedTypes: [NSPasteboard.PasteboardType] { [.fileURL, internalType] }
 
@@ -68,7 +75,9 @@ enum PanelDragDrop {
     /// <Temp>/7zE<8 hex>/ -- the drag & drop / copy temp folder (kTempDirPrefix "7zE").
     static func makeTempDirectory(prefix: String = "7zE") -> String? {
         let name = prefix + String(format: "%08X", UInt32.random(in: 0...UInt32.max))
-        let path = (NSTemporaryDirectory() as NSString).appendingPathComponent(name)
+        // Per-instance temp root, so two instances cannot see each other's 7zE folders
+        // (Mac/docs/api/resetcmd.md section 3).
+        let path = (TestSupport.temporaryDirectory as NSString).appendingPathComponent(name)
         do {
             try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
             return path
@@ -355,7 +364,7 @@ extension PanelViewController {
         guard !paths.isEmpty else { return false }
         // Names that live in a 7zE / 7zO temp folder must not be archived into temp: the
         // destination becomes this panel's folder (AreThereNamesFromTemp).
-        let temp = NSTemporaryDirectory()
+        let temp = TestSupport.temporaryDirectory
         let destination = paths.contains { $0.hasPrefix(temp) } ? (snapshot?.fullPath ?? temp)
                                                                : ((paths[0] as NSString).deletingLastPathComponent + "/")
         let target = PanelContextTarget(paths: paths, folderPath: destination,

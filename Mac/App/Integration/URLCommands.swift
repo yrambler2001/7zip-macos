@@ -43,6 +43,11 @@ enum URLCommands {
                 OptionsWindowController.showOptions()
             }
             return .success
+        case .testReset(let request):
+            // `CommandURL.parse` has already refused the `test` host unless SZ_TEST_SUPPORT=1, so
+            // reaching here means test support is on. No `NSApp.activate`: a reset must not steal
+            // focus from the test runner, and the window is not being shown for the first time.
+            return TestResetCoordinator.handle(request)
         }
     }
 
@@ -170,7 +175,15 @@ enum FinderSettingsBridge {
 /// Services menu. PROGRESS section 8.3 requires both after a build or an install.
 enum LaunchServicesRegistration {
 
-    private static let stampKey = "FM.LaunchServicesStamp"
+    /// One stamp per bundle identifier, so two copies of the app built with different identifiers
+    /// (`Mac/docs/test-support-contract.md`, "Running several instances at once") do not ping-pong:
+    /// each launch used to see the other's stamp, re-run `lsregister` and rewrite the key. The
+    /// default identifier keeps the original key, so an existing installation is not re-registered.
+    private static var stampKey: String {
+        let id = Bundle.main.bundleIdentifier ?? SevenZipBundle.app
+        return id == SevenZipBundle.app ? "FM.LaunchServicesStamp"
+                                        : "FM.LaunchServicesStamp.\(id)"
+    }
 
     static let lsregisterPath =
         "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework"
@@ -179,6 +192,10 @@ enum LaunchServicesRegistration {
     /// `lsregister -f <bundle>` plus `NSUpdateDynamicServices()`, at most once per bundle path
     /// and version. A Debug build moves around, so the stamp includes the path.
     static func registerIfNeeded() {
+        // A test instance must not touch Launch Services: `lsregister -f` is a global, per-user
+        // mutation that would make a throwaway build the system's 7-Zip handler, and it costs a
+        // subprocess on every launch. Real launches are unaffected (SZ_TEST_SUPPORT unset).
+        if TestSupport.isEnabled { return }
         let stamp = Bundle.main.bundleURL.path + "|"
             + (Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")
         guard Settings.string(stampKey) != stamp else { return }

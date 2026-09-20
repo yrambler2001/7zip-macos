@@ -638,6 +638,43 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         }
     }
 
+    // MARK: - Test support: rebuild this panel in place (Mac/docs/api/resetcmd.md)
+
+    /// Step 4 of `sevenzip://test/reset`, for one panel. Selection, sort order, view mode and flat
+    /// mode go back to their defaults, the navigation stacks and the remembered password are
+    /// dropped, and the panel binds to `path` again.
+    ///
+    /// **The folder chain is released on the panel's own queue.** `SZFolder` wraps engine COM
+    /// objects whose reference counts are plain `++`/`--` (`Z7_COM_USE_ATOMIC` is not defined, see
+    /// `Mac/docs/api/opsinfra.md` section 4), so the object must be deallocated by the one thread
+    /// that owns it. `folder = nil` therefore goes through `runOnQueue`, and the `navigate` below
+    /// enqueues behind it on the same serial queue, so the old chain is gone before the new one is
+    /// built. A reset always waits for `OperationRunner.hasActiveOperation` to go false first, so
+    /// no worker can still be holding the folder when this runs.
+    func resetForTest(to path: String, viewMode: Int?, completion: @escaping (Bool) -> Void) {
+        killSelection()
+        rememberedPassword = nil
+        pendingCompressTarget = nil
+        dragMenuTag = -1
+        renamingRow = nil
+        selectionAnchor = -1
+        focusedIndex = -1
+        setPendingFocus(name: nil)
+        backStack.removeAll()
+        forwardStack.removeAll()
+        flatModeForDisk = false                           // _flatModeForDisk is not persisted
+        flatModeForArc = Settings.flatView(panelIndex)     // FlatViewArc<N> (01 section 3.4)
+        let mode = max(0, min(3, viewMode ?? Settings.listMode(panelIndex)))
+        listViewMode = mode
+        Settings.setListMode(mode, panelIndex)
+        applyListViewMode()
+        // Forget the cached column model so the next apply() rebuilds it -- and with it the sort
+        // order -- from the settings domain as it now stands (`FM.Columns.<FolderTypeID>`).
+        folderTypeOfColumns = ""
+        runOnQueue { [self] in self.folder = nil }
+        navigate(to: path, fallbackToRoot: true, completion: completion)
+    }
+
     // MARK: - Reload
 
     /// OnReload / RefreshListCtrl_SaveFocused: reload items, keep focus and selection by name.

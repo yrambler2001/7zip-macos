@@ -5,6 +5,8 @@
 
 NSString * const SZSettingsSuiteEnvironmentVariable = @"SEVENZIP_DEFAULTS_SUITE";
 NSString * const SZSettingsDefaultApplicationID = @"com.yrambler2001.7zip";
+NSString * const SZSettingsTestSupportEnvironmentVariable = @"SZ_TEST_SUPPORT";
+NSString * const SZSettingsStateDirectoryEnvironmentVariable = @"SZ_STATE_DIR";
 
 NSString * const SZSettingsKeyLang = @"Lang";
 NSString * const SZSettingsKeyFMPosition = @"FM.Position";
@@ -48,6 +50,57 @@ using namespace NMacPrefs;
 + (BOOL)usesOverrideSuite
 {
   return ![[self applicationID] isEqualToString:SZSettingsDefaultApplicationID];
+}
+
+// Read from the environment on every call, exactly as ApplicationID() does, so a test may set
+// them with setenv() at any point in the process's life.
+static NSString *SZEnvironmentValue(NSString *name)
+{
+  const char *value = getenv(name.UTF8String);
+  if (!value || !*value)
+    return nil;
+  return @(value);
+}
+
++ (BOOL)testSupportEnabled
+{
+  return [SZEnvironmentValue(SZSettingsTestSupportEnvironmentVariable) isEqualToString:@"1"];
+}
+
++ (nullable NSString *)stateDirectory
+{
+  if (![self testSupportEnabled])
+    return nil;
+  NSString *dir = SZEnvironmentValue(SZSettingsStateDirectoryEnvironmentVariable);
+  if (!dir.isAbsolutePath)
+    return nil;
+  return dir.stringByStandardizingPath;
+}
+
++ (NSString *)temporaryDirectory
+{
+  NSString *state = [self stateDirectory];
+  if (!state)
+    return NSTemporaryDirectory();
+  // A trailing separator, like NSTemporaryDirectory(), because callers concatenate and compare
+  // prefixes against it (SZTempOpen's containment guard, PanelDragDrop's AreThereNamesFromTemp).
+  NSString *temp = [[state stringByAppendingPathComponent:@"tmp"] stringByAppendingString:@"/"];
+  // Created here rather than at launch: mkdtemp() and the list-file writers need it to exist, and
+  // the cost of one cached stat is nothing next to the operation that follows.
+  static NSString *created = nil;
+  static NSObject *lock = nil;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{ lock = [NSObject new]; });
+  @synchronized (lock) {
+    if (![created isEqualToString:temp]) {
+      [[NSFileManager defaultManager] createDirectoryAtPath:temp
+                                withIntermediateDirectories:YES
+                                                 attributes:nil
+                                                      error:NULL];
+      created = temp;
+    }
+  }
+  return temp;
 }
 
 + (NSString *)stringForKey:(NSString *)key
@@ -172,6 +225,24 @@ using namespace NMacPrefs;
   FOR_VECTOR (i, keys)
     [result addObject:[NSString stringWithUTF8String:keys[i].Ptr()] ?: @""];
   return result;
+}
+
++ (nullable id)propertyListValueForKey:(NSString *)key
+{
+  CFStringRef k = (__bridge CFStringRef)key;
+  CFStringRef domain = (__bridge CFStringRef)[self applicationID];
+  CFPropertyListRef v = CFPreferencesCopyAppValue(k, domain);
+  if (!v)
+    return nil;
+  id value = (__bridge_transfer id)v;
+  return value;
+}
+
++ (void)setPropertyListValue:(nullable id)value forKey:(NSString *)key
+{
+  CFStringRef k = (__bridge CFStringRef)key;
+  CFStringRef domain = (__bridge CFStringRef)[self applicationID];
+  CFPreferencesSetAppValue(k, (__bridge CFPropertyListRef)value, domain);
 }
 
 + (void)synchronize

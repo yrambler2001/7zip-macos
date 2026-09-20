@@ -325,6 +325,9 @@ enum DialogKit {
         window.title = title
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
+        // SZ_DISABLE_ANIMATIONS: every dialog this app builds goes through here, so one call
+        // covers all 21 of them appearing and disappearing (a no-op without the switch).
+        TestAnimations.apply(to: window)
         return window
     }
 

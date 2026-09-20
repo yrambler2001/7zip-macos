@@ -8,6 +8,7 @@
 
 #import "SZExtractor.h"
 #import "SZError.h"
+#import "SZSettings.h"          // SZSettings.temporaryDirectory (SZ_STATE_DIR)
 #import "SZFolderOperations.h"
 #import "SZBridgeUtils.h"
 #import "SZFolder+Internal.h"
@@ -363,7 +364,7 @@ HRESULT CSZVirtFileSystem::FlushToDisk()
 
 + (nullable NSString *)createTemporaryDirectoryWithPrefix:(NSString *)prefix error:(NSError **)error
 {
-  NSString *templ = [NSTemporaryDirectory() stringByAppendingPathComponent:
+  NSString *templ = [SZSettings.temporaryDirectory stringByAppendingPathComponent:
                      [prefix stringByAppendingString:@"-XXXXXX"]];
   std::vector<char> buffer(templ.fileSystemRepresentation,
                            templ.fileSystemRepresentation + strlen(templ.fileSystemRepresentation) + 1);
@@ -373,7 +374,7 @@ HRESULT CSZVirtFileSystem::FlushToDisk()
     if (error)
       *error = [SZErrors errorWithCode:SZErrorCodeEngine
                               message:[NSString stringWithFormat:@"cannot create a temp folder in %@",
-                                       NSTemporaryDirectory()]];
+                                       SZSettings.temporaryDirectory]];
     return nil;
   }
   return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:made length:strlen(made)];
@@ -406,7 +407,7 @@ HRESULT CSZVirtFileSystem::FlushToDisk()
 {
   // DeleteOldTempFiles (PanelItemOpen.cpp:1815) enumerates "7zO*" and "7zE*"; Windows never
   // calls it, only Tools > Delete Temporary Files does (01 §3.9, §9 #11).
-  NSString *temp = NSTemporaryDirectory();
+  NSString *temp = SZSettings.temporaryDirectory;
   NSArray<NSString *> *entries = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:temp error:NULL];
   NSMutableArray<NSString *> *out = [NSMutableArray array];
   for (NSString *name in entries)
@@ -423,7 +424,7 @@ HRESULT CSZVirtFileSystem::FlushToDisk()
 
 + (BOOL)removeTemporaryDirectoryAtPath:(NSString *)path
 {
-  NSString *temp = [NSTemporaryDirectory() stringByStandardizingPath];
+  NSString *temp = [SZSettings.temporaryDirectory stringByStandardizingPath];
   NSString *candidate = [path stringByStandardizingPath];
   // Never remove anything outside the temp folder, and only our own prefixes.
   if (![candidate hasPrefix:temp])

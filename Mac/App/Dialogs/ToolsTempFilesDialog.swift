@@ -438,7 +438,7 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         // The menu text without "..." (fallback "Delete Temporary Files").
         var title = Lang.text(910, "Delete Temporary Files...")
         while title.hasSuffix(".") { title.removeLast() }
-        let dialog = ToolsTempFilesDialog(title: title, tempRoot: NSTemporaryDirectory(), parent: parent)
+        let dialog = ToolsTempFilesDialog(title: title, tempRoot: TestSupport.temporaryDirectory, parent: parent)
         NSApp.runModal(for: dialog.window)
         dialog.window.orderOut(nil)
     }

@@ -6,6 +6,7 @@
 #import "SZFileSystemFolder.h"
 #import "SZCodecs.h"
 #import "SZError.h"
+#import "SZSettings.h"          // SZSettings.temporaryDirectory (SZ_STATE_DIR)
 #import "Internal/SZBridgeUtils.h"
 #import "Internal/SZFolder+Internal.h"
 
@@ -326,7 +327,7 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
       *error = [SZErrors errorWithCode:SZErrorCodeUnsupported message:@"The folder cannot extract items"];
     return nil;
   }
-  NSString *base = [NSTemporaryDirectory() stringByAppendingPathComponent:@"7zO-XXXXXX"];
+  NSString *base = [SZSettings.temporaryDirectory stringByAppendingPathComponent:@"7zO-XXXXXX"];
   char *templ = strdup(base.fileSystemRepresentation);
   const char *made = mkdtemp(templ);
   if (!made)

@@ -102,6 +102,8 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
     }
 
     private func execute<T>(work: @escaping (OperationRunner) throws -> T) -> Result<T, Error> {
+        Self.liveRunners.append(self)                 // test support: see `cancelActiveOperations`
+        defer { Self.liveRunners.removeAll { $0 === self } }
         sync.setStatus(options.initialStatus)
         if !options.titleFileName.isEmpty {
             sync.setTitleFileName(options.titleFileName)
@@ -227,6 +229,32 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         if !hasMessages && isModal {
             NSApp.stopModal()               // the dialog closes itself
         }
+    }
+
+    // MARK: cancelling from outside the dialog (test support, Mac/docs/api/resetcmd.md)
+
+    /// Every runner whose `execute` has not returned yet. Appended and removed on the main thread
+    /// only -- `run` is main-thread-only by contract, so no lock is needed.
+    private static var liveRunners: [OperationRunner] = []
+
+    /// True while any operation is still running. `sevenzip://test/reset` waits for this to go
+    /// false before it rebuilds the panels, so a cancelled operation can never still be holding a
+    /// panel's `SZFolder` on a worker thread while the panel replaces it.
+    static var hasActiveOperation: Bool { !liveRunners.isEmpty }
+
+    /// Cancels every running operation the way the Cancel button does, minus the confirmation:
+    /// the worker sees `E_ABORT` at its next `progressCheckBreak` and the operation fails with
+    /// `SZError.Code.cancelled`, which is silent. Nothing about the real cancel path changes.
+    static func cancelActiveOperations() {
+        for runner in liveRunners { runner.cancelFromOutside() }
+    }
+
+    private func cancelFromOutside() {
+        cancelWasPressed = true
+        sync.setPaused(false)               // a worker parked in checkBreak has to be let go first
+        sync.setStopped(true)               // -> E_ABORT, exactly as progressDialogDidConfirmCancel
+        if isModal { NSApp.stopModal() }
+        dialog?.window.orderOut(nil)
     }
 
     // MARK: process priority (OnPriorityButton :1150)

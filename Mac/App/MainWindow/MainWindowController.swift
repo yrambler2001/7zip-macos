@@ -46,6 +46,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         window.tabbingMode = .disallowed
         super.init(window: window)
         window.delegate = self
+        TestAnimations.apply(to: window)
+        // Signal 2 of the test-support contract: the reset generation, "0" before the first reset.
+        // Only under SZ_TEST_SUPPORT, so a shipped window's accessibility value is untouched.
+        if TestSupport.isEnabled {
+            window.setAccessibilityValue(TestResetCoordinator.initialAccessibilityValue)
+        }
         buildContent()
         buildToolbar()
         restoreState()
@@ -133,7 +139,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         }
         panels[0].isActive = focusedPanelIndex == 0
         if panels.count > 1 { panels[1].isActive = focusedPanelIndex == 1 }
-        if Settings.maximized { window.zoom(nil) }
+        // `zoom(_:)` goes through setFrame(_:display:animate:), whose duration is NSWindowResizeTime.
+        if Settings.maximized { TestAnimations.withoutAnimation { window.zoom(nil) } }
         startRefreshTimer()
     }
 
@@ -205,10 +212,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         guard usable > 1 else { return false }
         isApplyingSplitter = true
         defer { isApplyingSplitter = false }
-        splitView.adjustSubviews()
         let minimum = min(Self.panelSizeMin, usable / 2)
         let position = min(max(usable * CGFloat(splitterRatio), minimum), usable - minimum)
-        splitView.setPosition(position, ofDividerAt: 0)
+        // SZ_DISABLE_ANIMATIONS: the divider move and the subview adjustment are the split view's
+        // two animatable steps, so both go inside one zero-duration grouping.
+        TestAnimations.withoutAnimation {
+            splitView.adjustSubviews()
+            splitView.setPosition(position, ofDividerAt: 0)
+        }
         return true
     }
 
@@ -233,9 +244,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         }
         // Either panel may be the one that was closed last time, so both views are put back in
         // their index order (SwitchOnOffOnePanel only ever hides the non-focused one).
-        for (index, panel) in panels.enumerated() where !splitView.arrangedSubviews.contains(panel.view) {
-            let position = min(index, splitView.arrangedSubviews.count)
-            splitView.insertArrangedSubview(panel.view, at: position)
+        TestAnimations.withoutAnimation {
+            for (index, panel) in panels.enumerated() where !splitView.arrangedSubviews.contains(panel.view) {
+                let position = min(index, splitView.arrangedSubviews.count)
+                splitView.insertArrangedSubview(panel.view, at: position)
+            }
         }
         for panel in panels { panel.view.isHidden = false }
         numPanels = 2
@@ -257,12 +270,54 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
             let closing = focusedPanelIndex == 0 ? 1 : 0
             captureSplitterRatio()              // reopening restores what the user last set
             Settings.splitterPos = splitterRatio
-            splitView.removeArrangedSubview(panels[closing].view)
-            panels[closing].view.removeFromSuperview()
+            TestAnimations.withoutAnimation {
+                splitView.removeArrangedSubview(panels[closing].view)
+                panels[closing].view.removeFromSuperview()
+            }
             numPanels = 1
             setFocusedPanel(focusedPanelIndex == 0 ? 0 : 1)
         }
         focusedPanel.focusList()
+    }
+
+    // MARK: - Test support: rebuild the window's state in place (Mac/docs/api/resetcmd.md)
+
+    /// Step 4 of `sevenzip://test/reset`. Everything the window itself owns comes back from the
+    /// (possibly just replaced) settings domain, the panel count becomes what the request asks for,
+    /// and every panel -- including one that is currently hidden, so nothing survives in it -- is
+    /// rebuilt at its requested path. `completion` runs on the main thread once **all** the panels
+    /// have finished binding, because a panel binds on its own serial queue.
+    func resetForTest(_ request: TestResetRequest, completion: @escaping () -> Void) {
+        autoRefresh = Settings.autoRefresh
+        toolbarsMask = Settings.toolbarsMask
+        reloadToolbars()
+        splitterRatio = Settings.splitterPos
+
+        let wanted = min(max(request.panelCount ?? Settings.numPanels, 1), 2)
+        if wanted == 2, numPanels == 1 {
+            showSecondPanel()
+        } else if wanted == 1, numPanels == 2 {
+            // Not switchOnOffOnePanel(): that one closes the *non-focused* panel and persists the
+            // divider, while a reset always leaves panel 0 on screen and panel 1 closed.
+            TestAnimations.withoutAnimation {
+                splitView.removeArrangedSubview(panels[1].view)
+                panels[1].view.removeFromSuperview()
+            }
+            numPanels = 1
+        }
+        setFocusedPanel(0)
+        applySplitterRatio()
+
+        var remaining = panels.count
+        let done = {
+            remaining -= 1
+            if remaining == 0 { completion() }
+        }
+        for (index, panel) in panels.enumerated() {
+            let path = request.panelPaths[index] ?? Settings.panelPath(index) ?? NSHomeDirectory()
+            panel.resetForTest(to: path, viewMode: request.viewMode) { _ in done() }
+        }
+        if panels.isEmpty { completion() }
     }
 
     func setFocusedPanel(_ index: Int) {

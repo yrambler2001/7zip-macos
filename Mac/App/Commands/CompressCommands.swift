@@ -265,7 +265,7 @@ enum CompressCommands {
 
     /// A fresh `7zE-<uuid>` folder in the system temp directory, like 7zG's email mode.
     static func makeEmailDirectory() -> String? {
-        let path = (NSTemporaryDirectory() as NSString)
+        let path = (TestSupport.temporaryDirectory as NSString)
             .appendingPathComponent("7zE-\(UUID().uuidString)")
         do {
             try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
@@ -280,7 +280,7 @@ enum CompressCommands {
     /// so yesterday's `7zE-*` folders are removed instead (01 section 9 #22).
     static func purgeStaleEmailDirectories() {
         let fm = FileManager.default
-        let temp = NSTemporaryDirectory()
+        let temp = TestSupport.temporaryDirectory
         guard let entries = try? fm.contentsOfDirectory(atPath: temp) else { return }
         let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
         for entry in entries where entry.hasPrefix("7zE-") {

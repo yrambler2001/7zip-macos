@@ -213,6 +213,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         window.title = Lang.text(2100, "Options")     // IDS_OPTIONS 2100
         window.minSize = NSSize(width: 560, height: 420)
         window.tabbingMode = .disallowed
+        TestAnimations.apply(to: window)
         window.isReleasedWhenClosed = false          // the controller reuses it on every open
         super.init(window: window)
         window.delegate = self

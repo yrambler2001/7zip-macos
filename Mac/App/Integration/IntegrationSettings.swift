@@ -82,6 +82,22 @@ enum SevenZipBundle {
         }
         return app
     }
+
+    /// The identifier of the **app**, as seen from whichever process is asking: its own identifier
+    /// in the app, and the identifier with the last component dropped in an appex (an appex id is
+    /// always `<app id>.<name>`, `Mac/docs/api/finder.md` section 7). The literal `app` is the
+    /// fallback, so an unidentified bundle behaves exactly as before.
+    ///
+    /// This is what lets two copies built with different bundle identifiers coexist: everything
+    /// instance-specific that is not derived from `SZ_STATE_DIR` is derived from here.
+    static var runningAppIdentifier: String {
+        guard let id = Bundle.main.bundleIdentifier else { return app }
+        if Bundle.main.bundleURL.pathExtension == "appex" {
+            let parent = id.split(separator: ".").dropLast().joined(separator: ".")
+            return parent.isEmpty ? app : parent
+        }
+        return id
+    }
 }
 
 /// The five `Options.*` values, plus where they came from.
@@ -144,20 +160,35 @@ struct IntegrationSettings: Equatable {
     // MARK: - Reading
 
     /// The snapshot file inside the Finder Sync extension's container, written by the app.
-    static func snapshotURL(forExtension bundleID: String) -> URL {
+    ///
+    /// The file name carries the **containing app's** bundle identifier, so two copies of the app
+    /// built with different identifiers write different files into the same container instead of
+    /// clobbering each other (`Mac/docs/test-support-contract.md`, "Running several instances at
+    /// once"). For the shipped identifier the name is unchanged, so an extension that was already
+    /// configured keeps reading the file it knows.
+    static func snapshotURL(forExtension bundleID: String,
+                            appIdentifier: String = SevenZipBundle.runningAppIdentifier) -> URL {
         // The path is built from the real home in both processes: the app writes it, the sandboxed
         // extension reads it inside its own container.
         URL(fileURLWithPath: SevenZipBundle.realHomeDirectory)
             .appendingPathComponent("Library/Containers/\(bundleID)/Data/Library/Preferences")
-            .appendingPathComponent("com.yrambler2001.7zip.integration.plist")
+            .appendingPathComponent("\(appIdentifier).integration.plist")
     }
 
     /// Read the values the extension should use: the pushed snapshot first, the app's own
     /// preferences domain second, the documented defaults last.
     static func current(extensionBundleID: String? = nil) -> IntegrationSettings {
-        if let bundleID = extensionBundleID,
-           let snapshot = load(fromSnapshotAt: snapshotURL(forExtension: bundleID)) {
-            return snapshot
+        if let bundleID = extensionBundleID {
+            // The running app's name first; the shipped name as a fallback, for an extension that
+            // belongs to a differently-named build but was configured by the original one.
+            if let snapshot = load(fromSnapshotAt: snapshotURL(forExtension: bundleID)) {
+                return snapshot
+            }
+            if SevenZipBundle.runningAppIdentifier != SevenZipBundle.app,
+               let snapshot = load(fromSnapshotAt: snapshotURL(forExtension: bundleID,
+                                                              appIdentifier: SevenZipBundle.app)) {
+                return snapshot
+            }
         }
         return loadFromPreferences()
     }

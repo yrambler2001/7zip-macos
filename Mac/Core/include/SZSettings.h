@@ -58,6 +58,15 @@ FOUNDATION_EXPORT NSString * const SZSettingsSuiteEnvironmentVariable;   // "SEV
 /// The default domain, used when the environment variable is not set.
 FOUNDATION_EXPORT NSString * const SZSettingsDefaultApplicationID;       // "com.yrambler2001.7zip"
 
+/// Test support (Mac/docs/test-support-contract.md, Mac/docs/api/resetcmd.md).
+///
+/// `SZ_TEST_SUPPORT=1` is the master switch: with it unset nothing below exists and the app
+/// behaves exactly as it always has. `SZ_STATE_DIR` is an absolute directory this instance uses
+/// for everything it would otherwise put in a shared location, so that two instances -- possibly
+/// built with different bundle identifiers -- never touch the same file.
+FOUNDATION_EXPORT NSString * const SZSettingsTestSupportEnvironmentVariable;    // "SZ_TEST_SUPPORT"
+FOUNDATION_EXPORT NSString * const SZSettingsStateDirectoryEnvironmentVariable; // "SZ_STATE_DIR"
+
 @interface SZSettings : NSObject
 
 /// The domain actually in use right now.
@@ -65,6 +74,18 @@ FOUNDATION_EXPORT NSString * const SZSettingsDefaultApplicationID;       // "com
 
 /// YES when SEVENZIP_DEFAULTS_SUITE names a domain other than the default one.
 @property (class, nonatomic, readonly) BOOL usesOverrideSuite;
+
+/// YES when `SZ_TEST_SUPPORT` is `1`. Re-read on every access, like the suite variable.
+@property (class, nonatomic, readonly) BOOL testSupportEnabled;
+
+/// `SZ_STATE_DIR` when test support is on and the variable names an absolute path, else nil.
+@property (class, nonatomic, readonly, nullable) NSString *stateDirectory;
+
+/// The temporary directory this instance must use: `<SZ_STATE_DIR>/tmp/` when a state directory
+/// is active (created on first use), otherwise `NSTemporaryDirectory()` unchanged. Every place
+/// that would call `NSTemporaryDirectory()` goes through here so two instances cannot enumerate,
+/// purge or overwrite each other's `7zO*` / `7zE*` / `7zL-*` items.
+@property (class, nonatomic, readonly) NSString *temporaryDirectory;
 
 + (nullable NSString *)stringForKey:(NSString *)key NS_SWIFT_NAME(string(forKey:));
 + (void)setString:(nullable NSString *)value forKey:(NSString *)key;   ///< nil removes
@@ -88,6 +109,12 @@ FOUNDATION_EXPORT NSString * const SZSettingsDefaultApplicationID;       // "com
 + (BOOL)hasKey:(NSString *)key NS_SWIFT_NAME(hasKey(_:));
 + (void)removeKey:(NSString *)key NS_SWIFT_NAME(removeKey(_:));
 + (NSArray<NSString *> *)keysWithPrefix:(NSString *)prefix NS_SWIFT_NAME(keys(withPrefix:));
+
+/// Untyped access, for the one job the typed accessors cannot do: replacing the whole domain
+/// with the contents of a property list without flattening its value types
+/// (`sevenzip://test/reset?defaults=<plist>`, Mac/docs/api/resetcmd.md section 4).
++ (nullable id)propertyListValueForKey:(NSString *)key NS_SWIFT_NAME(propertyListValue(forKey:));
++ (void)setPropertyListValue:(nullable id)value forKey:(NSString *)key;
 + (void)synchronize;
 
 @end

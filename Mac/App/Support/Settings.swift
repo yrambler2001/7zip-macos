@@ -845,3 +845,152 @@ extension Settings {
 extension Settings.Key {
     static let optionsLastPage = "FM.OptionsPage"
 }
+
+// ---------------------------------------------------------------------------
+// MARK: - Test support (`mac/resetcmd`)
+//
+// `Mac/docs/test-support-contract.md` and `Mac/docs/api/resetcmd.md`. Everything here is inert
+// unless `SZ_TEST_SUPPORT=1` is in the environment: `TestSupport.isEnabled` gates the other two
+// variables, so an app started the normal way behaves exactly as it always has.
+//
+// It lives in this file rather than in one of its own because `Settings.swift` is already compiled
+// into the `SevenZipKitTests` target (`project.yml`), which is what makes the environment parsing,
+// the state-directory rule and the domain replacement unit-testable without the GUI.
+
+/// The three environment switches of the test-support contract.
+enum TestSupport {
+
+    static let supportVariable = SZSettingsTestSupportEnvironmentVariable       // "SZ_TEST_SUPPORT"
+    static let animationsVariable = "SZ_DISABLE_ANIMATIONS"
+    static let stateDirectoryVariable = SZSettingsStateDirectoryEnvironmentVariable  // "SZ_STATE_DIR"
+
+    /// The value of `name` in the current environment, nil when unset or empty.
+    ///
+    /// `getenv`, not `ProcessInfo.processInfo.environment`: the variables are read on every access
+    /// so a test may `setenv()` mid-process (the same rule as `NMacPrefs::ApplicationID()`), and
+    /// `ProcessInfo`'s dictionary is a snapshot that need not follow `setenv`.
+    static func environmentValue(_ name: String) -> String? {
+        guard let raw = getenv(name) else { return nil }
+        let value = String(cString: raw)
+        return value.isEmpty ? nil : value
+    }
+
+    /// `SZ_TEST_SUPPORT=1`. The master switch: nothing else in this file does anything without it.
+    static var isEnabled: Bool { SZSettings.testSupportEnabled }
+
+    /// `SZ_DISABLE_ANIMATIONS=1` **and** test support on. Window and view animation durations are
+    /// zero, automatic window animation and window tabbing are off, no dialog animates in or out.
+    static var animationsDisabled: Bool {
+        isEnabled && environmentValue(animationsVariable) == "1"
+    }
+
+    /// `SZ_STATE_DIR`: the absolute directory this instance uses for everything it would otherwise
+    /// put in a shared location. nil when test support is off or the value is not an absolute path.
+    /// Resolved by the bridge so the C++/ObjC++ side and Swift can never disagree.
+    static var stateDirectory: String? { SZSettings.stateDirectory }
+
+    /// `<SZ_STATE_DIR>/tmp/`, created on demand, or `NSTemporaryDirectory()` when there is none.
+    static var temporaryDirectory: String { SZSettings.temporaryDirectory }
+
+    /// A named subdirectory of the state directory, created on demand; nil without a state
+    /// directory, so a caller keeps its old behaviour.
+    static func stateSubdirectory(_ name: String) -> String? {
+        guard let stateDirectory else { return nil }
+        let path = (stateDirectory as NSString).appendingPathComponent(name)
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        return path
+    }
+
+    /// Called first in `applicationWillFinishLaunching`, before anything reads a setting.
+    ///
+    /// With a state directory and no explicit `SEVENZIP_DEFAULTS_SUITE`, the settings domain is
+    /// pointed at `<state>/preferences.plist`: CFPreferences takes an absolute path as an
+    /// application ID (`Mac/docs/api/harness.md` section 3), so two instances then keep entirely
+    /// separate settings even when they were built with the same bundle identifier. An explicit
+    /// suite always wins -- that is how the UI harness seeds one plist per test.
+    static func prepareForLaunch() {
+        guard isEnabled, let stateDirectory else { return }
+        try? FileManager.default.createDirectory(atPath: stateDirectory, withIntermediateDirectories: true)
+        if environmentValue(SZSettingsSuiteEnvironmentVariable) == nil {
+            let plist = (stateDirectory as NSString).appendingPathComponent("preferences.plist")
+            setenv(SZSettingsSuiteEnvironmentVariable, plist, 1)
+        }
+    }
+}
+
+extension Settings {
+
+    /// Replaces the whole settings domain with the property list at `path`
+    /// (`sevenzip://test/reset?defaults=…`). Every existing key is removed first, so the result is
+    /// the file and nothing else; values keep their property-list types, which the typed accessors
+    /// could not do. Returns false when the file is missing or is not a dictionary.
+    @discardableResult
+    static func replaceDomainContents(fromPlistAt path: String) -> Bool {
+        guard let data = FileManager.default.contents(atPath: path),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+              let dictionary = plist as? [String: Any] else { return false }
+        replaceDomainContents(with: dictionary)
+        return true
+    }
+
+    /// The same, from values already in memory (the unit tests use this shape).
+    static func replaceDomainContents(with dictionary: [String: Any]) {
+        for key in allDomainKeys() {
+            SZSettings.setPropertyListValue(nil, forKey: key)
+        }
+        for (key, value) in dictionary {
+            SZSettings.setPropertyListValue(value, forKey: key)
+        }
+        SZSettings.synchronize()
+    }
+
+    /// Everything the domain holds, for a test that wants to assert what the app saved.
+    static func domainContents() -> [String: Any] {
+        var out: [String: Any] = [:]
+        for key in allDomainKeys() {
+            if let value = SZSettings.propertyListValue(forKey: key) { out[key] = value }
+        }
+        return out
+    }
+
+    /// Every key the domain currently holds.
+    ///
+    /// **Measured, and the reason this is not just `SZSettings.keys(withPrefix: "")`:**
+    /// `CFPreferencesCopyKeyList` is live for a domain *named* like a bundle id, but for a domain
+    /// that is an absolute **plist path** -- which is what `SEVENZIP_DEFAULTS_SUITE` is in every UI
+    /// test (`Mac/docs/api/harness.md` section 3) -- it answers from a cache populated by its first
+    /// call in the process and never updates, even after `CFPreferencesAppSynchronize`. Values read
+    /// back correctly; only the key *list* goes stale. The file on disk is written on every
+    /// synchronize and is authoritative, so its keys are unioned in. Without this, a reset with
+    /// `defaults=` would leave behind every key the app had written since launch.
+    static func allDomainKeys() -> [String] {
+        var keys = Set(SZSettings.keys(withPrefix: ""))
+        if let path = domainPlistPath(),
+           let data = FileManager.default.contents(atPath: path),
+           let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+           let dictionary = plist as? [String: Any] {
+            keys.formUnion(dictionary.keys)
+        }
+        return Array(keys)
+    }
+
+    /// The file a plist-path domain lives in, or nil for a named domain. CFPreferences appends
+    /// `.plist` when the path it was given has no extension (measured: `/a/b/seed` and
+    /// `/a/b/seed.plist` are the same domain).
+    static func domainPlistPath() -> String? {
+        let id = SZSettings.applicationID
+        guard (id as NSString).isAbsolutePath else { return nil }
+        return (id as NSString).pathExtension.isEmpty ? id + ".plist" : id
+    }
+
+    /// Posts the change notification for every group, as though each had been written. Used after
+    /// the domain was replaced wholesale: the observers cannot know which keys moved, so they are
+    /// all told to re-read (`OptionsPostApply.settingsApplied` does the panel half of this).
+    static func notifyAllGroups() {
+        for group in [Group.language, .editor, .fm, .view, .extraction, .compression, .workDir, .contextMenu] {
+            let info: [AnyHashable: Any] = [groupUserInfoKey: group]
+            NotificationCenter.default.post(name: group.notificationName, object: nil, userInfo: info)
+            NotificationCenter.default.post(name: didChangeNotification, object: nil, userInfo: info)
+        }
+    }
+}

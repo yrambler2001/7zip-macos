@@ -227,7 +227,7 @@ enum ExtractCommands {
         let indices = context.indices.isEmpty ? nil : context.indices.map { NSNumber(value: $0) }
         let window = context.window
         let result = OperationRunner.run(runnerOptions) { runner -> SZOperationSummary in
-            try folder.extractItems(at: indices, toPath: NSTemporaryDirectory(),
+            try folder.extractItems(at: indices, toPath: TestSupport.temporaryDirectory,
                                     pathMode: .curPaths, overwriteMode: .skip,
                                     testMode: true, progress: runner)
         }

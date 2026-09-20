@@ -21,6 +21,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var mainWindowController: MainWindowController?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Test support (Mac/docs/api/resetcmd.md) comes first: `prepareForLaunch` may point the
+        // settings domain at the instance's own state directory, so it has to run before anything
+        // reads a setting, and the animation defaults have to be registered before any window is
+        // created. Both are no-ops unless SZ_TEST_SUPPORT=1 is in the environment.
+        TestSupport.prepareForLaunch()
+        TestAnimations.installIfNeeded()
         // LoadLangOneTime() before anything reads a string (FM.cpp:615)
         Lang.loadFromSettings()
         SZFolder.timestampShowUTC = Settings.timestampShowUTC   // g_Timestamp_Show_UTC
