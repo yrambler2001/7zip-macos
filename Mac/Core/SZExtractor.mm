@@ -32,7 +32,10 @@
 #include "../../CPP/Common/Wildcard.h"
 #include "../../CPP/7zip/UI/Common/Extract.h"
 #include "../../CPP/7zip/UI/Common/ExtractingFilePath.h"
+#include "../../CPP/7zip/UI/Common/HashCalc.h"
 #pragma pop_macro("BOOL")
+
+#import "Internal/SZHashBundleBridge.h"
 
 using namespace NWindows;
 using namespace NWindows::NFile;
@@ -97,6 +100,7 @@ static NSString *SZLangText(UInt32 id, NSString *fallback)
   _zoneIDMode = SZZoneIDModeNone;
   _extractSymbolicLinks = @YES;          // CExtractNtOptions: SymLinks.Val = true
   _memoryLimit = UINT64_MAX;
+  _hashMethods = @[];                    // -scrc off (CHashOptions::Methods empty)
   return self;
 }
 
@@ -123,6 +127,7 @@ static NSString *SZLangText(UInt32 id, NSString *fallback)
   copy.preAllocateOutputFile = self.preAllocateOutputFile;
   copy.preserveAccessTime = self.preserveAccessTime;
   copy.memoryLimit = self.memoryLimit;
+  copy.hashMethods = self.hashMethods;
   return copy;
 }
 
@@ -168,6 +173,7 @@ static NSString *SZLangText(UInt32 id, NSString *fallback)
   NSString *_password;
   NSMutableArray<NSString *> *_messages;
   BOOL _testMode;
+  SZHashResults *_hashResults;
 }
 
 - (instancetype)init
@@ -190,6 +196,7 @@ static NSString *SZLangText(UInt32 id, NSString *fallback)
 - (NSString *)password { return _password; }
 - (NSArray<NSString *> *)messages { return [_messages copy]; }
 - (BOOL)isOK { return _errorCount == 0 && _archiveErrorCount == 0; }
+- (SZHashResults *)hashResults { return _hashResults; }
 
 /// AddSizeValue (FileManager/OverwriteDialog.cpp:68): "<digits> bytes" plus " : <N> KiB/MiB/GiB".
 static NSString *SZSizeValueText(uint64_t value)
@@ -211,8 +218,9 @@ static NSString *SZSizeValueText(uint64_t value)
 
 - (NSString *)testSummary
 {
-  // GUI/ExtractGUI.cpp:137-158 (AddValuePair / AddSizePair from :41-57).
-  if (!_testMode || !self.isOK)
+  // GUI/ExtractGUI.cpp:137-158 (AddValuePair / AddSizePair from :41-57). With -scrc the hash
+  // list replaces this box: the Windows code is `if (HashBundle) ... else if (TestMode) ...`.
+  if (!_testMode || !self.isOK || _hashResults)
     return nil;
   NSMutableString *s = [NSMutableString string];
   // "Archives:" already carries the colon (addColon = false in the Windows call).
@@ -884,11 +892,27 @@ HRESULT CSZExtractUICallback::Open_CryptoGetTextPassword(BSTR *password)
     if (archivePaths.count == 1)
       [tap progressSetTitleFileName:archivePaths.firstObject];
 
+    // -scrc<M> (03 2.6): the same CHashBundle GUI.cpp:275-281 builds, handed to Extract() as its
+    // IHashCalc so CArchiveExtractCallback::SetHashMethods wraps every output stream in a
+    // COutStreamWithHash. No methods -> NULL, exactly as before.
+    CHashBundle hb;
+    CHashBundle *hbPtr = NULL;
+    if (options.hashMethods.count != 0)
+    {
+      UStringVector methods;
+      for (NSString *m in options.hashMethods)
+        methods.Add(SZUStringFromNSString(m));
+      RINOK(hb.SetMethods(methods))
+      hbPtr = &hb;
+      // MainName / FirstFileName stay empty, as in GUI.cpp:275-281: the extract path shows
+      // "Files" + "Size" + the per-method sums, never a single "Name" row.
+    }
+
     CDecompressStat stat;
     const HRESULT res = Extract(g_CodecsObj, types, excludedFormats,
                                 arcPaths, arcPathsFull, censor.Pairs.Front().Head, eo,
                                 &ui, &ui, fae.Interface(),
-                                NULL /* IHashCalc: -scrc belongs to the tools scope */,
+                                hbPtr,
                                 fatalMessage, stat);
 
     result->_statistics->_archiveCount = stat.NumArchives;
@@ -904,6 +928,19 @@ HRESULT CSZExtractUICallback::Open_CryptoGetTextPassword(BSTR *password)
     result->_firstFailure = (SZOperationResult)fae->FirstBadOpRes;
     result->_passwordWasAsked = fae->PasswordWasAsked ? YES : NO;
     result->_password = fae->PasswordIsDefined ? SZStringFromUString(fae->Password) : nil;
+
+    // ExtractGUI.cpp:129-136: with a hash bundle and a clean run, the results dialog gets
+    // "Archives:" + "Packed Size" and then AddHashBundleRes, and it replaces the test summary.
+    if (hbPtr && res == S_OK && fae->NumErrors == 0 && ui.NumArchiveErrors == 0)
+    {
+      NSArray<SZHashResultRow *> *leading = @[
+        SZMakeHashResultRow(SZLangText(kLangID_ArchivesColon, @"Archives:"),
+                            [NSString stringWithFormat:@"%llu", (unsigned long long)stat.NumArchives]),
+        SZMakeHashResultRow(SZLangText(kLangID_PropPackedSize, @"Packed Size"),
+                            SZHashSizeValueString(stat.PackSize))
+      ];
+      result->_hashResults = SZHashResultsFromBundle(hb, nil, leading);
+    }
     return res;
   });
 

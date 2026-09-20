@@ -8,6 +8,7 @@
 #import "Internal/SZBridgeUtils.h"
 #import "Internal/SZFolder+Internal.h"
 #import "Internal/SZToolsEngine.h"
+#import "Internal/SZHashBundleBridge.h"
 
 // Lang IDs (FileManager/PropertyNameRes.h, resourceGui.h, OverwriteDialogRes.h)
 enum {
@@ -54,6 +55,8 @@ static NSString *SZSizeValueString(uint64_t size)
     NSString *tmpl = SZLangText(kLangID_FileSize, @"{0} bytes");
     return [tmpl stringByReplacingOccurrencesOfString:@"{0}" withString:SZGroupedNumber(size)];
 }
+
+NSString *SZHashSizeValueString(uint64_t size) { return SZSizeValueString(size); }
 
 static NSString *SZStringFromAString(const AString &s)
 {
@@ -115,6 +118,9 @@ static SZHashResultRow *SZMakeRow(NSString *name, NSString *value)
     row->_value = value ?: @"";
     return row;
 }
+
+// Internal/SZHashBundleBridge.h: the same helpers for SZExtractor.mm (`-scrc`).
+SZHashResultRow *SZMakeHashResultRow(NSString *name, NSString *value) { return SZMakeRow(name, value); }
 
 @implementation SZHashFileResult {
 @public
@@ -209,8 +215,11 @@ static NSString *SZHashResName(uint32_t langID, NSString *fallback, NSString *me
 }
 
 /// AddHashBundleRes (HashGUI.cpp:179-254) -- both the pair list and the text form.
-static SZHashResults *SZResultsFromBundle(const CHashBundle &hb,
-                                          NSArray<SZHashFileResult *> *fileResults)
+/// `leadingRows` is how ExtractGUI prepends "Archives:" / "Packed Size" for `-scrc`
+/// (declared in Internal/SZHashBundleBridge.h).
+SZHashResults *SZHashResultsFromBundle(const CHashBundle &hb,
+                                       NSArray<SZHashFileResult *> *fileResults,
+                                       NSArray<SZHashResultRow *> *leadingRows)
 {
     SZHashResults *r = [SZHashResults new];
     r->_numFolders = hb.NumDirs;
@@ -224,6 +233,8 @@ static SZHashResults *SZResultsFromBundle(const CHashBundle &hb,
     r->_fileResults = fileResults ?: @[];
 
     NSMutableArray<SZHashResultRow *> *rows = [NSMutableArray array];
+    if (leadingRows.count != 0)
+        [rows addObjectsFromArray:leadingRows];
     NSMutableArray<NSString *> *methodNames = [NSMutableArray array];
     NSMutableDictionary<NSString *, NSString *> *dataDigests = [NSMutableDictionary dictionary];
     NSMutableDictionary<NSString *, NSString *> *namesDigests = [NSMutableDictionary dictionary];
@@ -445,7 +456,7 @@ public:
         if (!MainName.IsEmpty())
             hb.MainName = MainName;
         hb.NumErrors += NumErrors;
-        Results = SZResultsFromBundle(hb, FileResults);
+        Results = SZHashResultsFromBundle(hb, FileResults, nil);
         return S_OK;
     }
 
@@ -989,7 +1000,7 @@ static NSArray<SZHashMethod *> *SZEnumerateHashMethods(void)
         hb.NumErrors += cb->NumErrors;
         if (hb.NumFiles == 1 && hb.NumDirs == 0 && cb->FileResults.count == 1)
             hb.FirstFileName = SZUStringFromNSString(cb->FileResults.firstObject.path);
-        results = SZResultsFromBundle(hb, cb->FileResults);
+        results = SZHashResultsFromBundle(hb, cb->FileResults, nil);
         return S_OK;
     });
 

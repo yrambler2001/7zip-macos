@@ -18,6 +18,7 @@
 
 #import <Foundation/Foundation.h>
 #import <SevenZipKit/SZFolder.h>
+#import <SevenZipKit/SZHasher.h>
 #import <SevenZipKit/SZProgressDelegate.h>
 #import <SevenZipKit/SZTypes.h>
 
@@ -87,6 +88,13 @@ typedef NS_ENUM(NSInteger, SZZoneIDMode) {
 /// Extraction.MemLimit == -1 means (01b §4.12).
 @property (nonatomic) uint64_t memoryLimit;
 
+/// `-scrc<M>`: checksums of the *extracted* data, computed while extracting or testing
+/// (03-shell-integration-inventory.md §2.6; the `IHashCalc` argument of `Extract()`, which is a
+/// `CHashBundle`). Engine method names as `SZHasher.availableMethods` reports them, or `@"*"` for
+/// every method. **Empty — the default — means off**, so nothing changes for a caller that does
+/// not ask. The digests appear in `SZExtractResult.hashResults`.
+@property (nonatomic, copy) NSArray<NSString *> *hashMethods;
+
 @end
 
 // ---------------------------------------------------------------------------
@@ -129,7 +137,16 @@ typedef NS_ENUM(NSInteger, SZZoneIDMode) {
 /// (GUI/ExtractGUI.cpp:137-158): "Archives: N", packed size, folders, files, size, the two
 /// alternate-stream rows when non-zero, then "There are no errors". nil unless the run was a
 /// test that finished with `isOK`. Pass it to OperationRunner.Options.okMessage.
+/// Also nil when `hashMethods` was set: Windows shows the hash list *instead* of this box
+/// (the `else if (Options->TestMode)` of GUI/ExtractGUI.cpp:131-152).
 @property (nonatomic, readonly, copy, nullable) NSString *testSummary;
+
+/// `-scrc<M>`: the checksums of the extracted data, ready for `HashResultsDialog`. The rows are
+/// the ones 7zG builds (GUI/ExtractGUI.cpp:129-136): "Archives:" = `statistics.archiveCount` and
+/// "Packed Size" = `statistics.packSize`, then `AddHashBundleRes` of the bundle. nil unless
+/// `options.hashMethods` was non-empty and the run finished with `isOK`, which is exactly when
+/// Windows shows the dialog.
+@property (nonatomic, readonly, nullable) SZHashResults *hashResults;
 
 @end
 
