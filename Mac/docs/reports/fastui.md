@@ -2,6 +2,11 @@
 
 Branch `mac/fastui`. Scope: `Mac/Tests/*`, `Mac/scripts/*`, `Mac/project.yml`.
 
+> **Post-merge update.** `mac/resetcmd` is merged (`macos` a21de94): the nine cases that waited for
+> the app side all pass for real (§5), the per-class reuse is measured rather than estimated (§3.6),
+> and dropping the wrappers exposed a real app-side defect that is written up in §6.10 and filed.
+> Two consecutive runs of the whole plan on the merged state: 410 tests, 688 s and 722 s, all green.
+
 ## 1. The problem, measured
 
 The UI suite was correct and unusable. Measured on this branch before any change
@@ -103,6 +108,7 @@ is `Mac/scripts/test.sh` followed by `Mac/scripts/test.sh --ui` on this branch b
 |---|---|---|
 | **before** | 311 unit + 54 UI = 365 | 44 s + 1604 s = **1648 s** (27.5 min) |
 | **after** | 311 unit + 25 app-hosted + 12 probe + 25 input = **373** | **674 s / 680 s / 701 s** (11.2–11.7 min), three consecutive runs, all green |
+| **after, on `macos` with `mac/resetcmd` merged** | 337 unit + 25 app-hosted + 12 probe + 36 input = **410** | **688 s / 722 s**, two consecutive runs, all green (the extra 37 tests are `resetcmd`'s own) |
 
 **2.4 times faster with eight more tests**, and the UI part of it is 37 XCUITest cases where there
 were 54.
@@ -114,7 +120,7 @@ The honest split of the ~1000 s saved:
 | 17 XCUITest cases became 25 app-hosted cases | **≈ 1050 s** | those 17 cost 1118 s (`LocalizationTests` 716.5 s, `LayoutSweepTests` 319.1 s, 3 of 4 `SplitViewTests` ~60 s, 2 `SmokeTests` ~22 s); the 25 that replaced them cost 68 s of test time |
 | the 12 read-only XCUITest cases moved into shards that run beside everything else | **≈ 160 s off the wall clock** | they cost 90 s + 51 s on their own, and the concurrent group's wall clock is set by the app-hosted target, not by them |
 | snapshot-based list reads instead of resolving every element-query match | **73 s over 25 cases, 13 %** | the same input shard, same machine, same tests: 547 s → 474 s |
-| per-class app reuse + reset | **0 s so far, ~64 s once merged** | the app side is in `macos` but not on this branch; 19 of the 25 cases would reset instead of relaunch, at 0.5 s against 3.89 s |
+| per-class app reuse + reset | **78.5 s over the input shard's 25 cases, plus 45 s on `Probe1`** | measured on `macos` with the app side merged, same test code, same machine: see §3.6 |
 
 ### 3.3 The split, per target
 
@@ -148,6 +154,32 @@ remaining 19 s per case is XCUITest's own overhead, and the reset will take abou
 17 XCUITest cases stopped needing a live app and are now 25 app-hosted cases. Counted as *windows
 audited*, the dialog sweep went from 32 to 36 per run; counted as *languages fitted*, from 5 to 93.
 
+### 3.6 The per-class reuse, measured
+
+The same 25 XCUITest cases, the same machine, the same test code — the only difference is whether the
+app implements the contract, so `SevenZipUITestCase` resets the running instance instead of
+relaunching it:
+
+| class | cases | relaunch (this branch) | reset (`macos`) | saved |
+|---|---|---|---|---|
+| `PanelTests` | 10 | 177.5 s | 147.3 s | 30.2 s |
+| `FinderIntegrationTests` | 4 | 90.3 s | 69.4 s | 20.9 s |
+| `SmokeTests` | 6 | 79.5 s | 59.9 s | 19.6 s |
+| `CommandModeUITests` | 2 | 45.8 s | 42.3 s | 3.5 s |
+| `AboutAndDragOutTests` | 2 | 41.3 s | 39.8 s | 1.5 s |
+| `SplitViewTests` | 1 | 22.5 s | 19.7 s | 2.8 s |
+| **total** | **25** | **456.9 s** | **378.4 s** | **78.5 s (17 %)** |
+
+Six classes, so 19 of the 25 cases reset rather than relaunch: **4.1 s per reused case**, against the
+3.4 s the `resetcmd` scope's own measurement predicted (3.89 s for terminate + launch + first listing
+against 0.41–0.55 s for a reset). The estimate in the first version of this report was 64 s; the
+measurement is 78.5 s.
+
+`7-ZipUITestsProbe1` is the sharper version of the same thing, because its cases are short and almost
+all launch: **90 s → 45 s** for six cases, 7.5 s each. `Probe2` went 51 s → 54 s, which looks wrong
+and is not: three of its six cases were expected failures that failed in a second before the merge
+and now do a real reset each.
+
 ## 4. What moved where, assertion by assertion
 
 Nothing was dropped silently. The table is the whole of it; where the shape of an assertion changed,
@@ -175,37 +207,25 @@ live panel once per language, 93 times. Neither depends on the language; the row
 still asserted once, on a live panel, in `LaunchStateTests`, and the part that *is* language
 dependent — that every column has a name in that language — is asserted for all 93.
 
-## 5. Tests that need the app side of the contract, and are expected to fail until it merges
+## 5. The nine cases that needed the app side — all nine pass
 
-`Mac/Tests/UIProbe2/TestSupportContractTests.swift` — three of its four cases assert
-`Mac/docs/test-support-contract.md`, which `mac/resetcmd` implements in `Mac/App/*` (not this
-scope's to write). Each is wrapped in a **non-strict** `XCTExpectFailure`, so it reports green both
-before and after that merge, and nothing else in the suite depends on the affordances existing:
+`mac/resetcmd` is merged (`macos` a21de94), so the wrappers are gone and the assertions are the real
+thing. Verified against the merged state, in a throwaway detached worktree at that commit with this
+branch's test changes applied on top — which is exactly what the orchestrator gets when it merges:
 
-* `testMainWindowCarriesTheResetGeneration` — the main window's accessibility value is the reset
-  generation, `0` before the first reset;
-* `testResetReturnsTheAppToAKnownStateWithoutRelaunching` — the generation goes up, the ack file is
-  written last, the panels rebuild, the process survives;
-* `testResetClosesAnOpenDialog` — a reset closes a sheet a previous test left open.
+| case | before the merge | now |
+|---|---|---|
+| `TestSupportContractTests.testMainWindowCarriesTheResetGeneration` | expected failure | **passed** (6.3 s) |
+| `…testResetReturnsTheAppToAKnownStateWithoutRelaunching` | expected failure | **passed** (5.1 s) |
+| `…testResetClosesAnOpenDialog` | expected failure | **passed** (6.9 s) |
+| `FinderCommandInspectionTests`, all six | expected failure | **passed** (3.7–9.3 s each, 45 s for the class) |
 
-`testThisShardDrivesItsOwnBundleIdentifier` is not expected to fail: it is about the build, which
-this scope owns.
+The client this branch wrote against matches the app side line for line: the request file is removed
+*before* it is acted on, which is what makes `writeRequest`'s delivery receipt a receipt; the watcher
+is a `Timer` in `.common` mode; and it accepts any `sevenzip://` URL, not only a reset, which is what
+lets `Probe1` drive real commands without an unaimed `NSWorkspace.open`.
 
-`Mac/Tests/UIProbe1/FinderCommandInspectionTests.swift` — **all six cases**, for the same reason one
-step removed. A read-only shard may not click, so it drives its instance through
-`<SZ_STATE_DIR>/reset-request` (`Mac/docs/api/resetcmd.md` §5); the watcher that reads that file is in
-`macos` and not on this branch, and the unaimed `NSWorkspace.open` that would otherwise stand in for
-it is exactly what broke another scope's tests (§6.7), so it is refused here (`aimedOnly`). Each case
-is wrapped in the same non-strict `XCTExpectFailure` and fails in ~11 s at the delivery assertion
-rather than timing out. After the merge all six are ordinary passing tests and the wrappers can go —
-that is the first thing to do on the merged branch.
-
-**Nine cases in total wait for the merge**, and none of them is deleted or weakened: three contract
-cases and these six.
-
-Until the merge, `SevenZipApp.prepare` finds `testSupportIsImplemented == false` and relaunches, so
-the input shard costs what it cost before per test. **The reset is the only part of the measurement
-below that is still projected rather than measured**, and §3 says which number that is.
+Nothing in the suite is marked expected-to-fail any more.
 
 ## 6. Findings
 
@@ -310,6 +330,50 @@ through it, which made them the hottest accessors in the suite. Reading one snap
 instead, and resolving elements only when something is actually going to be clicked, took the input
 shard from 547 s to 474 s (13 %) with no other change. That is four times what the reset will save.
 
+### 6.10 A panel with no window puts up an app-modal alert, and that wedges everything
+
+Found by dropping the expected-to-fail wrappers, which is what those wrappers were hiding a path to.
+With the app side merged, `PanelTests.testCreateFolderAndDelete` failed 3 runs out of 3 — not on its
+own assertions but on the reset before it: *"no reset acknowledgement within 30 s (generation was 0,
+is now 0; app still running; the request file was taken)"*. The request had been delivered and the
+reset had started; it never reached step 5.
+
+A stack sample of the wedged process says why:
+
+```
+PanelViewController.reload(keepScroll:)  →  showError(_:)  →  showError(message:)
+  →  -[NSAlert runModal]  →  -[NSApplication runModalForWindow:]  →  -[NSApplication _doModalLoop:peek:]
+```
+
+`showError(message:)` picks its branch on `view.window`: a sheet when the panel has a window,
+`alert.runModal()` when it does not. A panel closed at runtime (`ensurePanelCount(1)` →
+`view.removeFromSuperview()`) stays alive in `MainWindowController.panels` with its auto-refresh
+running and **no window** — so when its folder disappears, the failed refresh puts up an app-modal
+`NSAlert` attached to nothing. The reset cannot settle past it, nothing can click it away, and every
+accessibility query after that takes about six seconds, which is why the class's other cases slowed
+down from 20 s to 60 s each.
+
+The trigger needed all three of: a panel closed at runtime, its folder deleted, and the auto-refresh
+firing before the next reset. Eleven negative controls in a throwaway worktree each failed to
+reproduce it (one panel; two panels; the second panel opened or closed at runtime; panel 0's or panel
+1's directory deleted; both deleted; a completed silent operation; a copy operation with its progress
+dialog; a cancelled modal dialog; two consecutive resets) — the deletions in those ran the reset
+immediately, before the refresh timer fired.
+
+Three consequences:
+
+* **the test's own bug is fixed here**: `PanelTests.makeScratch` (and `CommandModeUITests.makeScratch`)
+  reset the app to the fixtures folder *before* deleting a directory it is showing. A test must not
+  pull the ground out from under the app under test. `PanelTests` is then 10 of 10 in 161 s, against 9
+  of 10 in 390 s;
+* **filed for `panel`**: present the alert on the main window when the panel has none, and/or do not
+  refresh a panel whose view has no window (7zFM's auto-refresh shows an empty folder, it does not
+  open a message box);
+* **filed for `resetcmd`**: the settle step does not dispose of an app-modal `NSAlert`, and worse, the
+  reset then never acknowledges at all although `settleTimeout` is documented to carry on after 15 s.
+  A reset that gives up should still bump the generation and write the ack with a warning, so a test
+  fails with a message instead of on a timeout.
+
 ## 7. Build settings that turned out to be necessary
 
 | setting | target | why |
@@ -372,12 +436,10 @@ is that contention, not variance in the tests.
 
 ## 9. Gaps and follow-ups
 
-* **Nine cases are expected-to-fail until `mac/resetcmd`'s app side is on the branch** (§5): three
-  contract cases and the six URL-driven probe cases. First job after the merge: drop the
-  `XCTExpectFailure` wrappers, confirm they pass, and re-measure — the reset then replaces 19 of the
-  input shard's 25 relaunches, worth about 64 s.
-* **The input shard is the wall clock** (492–507 s of the 680–701 s) and 19 s per case is XCUITest
-  itself, not the app. The levers left, in the order the measurements suggest: move any remaining
+* **Done, not pending: the nine cases pass for real** (§5), and the reuse saving is measured at
+  78.5 s over the input shard's 25 cases (§3.6).
+* **The input shard is the wall clock** (519–531 s of the 688–722 s on the merged state, for 36 cases)
+  and ~15 s per case is XCUITest itself, not the app. The levers left, in the order the measurements suggest: move any remaining
   assertion that is not interactive into `SevenZipAppTests`; narrow the element queries that are left
   (`waitForDialog` polls `app.sheets`, `app.dialogs` and `app.windows` with `containing(...)` six
   times a second, which is the next one worth measuring); and `SZ_DISABLE_ANIMATIONS`, which the
@@ -385,6 +447,10 @@ is that contention, not variance in the tests.
 * **The concurrent group contends for the machine.** Four targets at once cost each of them two to
   four times its solo time on this VM, so the group's wall clock is a third of the sequential sum
   rather than a quarter. `--jobs 2` is there for a machine where that trade is worse.
+* **Two app-side defects are filed and open** (§6.10): the window-less app-modal alert (`panel`) and a
+  reset that neither settles past it nor acknowledges (`resetcmd`). Until the first is fixed, any test
+  that deletes a directory a panel is showing can wedge the app; my own two are fixed, but the trap is
+  still there for the next scope.
 * **Two agents on one bundle identifier still destroy each other**, and the 30-minute staleness rule
   will break a lock that was taken by hand and is still in use. The probe shards are immune by
   construction; the input shard is not, and cannot be.
@@ -395,9 +461,9 @@ is that contention, not variance in the tests.
 * **`Mac/docs/PROGRESS.md` is untouched**: its checkboxes are product behaviours and this scope
   implements none. The `Status` table has no `fastui` row to tick, and adding one is the
   orchestrator's call.
-* Three requests filed in `Mac/docs/requests.md`: a silent rejection of the `test` URL host for
-  `resetcmd`, the Options page widths for `options`, and the path bar's oversized folder icon for
-  `panel`.
+* Five requests filed in `Mac/docs/requests.md`: a silent rejection of the `test` URL host and the
+  modal-alert settle failure for `resetcmd`, the Options page widths for `options`, and the path bar's
+  oversized folder icon and the window-less alert for `panel`.
 
 ## 10. How to run it
 
@@ -405,7 +471,7 @@ is that contention, not variance in the tests.
 export DEVELOPER_DIR=/Applications/Xcode.app
 Mac/scripts/test.sh                  # 311 unit tests, 44 s        (unchanged default)
 Mac/scripts/test.sh --host           # 25 app-hosted tests, 98 s
-Mac/scripts/test.sh --shards         # everything, 680 s, the way to run it
+Mac/scripts/test.sh --shards         # everything, 688 s on macos, the way to run it
 Mac/scripts/verify.sh -S             # clean build + everything, sharded
 ```
 

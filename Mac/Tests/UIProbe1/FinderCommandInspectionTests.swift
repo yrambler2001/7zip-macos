@@ -38,31 +38,14 @@ final class FinderCommandInspectionTests: SevenZipUITestCase {
     }
 
     /// Send the command to **this shard's** instance, and to nothing else: `aimedOnly` forbids the
-    /// unaimed `NSWorkspace.open` fallback, because the app copy this shard drives deliberately claims
-    /// no URL scheme (see the class comment). So this returns false exactly when the app side of the
-    /// state-directory channel is missing, which is what `expectingTheAppSideWatcher` covers.
+    /// unaimed `NSWorkspace.open` fallback, because the app copy this shard drives deliberately
+    /// claims no URL scheme (see the class comment). It is delivered through
+    /// `<SZ_STATE_DIR>/reset-request`, which `TestResetWatcher` (merged into `macos`) reads and which
+    /// is aimed by construction; false here means that watcher did not take the request, and the
+    /// test fails on the spot rather than asserting against somebody else's instance.
     @discardableResult
     private func send(_ argv: [String]) -> Bool {
         sevenZip.open(commandURL(argv), aimedOnly: true)
-    }
-
-    /// **These six cases need the app side of the test-support contract and fail without it.**
-    ///
-    /// A read-only shard cannot click, so it drives its instance through
-    /// `<SZ_STATE_DIR>/reset-request` -- the channel `Mac/docs/api/resetcmd.md` section 5 defines,
-    /// which the app watches and which is aimed by construction. The alternative, an unaimed
-    /// `NSWorkspace.open`, is what let a probe copy answer another scope's URLs and break eleven of
-    /// their tests, so it is not available here at any price.
-    ///
-    /// The watcher is in `macos`; it is not on this branch. So each case is wrapped in a
-    /// **non-strict** `XCTExpectFailure`: it reports green both before and after that merge, and
-    /// `Mac/docs/reports/fastui.md` section 5 lists it among the cases waiting for it. Once merged
-    /// these are ordinary passing tests and the wrapper can go.
-    private func expectingTheAppSideWatcher<R>(_ body: () throws -> R) rethrows -> R {
-        let options = XCTExpectedFailure.Options()
-        options.isStrict = false
-        return try XCTExpectFailure("the <SZ_STATE_DIR>/reset-request watcher lands with mac/resetcmd",
-                                    options: options, failingBlock: body)
     }
 
     private func makeOutputDirectory(_ name: String) throws -> String {
@@ -83,97 +66,85 @@ final class FinderCommandInspectionTests: SevenZipUITestCase {
 
     /// B2 "Extract Here" runs without a dialog and the files simply appear.
     func testExtractHereCommandRunsSilently() throws {
-        try expectingTheAppSideWatcher {
-            launch()
-            let out = try makeOutputDirectory("here")
-            XCTAssertTrue(send(["x", "-o" + out + "/", "-y", "-an",
-                                "-aiw-!" + TestPaths.fixture("test.7z")]))
+        launch()
+        let out = try makeOutputDirectory("here")
+        XCTAssertTrue(send(["x", "-o" + out + "/", "-y", "-an",
+                            "-aiw-!" + TestPaths.fixture("test.7z")]))
 
-            var names: [String] = []
-            XCTAssertTrue(waitFor("readme.txt extracted", timeout: 40) {
-                names = (try? FileManager.default.contentsOfDirectory(atPath: out)) ?? []
-                return names.contains("readme.txt")
-            }, "extracted: \(names)")
-            XCTAssertTrue(names.contains("notes.md"))
-            XCTAssertTrue(names.contains("sub"))
-            screenshot("07-after-silent-extract-here")
-        }
+        var names: [String] = []
+        XCTAssertTrue(waitFor("readme.txt extracted", timeout: 40) {
+            names = (try? FileManager.default.contentsOfDirectory(atPath: out)) ?? []
+            return names.contains("readme.txt")
+        }, "extracted: \(names)")
+        XCTAssertTrue(names.contains("notes.md"))
+        XCTAssertTrue(names.contains("sub"))
+        screenshot("07-after-silent-extract-here")
     }
 
     // MARK: - A1 "Open archive" (the 7zFM argv, 03 section 1.4)
 
     /// The open form carries a path instead of a command word and lands in the file manager.
     func testOpenArchiveCommandListsTheArchiveInThePanel() {
-        expectingTheAppSideWatcher {
-            launch()
-            XCTAssertTrue(send([TestPaths.fixture("test.7z")]))
+        launch()
+        XCTAssertTrue(send([TestPaths.fixture("test.7z")]))
 
-            let panel = sevenZip.panel(0)
-            XCTAssertTrue(panel.waitForRow(named: "readme.txt", timeout: 30),
-                          "the archive was not opened in panel 0")
-            XCTAssertTrue(panel.hasRow(named: "notes.md"))
-            screenshot("08-open-archive-from-finder-command")
-        }
+        let panel = sevenZip.panel(0)
+        XCTAssertTrue(panel.waitForRow(named: "readme.txt", timeout: 30),
+                      "the archive was not opened in panel 0")
+        XCTAssertTrue(panel.hasRow(named: "notes.md"))
+        screenshot("08-open-archive-from-finder-command")
     }
 
     /// `-t<type>` forces the handler, like `Open archive > 7z`.
     func testOpenArchiveWithForcedTypeListsTheArchive() {
-        expectingTheAppSideWatcher {
-            launch()
-            XCTAssertTrue(send([TestPaths.fixture("test.7z"), "-t7z"]))
-            XCTAssertTrue(sevenZip.panel(0).waitForRow(named: "readme.txt", timeout: 30))
-            screenshot("09-open-archive-as-7z")
-        }
+        launch()
+        XCTAssertTrue(send([TestPaths.fixture("test.7z"), "-t7z"]))
+        XCTAssertTrue(sevenZip.panel(0).waitForRow(named: "readme.txt", timeout: 30))
+        screenshot("09-open-archive-as-7z")
     }
 
     // MARK: - The refusals (03 section 1.4 "Invoke-side error handling")
 
     /// A folder in an extract selection is IDS_SELECT_FILES 3015, not an extraction.
     func testExtractCommandRefusesADirectory() throws {
-        try expectingTheAppSideWatcher {
-            discardInstanceAfterThisTest()
-            launch()
-            let out = try makeOutputDirectory("refuse")
-            XCTAssertTrue(send(["x", "-o" + out + "/", "-an", "-aiw-!" + TestPaths.fixtures]))
+        discardInstanceAfterThisTest()
+        launch()
+        let out = try makeOutputDirectory("refuse")
+        XCTAssertTrue(send(["x", "-o" + out + "/", "-an", "-aiw-!" + TestPaths.fixtures]))
 
-            guard let dialog = sevenZip.waitForDialog(title: "You must select one or more files",
-                                                     timeout: 25) else {
-                return XCTFail("IDS_SELECT_FILES 3015 was not shown")
-            }
-            screenshot("04-select-files-refusal")
-            assertHasEnabledButton(dialog, "OK")
-            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out), [])
+        guard let dialog = sevenZip.waitForDialog(title: "You must select one or more files",
+                                                 timeout: 25) else {
+            return XCTFail("IDS_SELECT_FILES 3015 was not shown")
         }
+        screenshot("04-select-files-refusal")
+        assertHasEnabledButton(dialog, "OK")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out), [])
     }
 
     /// `l` and `i` are the two commands 7zG refuses (GUI.cpp:396-399).
     func testUnsupportedCommandIsReported() {
-        expectingTheAppSideWatcher {
-            discardInstanceAfterThisTest()
-            launch()
-            XCTAssertTrue(send(["l", TestPaths.fixture("test.7z")]))
+        discardInstanceAfterThisTest()
+        launch()
+        XCTAssertTrue(send(["l", TestPaths.fixture("test.7z")]))
 
-            guard let dialog = sevenZip.waitForDialog(title: "Unsupported command", timeout: 25) else {
-                return XCTFail("the Unsupported command box did not appear")
-            }
-            screenshot("05-unsupported-command")
-            assertHasEnabledButton(dialog, "OK")
+        guard let dialog = sevenZip.waitForDialog(title: "Unsupported command", timeout: 25) else {
+            return XCTFail("the Unsupported command box did not appear")
         }
+        screenshot("05-unsupported-command")
+        assertHasEnabledButton(dialog, "OK")
     }
 
     /// A switch-syntax error is a user error with the upstream message (CParser::ParseString).
     func testUnknownSwitchIsReported() {
-        expectingTheAppSideWatcher {
-            discardInstanceAfterThisTest()
-            launch()
-            XCTAssertTrue(send(["x", "-zzz", "-an", "-aiw-!" + TestPaths.fixture("test.7z")]))
+        discardInstanceAfterThisTest()
+        launch()
+        XCTAssertTrue(send(["x", "-zzz", "-an", "-aiw-!" + TestPaths.fixture("test.7z")]))
 
-            guard let dialog = sevenZip.waitForDialog(title: "Unknown switch:", timeout: 25) else {
-                return XCTFail("the Unknown switch box did not appear")
-            }
-            screenshot("06-unknown-switch")
-            assertHasEnabledButton(dialog, "OK")
+        guard let dialog = sevenZip.waitForDialog(title: "Unknown switch:", timeout: 25) else {
+            return XCTFail("the Unknown switch box did not appear")
         }
+        screenshot("06-unknown-switch")
+        assertHasEnabledButton(dialog, "OK")
     }
 
     // MARK: - helpers

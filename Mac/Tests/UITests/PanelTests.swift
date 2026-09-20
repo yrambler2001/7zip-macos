@@ -29,7 +29,7 @@ final class PanelTests: SevenZipUITestCase {
         let manager = FileManager.default
         try manager.createDirectory(atPath: base, withIntermediateDirectories: true)
         guard contents else {
-            addTeardownBlock { try? manager.removeItem(atPath: base) }
+            addSafeCleanup(of: base, with: manager)
             return base
         }
         try manager.createDirectory(atPath: (base as NSString).appendingPathComponent("sub"),
@@ -38,8 +38,30 @@ final class PanelTests: SevenZipUITestCase {
             let data = Data(repeating: 0x41, count: size)
             try data.write(to: URL(fileURLWithPath: (base as NSString).appendingPathComponent(file)))
         }
-        addTeardownBlock { try? manager.removeItem(atPath: base) }
+        addSafeCleanup(of: base, with: manager)
         return base
+    }
+
+    /// Delete a scratch directory after the test -- but get the app out of it first.
+    private func addSafeCleanup(of path: String, with manager: FileManager) {
+        // Move the app off this directory **before** it disappears. A panel whose folder vanishes
+        // refreshes, fails, and shows an error -- and when that panel has been closed at runtime
+        // (`ensurePanelCount(1)`), its view has no window, so `PanelViewController.showError` takes
+        // the `alert.runModal()` branch instead of `beginSheetModal(for:)` and puts up an
+        // **app-modal alert attached to nothing**. The app is then wedged: the next test's reset
+        // never settles, never acknowledges, and every accessibility query takes seconds. Measured
+        // with a stack sample; filed for `panel` and `resetcmd` in Mac/docs/requests.md. The test's
+        // own part of it is this: do not delete a directory the app under test is still showing.
+        addTeardownBlock { [weak sevenZip] in
+            if let app = sevenZip, app.isRunning, app.testSupportIsImplemented {
+                var options = SevenZipApp.ResetOptions()
+                options.panels = 1
+                options.path0 = TestPaths.fixtures
+                options.path1 = TestPaths.fixtures
+                _ = app.reset(options)
+            }
+            try? manager.removeItem(atPath: path)
+        }
     }
 
     // MARK: 3.1 view modes

@@ -194,7 +194,17 @@ public extension SevenZipApp {
             usleep(20_000)
         }
         guard let acknowledged else {
-            return .failed("no reset acknowledgement at \(ack) within \(Int(timeout)) s")
+            // Which half of the contract broke matters to whoever owns the app side: the generation
+            // is published *before* the ack file is written, so a bumped generation with no file is a
+            // failure in step 5, and an unbumped one means the reset stalled in steps 2-4 (settling,
+            // reloading settings, rebuilding the panels) or never started at all.
+            let now = resetGeneration.map(String.init) ?? "none"
+            return .failed("no reset acknowledgement at \(ack) within \(Int(timeout)) s "
+                           + "(generation was \(before), is now \(now); app "
+                           + (isRunning ? "still running" : "gone") + "; "
+                           + (FileManager.default.fileExists(atPath: requestPath ?? "")
+                              ? "the request file was never taken" : "the request file was taken")
+                           + ")")
         }
         // Signal 2: the window's generation went up.
         while Date() < deadline {
@@ -264,6 +274,11 @@ public extension SevenZipApp {
         while outcome == nil, Date() < deadline { usleep(20_000) }
         if outcome == true { return true }
         return aimedOnly ? false : NSWorkspace.shared.open(url)
+    }
+
+    /// `<SZ_STATE_DIR>/reset-request` for this instance, the file channel 1 writes.
+    var requestPath: String? {
+        (TestShard.stateDirectory(for: owner) as NSString).appendingPathComponent("reset-request")
     }
 
     /// Channel 1: the URL as the contents of `<SZ_STATE_DIR>/reset-request`.

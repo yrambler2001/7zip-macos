@@ -397,6 +397,11 @@ Fixtures (from `Mac/scripts/make-fixtures.sh`): `test.7z`, `test.zip`, `test.tar
 * **Put the assertion in the cheapest target that can hold it** (§0). A frame, a menu title, a
   localized string or a view-model answer belongs in `SevenZipAppTests`; only genuinely interactive
   behaviour belongs in an XCUITest shard, and only a test that clicks belongs in the input shard.
+* **Do not delete a directory the app under test is showing.** A panel whose folder vanishes refreshes,
+  fails, and — if that panel was closed at runtime, so its view has no window — puts up an *app-modal*
+  `NSAlert` attached to nothing, which wedges the app for every test after it
+  (`reports/fastui.md` §6.10). Reset the app to a stable folder first; `PanelTests.addSafeCleanup` is
+  the pattern.
 * Never write a fixed sleep. `waitFor(_:timeout:_:)` on the base class polls a condition, and the
   reset waits for the acknowledgement the contract defines.
 * Read values through the snapshot-based accessors (`names`, `columnTitles`, `itemTitles`,

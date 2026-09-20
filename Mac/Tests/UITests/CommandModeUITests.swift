@@ -41,7 +41,19 @@ final class CommandModeUITests: SevenZipUITestCase {
         let dir = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("cmdmode-ui-\(name)-\(UUID().uuidString)")
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(atPath: dir) }
+        // The panel is pointed at this directory, so the app has to leave it before it is deleted:
+        // a panel whose folder vanishes can end up showing an app-modal alert attached to no window
+        // and wedge the app for the next test (see `PanelTests.addSafeCleanup`).
+        addTeardownBlock { [weak sevenZip] in
+            if let app = sevenZip, app.isRunning, app.testSupportIsImplemented {
+                var options = SevenZipApp.ResetOptions()
+                options.panels = 1
+                options.path0 = TestPaths.fixtures
+                options.path1 = TestPaths.fixtures
+                _ = app.reset(options)
+            }
+            try? FileManager.default.removeItem(atPath: dir)
+        }
         try "hello 7-zip\n".write(toFile: (dir as NSString).appendingPathComponent("one.txt"),
                                  atomically: true, encoding: .utf8)
         try "second file\n".write(toFile: (dir as NSString).appendingPathComponent("two.txt"),
