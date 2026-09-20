@@ -30,8 +30,15 @@ public final class SevenZipApp {
 
     /// The underlying XCUIApplication; use it for anything this driver does not wrap.
     public let app: XCUIApplication
-    /// The preferences domain the app reads its settings from.
+    /// The real preferences domain (`com.yrambler2001.7zip`). Only reachable from an unsandboxed
+    /// process; a UI test seeds `seedFile` instead.
     public let settings: SettingsDomain
+    /// The property-list file the last `launch(seed:)` gave the app as its whole settings domain.
+    /// `relaunch()` / `launch(seed: .keep)` reuse it, so persistence is asserted against the file
+    /// the app itself wrote, and nothing leaks into the next test.
+    public private(set) var seedFile: SettingsSeedFile?
+    /// Name the seed files carry, so a leftover file says which test wrote it.
+    public var seedName = "uitest"
 
     public init(app: XCUIApplication = XCUIApplication(), settings: SettingsDomain = SettingsDomain()) {
         self.app = app
@@ -43,13 +50,17 @@ public final class SevenZipApp {
     /// Launch the app with known settings and wait until the first panel is listed.
     ///
     /// - Parameters:
-    ///   - seed: the settings the app starts with, as launch arguments (`.clean` by default; see
-    ///     `SettingsSeed`). They shadow whatever is stored and are gone when the app exits.
+    ///   - seed: the settings the app starts with (`.clean` by default; see `SettingsSeed`). They
+    ///     are written to a property-list file private to this test and handed over as
+    ///     `SEVENZIP_DEFAULTS_SUITE`, so the real domain is never read or written and the app's
+    ///     save-on-quit cannot reach the next test. `.keep` reuses the previous file.
     ///   - path: `7zFM.exe [path]` argv -- the folder or archive panel 0 opens in. It must be the
     ///     first argument, which is why it is passed here and not in `arguments`.
     ///   - formatHint: `-t<type>` argv for `path`.
-    ///   - arguments: extra launch arguments, appended after the seed (`["-FM.ShowDots", "1"]`).
-    ///   - environment: extra environment variables for the app process.
+    ///   - arguments: extra launch arguments (`["-FM.ShowDots", "1"]`); a launch argument still
+    ///     wins over the seed file for keys the app reads as a string.
+    ///   - environment: extra environment variables for the app process. Passing
+    ///     `SEVENZIP_DEFAULTS_SUITE` here overrides the seed file.
     /// - Returns: the main window element.
     @discardableResult
     public func launch(seed: SettingsSeed = .clean,
@@ -61,11 +72,19 @@ public final class SevenZipApp {
         var args: [String] = []
         if let path { args.append(path) }                 // AppDelegate reads argv[0] as the path
         if let formatHint { args.append("-t" + formatHint) }
-        args += seed.launchArguments
         args += arguments
         app.launchArguments = args
         var env = environment
         env["SEVENZIP_UITEST"] = "1"
+        if env[SettingsDomain.suiteEnvironmentVariable] == nil {
+            if let values = seed.preferences {
+                // A fresh domain per launch. A failure to write it would silently hand the app the
+                // real domain, so it is a hard error rather than a fallback.
+                seedFile = try? SettingsSeedFile.make(name: seedName, values: values)
+                XCTAssertNotNil(seedFile, "could not write the settings seed file in \(TestPaths.artifacts)")
+            }
+            if let seedFile { env.merge(seedFile.launchEnvironment) { _, new in new } }
+        }
         app.launchEnvironment = env
         // An instance from another worktree (or a previous test) is attached to instead of being
         // replaced, and its death then fails the test with "Lost connection to the application".
@@ -363,14 +382,48 @@ public struct SevenZipPanel {
 
     // MARK: views
 
-    /// The details list (NSTableView).
+    // AppKit flattens each panel's container view away: the Up button, the folder icon, the address
+    // combo, the list's scroll view and the status label are all *siblings* inside the window's
+    // SplitGroup, panel 0's first and panel 1's after the NSSplitView divider (an AX element of type
+    // .splitter). So `children(matching: .comboBox).element(boundBy: panelIndex)` only works while
+    // there is one panel; with two it is the index over *both* panels' combo boxes that matters.
+    // `ordinal(of:)` works that index out from one snapshot, using the divider as the boundary, and
+    // every accessor below goes through it -- so `table`, `addressBar`, `upButton` and `statusText`
+    // are guaranteed to belong to the same panel (requests.md: orchestrator -> harness).
+
+    /// The details list (NSTableView). The window's tables really are in panel order -- each
+    /// panel's list sits in its own scroll view and `MainWindowController.showSecondPanel` inserts
+    /// the arranged subviews by index -- and this is the hottest accessor of the driver, so it is
+    /// left as the cheap one-query form.
     public var table: XCUIElement { window.tables.element(boundBy: index) }
     /// The editable path combo box.
-    public var addressBar: XCUIElement { splitGroup.children(matching: .comboBox).element(boundBy: index) }
+    public var addressBar: XCUIElement {
+        splitGroup.children(matching: .comboBox).element(boundBy: ordinal(of: .comboBox))
+    }
     /// The "Up One Level" button left of the address bar (kParentFolderID).
-    public var upButton: XCUIElement { splitGroup.children(matching: .button).element(boundBy: index) }
+    public var upButton: XCUIElement {
+        splitGroup.children(matching: .button).element(boundBy: ordinal(of: .button))
+    }
     /// The panel's own status bar ("N / M object(s) selected   <size>   <mtime>").
-    public var statusText: XCUIElement { splitGroup.children(matching: .staticText).element(boundBy: index) }
+    public var statusText: XCUIElement {
+        splitGroup.children(matching: .staticText).element(boundBy: ordinal(of: .staticText))
+    }
+
+    /// Index of this panel's `type` element among the split group's children of that type. The
+    /// children are sorted left to right and cut at the divider, so the answer holds whichever
+    /// order accessibility reports them in and whatever the splitter position is.
+    private func ordinal(of type: XCUIElement.ElementType) -> Int {
+        guard index > 0, let snap = try? splitGroup.snapshot() else { return index == 0 ? 0 : index }
+        let children = snap.children.sorted { $0.frame.minX < $1.frame.minX }
+        guard let divider = children.first(where: { $0.elementType == .splitter }) else { return index }
+        var seen = 0
+        for child in children where child.elementType == type {
+            // the divider's own x is the boundary; a panel-1 view starts at or after it
+            if child.frame.minX >= divider.frame.minX { return seen }
+            seen += 1
+        }
+        return index
+    }
 
     // MARK: state
 
@@ -473,8 +526,10 @@ public struct SevenZipPanel {
 
     /// Type a path into the address bar and press Return (CPanel::OnNotifyComboEnter). Inline
     /// completion from the folder history is undone before Return so the typed path wins.
-    public func navigate(to newPath: String) {
+    @discardableResult
+    public func navigate(to newPath: String) -> Bool {
         let bar = addressBar
+        guard bar.waitForExistence(timeout: 10) else { return false }
         bar.click()
         bar.typeKey("a", modifierFlags: .command)
         bar.typeText(newPath)
@@ -482,6 +537,30 @@ public struct SevenZipPanel {
             bar.typeKey(.delete, modifierFlags: [])      // drop the selected completion
         }
         bar.typeKey(.return, modifierFlags: [])
+        return true
+    }
+
+    /// Right-click a row and return the list context menu (CPanel::OnContextMenu / CreateFileMenu).
+    ///
+    /// The menu is a child of the *table* in the accessibility tree, because it is the
+    /// NSTableView's `menu(for:)`. `app.menus.firstMatch` is the Apple menu -- every menu-bar menu
+    /// is in `app.menus` too, all of them with an empty title and a zero frame while closed -- so
+    /// it must be addressed from the table (requests.md: orchestrator -> harness).
+    public func openContextMenu(onRow name: String, timeout: TimeInterval = 10) -> XCUIElement? {
+        let cell = nameCell(named: name)
+        guard scrollIntoView(cell) else { return nil }
+        cell.rightClick()
+        let menu = table.descendants(matching: .menu).firstMatch
+        guard menu.waitForExistence(timeout: timeout) else { return nil }
+        return menu
+    }
+
+    /// The item titles of an open menu, top to bottom, from one snapshot (separators are "").
+    public func menuItemTitles(of menu: XCUIElement) -> [String] {
+        guard let snap = try? menu.snapshot() else { return [] }
+        return snap.children.filter { $0.elementType == .menuItem }
+            .sorted { $0.frame.minY < $1.frame.minY }
+            .map { $0.title }
     }
 
     /// Give the list keyboard focus (so Enter / Backspace / `\` reach the panel).

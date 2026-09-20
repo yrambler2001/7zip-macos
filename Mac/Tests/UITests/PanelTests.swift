@@ -83,12 +83,18 @@ final class PanelTests: SevenZipUITestCase {
         XCTAssertTrue(sevenZip.selectMenuItem("Edit", "Select..."))
         guard let dialog = sevenZip.waitForDialog(title: "Select") else { return XCTFail("no Select dialog") }
         screenshot("05-select-mask")
-        let field = dialog.comboBoxes.firstMatch.textFields.firstMatch
-        if field.exists {
-            field.click()
-            field.typeKey("a", modifierFlags: .command)
-            field.typeText("*.txt")
-        }
+        // IDC_COMBO 101 of IDD_COMBO 98: an editable NSComboBox exposes no child text field (its
+        // only child is the disclosure button), so the old `comboBoxes.firstMatch.textFields`
+        // lookup never matched, nothing was typed, and the default "*" mask selected all four
+        // items. ComboDialog.run() focuses the combo and selects its text, exactly as 7zFM does,
+        // so typing replaces the default -- and the mask is read back so a silent miss fails here
+        // instead of turning into a wrong selection count.
+        let mask = dialog.comboBoxes.firstMatch
+        XCTAssertTrue(mask.waitForExistence(timeout: 5), "the Select dialog has no mask combo box")
+        XCTAssertEqual(mask.value as? String, "*", "the default mask is \"*\" (PanelKeys.selectSpec)")
+        app.typeKey("a", modifierFlags: .command)
+        app.typeText("*.txt")
+        XCTAssertEqual(mask.value as? String, "*.txt", "the mask was not typed into the combo")
         XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "OK"))
         XCTAssertTrue(waitFor("two .txt files selected") { panel.status.contains("2 / 4") }, "status: \(panel.status)")
     }
@@ -133,9 +139,11 @@ final class PanelTests: SevenZipUITestCase {
         XCTAssertTrue(sevenZip.ensurePanelCount(2))
         let left = sevenZip.panel(0)
         let right = sevenZip.panel(1)
-        right.navigate(to: destination)
-        XCTAssertTrue(right.waitForPath(destination))
-        XCTAssertTrue(left.waitForRow(named: "alpha.txt"))
+        XCTAssertTrue(sevenZip.panelsAreOrderedLeftToRight, "panel 0 must be the left one")
+        XCTAssertTrue(right.navigate(to: destination), "panel 1 has no address bar")
+        XCTAssertTrue(right.waitForPath(destination),
+                      "panel 1 shows '\(right.path)', panel 0 shows '\(left.path)'")
+        XCTAssertTrue(left.waitForRow(named: "alpha.txt"), "panel 0 lists \(left.names)")
         left.select("alpha.txt")
         XCTAssertTrue(sevenZip.selectMenuItem("File", "Copy To..."))
         guard let dialog = sevenZip.waitForDialog(title: "Copy") else { return XCTFail("no Copy dialog") }
@@ -209,11 +217,14 @@ final class PanelTests: SevenZipUITestCase {
         launch(seed: .values([SettingsDomain.Key.panelPath0: fixtures]))
         let panel = sevenZip.panel(0)
         XCTAssertTrue(panel.waitForRow(named: "test.7z"))
-        let cell = panel.nameCell(named: "test.7z")
-        cell.rightClick()
-        let menu = app.menus.firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 5), "no context menu")
-        let titles = menu.menuItems.allElementsBoundByIndex.map { $0.title }
+        // `app.menus.firstMatch` was the **Apple menu**: every menu-bar menu is in `app.menus`
+        // too, all with an empty title and a zero frame while closed, so the assertions below ran
+        // against "About This Mac ... Clear Menu". The list context menu is the NSTableView's own
+        // `menu(for:)`, so it is a child of the table in the accessibility tree.
+        guard let menu = panel.openContextMenu(onRow: "test.7z") else {
+            return XCTFail("no context menu on the test.7z row")
+        }
+        let titles = panel.menuItemTitles(of: menu).filter { !$0.isEmpty }
         screenshot("10-context-menu")
         for expected in ["Open archive", "Extract files...", "Add to archive...", "Rename", "Delete", "Properties"] {
             XCTAssertTrue(titles.contains(expected), "context menu has no '\(expected)': \(titles)")

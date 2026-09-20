@@ -513,6 +513,11 @@ targets:
       - path: Tests/SevenZipKitTests
         excludes:
           - "Info.plist"
+      # App sources the unit tests exercise directly, compiled into the test bundle instead of
+      # being symlinked into Tests/SevenZipKitTests (requests.md: options -> harness). Both are
+      # Foundation-only by contract, so they build outside the app target unchanged.
+      - path: App/Support/Settings.swift
+      - path: App/Support/FileTypes.swift
       - path: Tests/Fixtures
         type: folder
         buildPhase: resources

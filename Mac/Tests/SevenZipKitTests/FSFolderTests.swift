@@ -712,7 +712,24 @@ final class FSFolderTests: XCTestCase {
         // the volumes folder must exist before the mount so that wasChanged can notice it
         let volumes = SZRootFolder.makeVolumesFolder()
         XCTAssertFalse(volumes.wasChanged)
-        let volumeCountBefore = volumes.itemCount
+
+        // Never assert the *total* number of volumes: another process (a parallel agent, Time
+        // Machine, a .dmg opened by hand) can mount or unmount a disk while this test runs and the
+        // total then disagrees for a reason that has nothing to do with the code under test
+        // (Mac/docs/requests.md, orchestrator -> fsfolder). Assert only that this test's own volume
+        // appears and disappears again.
+        func volumeNames() throws -> [String] {
+            try volumes.loadItems()
+            return (0..<volumes.itemCount).map { volumes.nameOfItem(at: $0) }
+        }
+        func waitForVolume(_ name: String, listed: Bool) throws -> Bool {
+            let deadline = Date().addingTimeInterval(20)
+            repeat {
+                if try volumeNames().contains(name) == listed { return true }
+                Thread.sleep(forTimeInterval: 0.2)
+            } while Date() < deadline
+            return false
+        }
 
         let volumeName = "sz-fsfolder-\(getpid())"
         let device = try run("/usr/bin/hdiutil", ["attach", "-nomount", "ram://32768"])
@@ -734,8 +751,8 @@ final class FSFolderTests: XCTestCase {
         }
 
         XCTAssertTrue(pollVolumesChanged(), "a new mount must be reported")
-        try volumes.loadItems()
-        XCTAssertEqual(volumes.itemCount, volumeCountBefore + 1)
+        XCTAssertTrue(try waitForVolume(volumeName, listed: true),
+                      "the new volume is not listed")
         let vol = try index(of: volumeName, in: volumes)
         XCTAssertEqual(volumes.mountPathOfItem(at: vol), mount + "/")
         XCTAssertEqual(volumes.propertyOfItem(at: vol, propID: .fileSystem) as? String, "hfs")
@@ -784,8 +801,8 @@ final class FSFolderTests: XCTestCase {
         _ = try run("/usr/bin/hdiutil", ["detach", device])
         detached = true
         XCTAssertTrue(pollVolumesChanged(), "an unmount must be reported")
-        try volumes.loadItems()
-        XCTAssertEqual(volumes.itemCount, volumeCountBefore)
+        XCTAssertTrue(try waitForVolume(volumeName, listed: false),
+                      "the detached volume is still listed")
     }
 
     // MARK: - Phase 4: change notification

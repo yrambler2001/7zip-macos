@@ -7,7 +7,9 @@
 #   -a, --all              unit tests and UI tests
 #   -t, --target <NAME>    one target: SevenZipKitTests | 7-ZipUITests
 #   -o, --only <TEST>      one class or case: SmokeTests, SmokeTests/testMenuBarStructure
-#                          (implies the target that owns it when --target is not given)
+#                          (the target that declares the class is looked up in Mac/Tests when
+#                          --target is not given; an unknown class or test function exits 2, and a
+#                          run that executes no test at all exits 4 instead of reading as a pass)
 #   -c, --config <CFG>     Debug (default) or Release
 #   -k, --keep-prefs       do not clear com.yrambler2001.7zip before a UI run
 #   -h, --help             this text
@@ -48,12 +50,47 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-# --only <UITest class> without --target picks the UI target
+# --only <Class>[/<test>] without --target: find which test target declares that class, instead of
+# guessing from the name. Guessing sent every UI class but *Smoke*/*UI* to the unit target, where
+# -only-testing matched nothing, xcodebuild still exited 0 and the run read as a pass.
+declare_target_of_class() {
+  local cls="$1" dir target dir_target
+  for dir_target in "Tests/UITests:$UI_TARGET" "Tests/SevenZipKitTests:$UNIT_TARGET"; do
+    dir="$MAC/${dir_target%%:*}"
+    target="${dir_target##*:}"
+    [ -d "$dir" ] || continue
+    if grep -rqE "class[[:space:]]+${cls}[[:space:]]*(:|\{)" "$dir" 2>/dev/null; then
+      echo "$target"
+      return 0
+    fi
+  done
+  return 1
+}
+
 if [ -z "$TARGETS" ]; then
+  if [ -z "$ONLY" ]; then
+    TARGETS="$UNIT_TARGET"
+  else
+    ONLY_CLASS="${ONLY%%/*}"
+    if ! TARGETS="$(declare_target_of_class "$ONLY_CLASS")"; then
+      echo "test.sh: --only '$ONLY' names no test class in Mac/Tests/UITests or" >&2
+      echo "         Mac/Tests/SevenZipKitTests; nothing would run. Check the spelling, or pass" >&2
+      echo "         --target explicitly." >&2
+      exit 2
+    fi
+  fi
+fi
+
+# A --only filter that names a class in a target must also name an existing test case there.
+if [ -n "$ONLY" ]; then
   case "$ONLY" in
-    ""|SevenZipKitTests*) TARGETS="$UNIT_TARGET" ;;
-    *Smoke*|*UI*) TARGETS="$UI_TARGET" ;;
-    *) TARGETS="$UNIT_TARGET" ;;
+    */*)
+      ONLY_CASE="${ONLY##*/}"
+      if ! grep -rqE "func[[:space:]]+${ONLY_CASE}[[:space:]]*\(" "$MAC/Tests" 2>/dev/null; then
+        echo "test.sh: --only '$ONLY' names no test function; nothing would run." >&2
+        exit 2
+      fi
+      ;;
   esac
 fi
 
@@ -177,7 +214,7 @@ PY
 }
 
 run_target() {
-  local target="$1" log="$MAC/build/test-$1.log" rc=0 started elapsed passed failed
+  local target="$1" log="$MAC/build/test-$1.log" rc=0 started elapsed passed failed skipped
   local bundle="$MAC/build/results-$1.xcresult"
   local only_args=()
   if [ -n "$ONLY" ]; then only_args=(-only-testing:"$target/$ONLY"); fi
@@ -199,9 +236,16 @@ run_target() {
     | grep -v CoreSimulator | tail -60 || true
   passed=$(grep -c "Test Case .* passed" "$log" || true)
   failed=$(grep -c "Test Case .* failed" "$log" || true)
+  skipped=$(grep -c "Test Case .* skipped" "$log" || true)
   TOTAL_PASS=$((TOTAL_PASS + passed))
   TOTAL_FAIL=$((TOTAL_FAIL + failed))
   if [ "$target" = "$UI_TARGET" ]; then export_screenshots "$bundle"; fi
+  # A run that executed nothing is never a pass: an -only-testing filter that matches no test in
+  # this target makes xcodebuild succeed with an empty run, which used to read as green.
+  if [ "$rc" -eq 0 ] && [ "$((passed + failed + skipped))" -eq 0 ]; then
+    rc=4
+    echo "test.sh: $target executed no test at all${ONLY:+ (--only '$ONLY')}; treating that as a failure." >&2
+  fi
   if [ "$rc" -ne 0 ]; then
     if [ "$FAILED" -eq 0 ]; then FAILED=$rc; fi
     SUMMARY="$SUMMARY
