@@ -372,7 +372,35 @@ real process does return.
 
 ### 4.3 UI suite
 
-<!--UI-->
+**Command mode itself is not reachable from XCUITest, and that was measured.**
+`XCUIApplication.launch()` with a command word fails after ~69 s, two different ways, both observed
+in a real run:
+
+* a command that finishes by itself (`t -y <archive>`) exits before the runner can attach —
+  *"Application 'com.yrambler2001.7zip' has not loaded accessibility"*;
+* a command that shows a dialog (`a … -ad`, or an error box) sits in `NSApp.runModal` while still
+  handling `applicationDidFinishLaunching`, so the app never becomes idle and `launch()` gives up
+  with the same message.
+
+That is why the exit codes are checked from a shell (4.2) and why the two dialogs command mode may
+show are screenshotted through the **file manager**, where the same code builds them:
+
+| screenshot | what it is |
+|---|---|
+| `Mac/docs/reports/screenshots/cmdmode-01-add-to-archive-dialog.png` | IDD_COMPRESS 4000 "Add to archive" — the dialog `-ad` opens, and `-ad` is exactly what a Dock drop passes (`a <selection> -ad -saa -- <dir><name>`) |
+| `Mac/docs/reports/screenshots/cmdmode-02-checksum-information.png` | IDS_CHECKSUM_INFORMATION 7501 "Checksum information" with its `CRC32 checksum for data` / `... for data and names` rows — what `h` shows and what `x -scrc` / `t -scrc` now show **instead of** the test summary box |
+
+`Mac/scripts/test.sh --ui`: <!--UICOUNT-->.
+
+Two things the screenshots incidentally show, both another scope's and both already filed:
+the Compress dialog is wider than the screen with its bottom button row clipped (`parity.md` B17),
+and the checksum list is placed partly above the top of the screen. The Compress test therefore
+closes the dialog with Escape rather than by clicking Cancel, so it does not fail for the wrong
+reason while that is being fixed.
+
+One thing the earlier UI attempt taught, kept as a comment in the test file: the window title is the
+**lang string**, not the source's fallback — id 4000 is "Add to archive", while the call site reads
+`Lang.text(4000, "Add to Archive")`.
 
 ### 4.4 Cross-checks against the console tool
 

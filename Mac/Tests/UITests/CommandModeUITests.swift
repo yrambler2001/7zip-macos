@@ -1,17 +1,33 @@
-// CommandModeUITests.swift -- the `cmdmode` scope's XCUITest coverage: the app really launched in
-// 7zG command mode (03-shell-integration-inventory.md section 2, section 6.4), the three dialogs
-// that command mode is allowed to show, and the argv a Dock drop produces.
+// CommandModeUITests.swift -- the `cmdmode` scope's XCUITest coverage.
 //
-// Why it is shaped like this: command mode orders every window out and `exit()`s with the 7zG exit
-// code, so `SevenZipApp.launch()` -- which waits for a window and a panel table -- cannot be used.
-// These tests drive `XCUIApplication` directly with the real argv, which is the only way to see the
-// command-mode dialogs from a test.
+// **Command mode cannot be driven by XCUITest at all**, which was measured rather than assumed.
+// `argv[1] ∈ {a,u,d,rn,x,e,t,h,b}` puts the process into 7zG mode: every window is ordered out and
+// the process `exit()`s with the 7zG code (03-shell-integration-inventory.md section 6.4). Launching
+// that from XCUITest fails two different ways, and both were seen in a real run:
 //
-// The **Dock drop itself** is not reachable: Automation permission is not granted on this machine
-// and XCUITest cannot drag onto the Dock (`Mac/docs/parity.md` F.4 records the one manual check a
-// human still owes). What is covered here is the command a Dock drop runs -- the exact argv
-// `FinderMenuModel`'s `SevenZipCompress` verb builds, which `CommandModeTests` asserts separately --
-// so the half that can be automated is.
+//   * a command that finishes by itself (`t -y <archive>`) exits before the runner can attach, and
+//     `XCUIApplication.launch()` fails with "Application 'com.yrambler2001.7zip' has not loaded
+//     accessibility" after ~69 s;
+//   * a command that shows a dialog (`a … -ad`, or an error box) is inside `NSApp.runModal` while
+//     still handling `applicationDidFinishLaunching`, so the app never becomes idle and `launch()`
+//     fails the same way after ~69 s.
+//
+// Exit codes are therefore verified by running the built binary from a shell and reading `$?` --
+// 25 cases, listed in `Mac/docs/reports/cmdmode.md` section 4.2 -- and the two dialogs command mode
+// is allowed to show are screenshotted here through the **file manager**, where they are the same
+// dialogs built by the same code:
+//
+//   * IDD_COMPRESS 4000 "Add to archive" (lang id 4000; the source fallback spells it "Add to
+//     Archive", the lang file wins) is what `-ad` opens, and `-ad` is exactly what a Dock drop
+//     passes (`a <selection> -ad -saa -- <dir><name>`, 03 section 1.4 item B5, section 1.7);
+//   * IDS_CHECKSUM_INFORMATION 7501 "Checksum information" is what `h` shows and, since this scope
+//     wired `-scrc` on `x`/`t`, what those two now show instead of the test summary box
+//     (03 section 2.6, ExtractGUI.cpp:129-152).
+//
+// The Dock **gesture** is not reachable either: Automation permission is not granted on this machine
+// and XCUITest cannot drag onto the Dock. `Mac/docs/parity.md` F.4 records the one manual check a
+// human still owes; the routing, the argv, the Apple-event sender detection and the `Info.plist`
+// claim are unit-tested in `CommandModeTests`.
 
 import Foundation
 import XCTest
@@ -20,177 +36,79 @@ final class CommandModeUITests: SevenZipUITestCase {
 
     override var screenshotPrefix: String { "cmdmode" }
 
-    private var work: URL!
-
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-        work = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("cmdmode-ui-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+    /// A small folder for the panel to start in, so the tests do not depend on the fixtures' shape.
+    private func makeScratch(_ name: String) throws -> String {
+        let dir = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("cmdmode-ui-\(name)-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(atPath: dir) }
+        try "hello 7-zip\n".write(toFile: (dir as NSString).appendingPathComponent("one.txt"),
+                                 atomically: true, encoding: .utf8)
+        try "second file\n".write(toFile: (dir as NSString).appendingPathComponent("two.txt"),
+                                 atomically: true, encoding: .utf8)
+        return dir
     }
 
-    override func tearDown() {
-        if let work { try? FileManager.default.removeItem(at: work) }
-        super.tearDown()
-    }
+    /// IDD_COMPRESS 4000: the dialog a Dock drop of one or more items opens, because
+    /// `FinderMenuModel`'s `SevenZipCompress` verb carries `-ad` and `-ad` is the only thing that
+    /// opens it (03 section 2.4). Cancel is `E_ABORT`, i.e. exit 255 in command mode; inside the file
+    /// manager it just closes, and the panel must survive it.
+    func testAddToArchiveDialogIsTheOneADockDropOpens() throws {
+        let scratch = try makeScratch("compress")
+        launch(seed: .values([SettingsDomain.Key.panelPath0: scratch]))
+        let panel = sevenZip.panel(0)
+        XCTAssertTrue(panel.waitForRow(named: "one.txt"))
+        XCTAssertTrue(sevenZip.selectMenuItem("Edit", "Select All"))
 
-    // MARK: - helpers
+        let add = sevenZip.toolbarButton("Add")
+        XCTAssertTrue(add.waitForExistence(timeout: 10), "no Add button in the toolbar")
+        add.click()
 
-    /// Launch the app in 7zG command mode with `argv` and its own throwaway settings domain.
-    /// `SevenZipApp.launch()` is deliberately not used: there is no window and no panel to wait for.
-    private func launchCommandMode(_ argv: [String]) {
-        let app = sevenZip.app
-        app.launchArguments = argv
-        var env = ["SEVENZIP_UITEST": "1"]
-        // A domain of its own, so the developer's settings and the other tests are untouched.
-        env[SettingsDomain.suiteEnvironmentVariable] =
-            "com.yrambler2001.7zip.cmdmode-ui-\(UUID().uuidString)"
-        app.launchEnvironment = env
-        if sevenZip.isRunning { app.terminate() }
-        app.launch()
-    }
-
-    /// The first window command mode put on screen (the main window is ordered out, so anything
-    /// visible is the command's own dialog).
-    private func waitForDialog(timeout: TimeInterval = 60) -> XCUIElement? {
-        let app = sevenZip.app
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            for index in 0..<app.windows.count {
-                let candidate = app.windows.element(boundBy: index)
-                if candidate.exists, candidate.isHittable, candidate.frame.width > 1 {
-                    return candidate
-                }
-            }
-            for index in 0..<app.dialogs.count {
-                let candidate = app.dialogs.element(boundBy: index)
-                if candidate.exists { return candidate }
-            }
-            _ = app.windows.element(boundBy: 0).waitForExistence(timeout: 1)
+        // The window title is lang id 4000, which `en.ttt` spells "Add to archive" -- the
+        // `Lang.text(4000, "Add to Archive")` fallback in the source is never what a run sees.
+        guard let dialog = sevenZip.waitForDialog(title: "Add to archive", timeout: 30) else {
+            _ = sevenZip.dumpTree("cmdmode-compress")
+            return XCTFail("IDD_COMPRESS 4000 did not appear")
         }
-        return nil
-    }
-
-    /// Screenshot one element under this scope's prefix, so `test.sh` exports it as
-    /// `Mac/docs/reports/screenshots/cmdmode-<name>.png`. `SevenZipApp.screenshot` always shoots
-    /// window 0, which in command mode may be the ordered-out main window.
-    private func attach(_ element: XCUIElement, _ name: String) {
-        let attachment = XCTAttachment(screenshot: element.screenshot())
-        attachment.name = "\(screenshotPrefix)-\(name).png"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
-
-    /// Close a command-mode dialog whatever its button is called (lang 401 OK / 402 Cancel /
-    /// 408 Close), then assert the process really exited -- command mode calls `exit()` with the
-    /// 7zG code, so "the app is gone" is the observable end of the command.
-    private func dismissAndExpectExit(_ dialog: XCUIElement, preferring titles: [String]) {
-        for title in titles where dialog.buttons[title].exists {
-            dialog.buttons[title].click()
-            if sevenZip.app.wait(for: .notRunning, timeout: 60) { return }
-        }
-        dialog.typeKey(.escape, modifierFlags: [])
-        if sevenZip.app.wait(for: .notRunning, timeout: 20) { return }
-        let any = dialog.buttons.firstMatch
-        if any.exists { any.click() }
-        XCTAssertTrue(sevenZip.app.wait(for: .notRunning, timeout: 60),
-                      "command mode must exit once its dialog is closed")
-    }
-
-    /// A small tree to compress, and a 7z archive made from it by the app itself.
-    private func makeFixtureTree() throws -> (files: [String], archive: String) {
-        let one = work.appendingPathComponent("one.txt")
-        let two = work.appendingPathComponent("two.txt")
-        try "hello 7-zip\n".write(to: one, atomically: true, encoding: .utf8)
-        try "second file\n".write(to: two, atomically: true, encoding: .utf8)
-        let archive = work.appendingPathComponent("made.7z")
-        // Built with the console tool when it exists, else with the app in command mode.
-        let tool = (TestPaths.repoRoot ?? "") + "/CPP/7zip/Bundles/Alone2/b/m_arm64/7zz"
-        if FileManager.default.isExecutableFile(atPath: tool) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: tool)
-            process.arguments = ["a", archive.path, one.path, two.path]
-            process.standardOutput = Pipe()
-            process.standardError = Pipe()
-            try process.run()
-            process.waitUntilExit()
-        } else {
-            launchCommandMode(["a", "-y", archive.path, one.path, two.path])
-            XCTAssertTrue(sevenZip.app.wait(for: .notRunning, timeout: 120))
-        }
-        XCTAssertTrue(FileManager.default.fileExists(atPath: archive.path),
-                      "the fixture archive was not created")
-        return ([one.path, two.path], archive.path)
-    }
-
-    // MARK: - 03 section 2.4: the dialogs command mode may show
-
-    /// The command a **Dock drop** of two files runs: `FinderMenuModel`'s `SevenZipCompress` verb,
-    /// i.e. `a <selection> -ad -saa -- <dir><name>` (03 section 1.4 item B5, section 1.7). `-ad` is
-    /// the only thing that opens the Compress dialog (03 section 2.4), so seeing it here is seeing
-    /// what a Dock drop puts on screen.
-    func testDockDropArgvOpensTheCompressDialog() throws {
-        let fixture = try makeFixtureTree()
-        // The verb's argv, spelled out: the UI-test target must not link the app's Integration
-        // sources (they belong to the two sandboxed appex targets as well), and
-        // `CommandModeTests.testDockDropCompressCommandIsTheFinderMenuCommand` is what asserts that
-        // `FinderMenuModel` really produces this shape. `CreateArchiveName` of two files in one
-        // folder is that folder's name.
-        let folder = work.path + "/"
-        let argv = ["a"]
-            + fixture.files.map { "-iw-!" + $0 }
-            + ["-ad", "-saa", "--", folder + work.lastPathComponent]
-
-        launchCommandMode(argv)
-        let dialog = try XCTUnwrap(waitForDialog(), "the Compress dialog did not appear")
-        // IDD_COMPRESS 4000: the format combo is the control that identifies it.
+        // The format combo is the control that identifies it (IDC_COMPRESS_FORMAT 104).
         XCTAssertTrue(dialog.comboBoxes.count > 0 || dialog.popUpButtons.count > 0,
-                      "no combo box in \(dialog.debugDescription)")
-        attach(dialog, "01-dock-drop-compress")
+                      "the Compress dialog has no format combo")
+        screenshot("01-add-to-archive-dialog")
 
-        // Cancel is E_ABORT, i.e. exit 255, and the process really goes away.
-        dismissAndExpectExit(dialog, preferring: ["Cancel", "Close"])
+        // Escape, not the Cancel button: this dialog is currently wider than the screen and its
+        // bottom button row is clipped (`parity.md` B17, which a parallel agent is fixing), so the
+        // button is not hittable and a test that clicked it would fail for the wrong reason.
+        app.typeKey(.escape, modifierFlags: [])
+        if !sevenZip.waitForNoDialog(timeout: 10) {
+            XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "Cancel"))
+        }
+        XCTAssertTrue(panel.waitForRow(named: "one.txt"), "the panel must survive a cancelled Add")
     }
 
-    /// `t -scrc<M>`: the checksums of the extracted data go to the hash results list **instead of**
-    /// the test summary (03 section 2.6, ExtractGUI.cpp:129-152). Like upstream's `ShowHashResults`
-    /// the list is not suppressed by `-y`.
-    func testTestWithScrcShowsTheChecksumList() throws {
-        let fixture = try makeFixtureTree()
-        launchCommandMode(["t", "-y", "-scrcSHA256", fixture.archive])
-        let dialog = try XCTUnwrap(waitForDialog(), "the checksum list did not appear")
-        // IDS_CHECKSUM_INFORMATION: a 2-column list of name/value rows.
+    /// IDS_CHECKSUM_INFORMATION 7501: the results list `h` shows and that `x -scrc` / `t -scrc` now
+    /// show instead of the test summary. Reached here through File ▸ CRC ▸ CRC-32, which builds it
+    /// with the same `HashResultsDialog.show(results:parent:)` the command path calls.
+    func testChecksumInformationDialogIsWhatScrcShows() throws {
+        let scratch = try makeScratch("checksum")
+        launch(seed: .values([SettingsDomain.Key.panelPath0: scratch]))
+        let panel = sevenZip.panel(0)
+        XCTAssertTrue(panel.waitForRow(named: "one.txt"))
+        XCTAssertTrue(sevenZip.selectMenuItem("Edit", "Select All"))
+        XCTAssertTrue(sevenZip.selectMenuItem("File", "CRC", "CRC-32"))
+
+        guard let dialog = sevenZip.waitForDialog(title: "Checksum information", timeout: 60) else {
+            _ = sevenZip.dumpTree("cmdmode-checksum")
+            return XCTFail("IDS_CHECKSUM_INFORMATION 7501 did not appear")
+        }
+        // Two columns of name/value rows (AddHashBundleRes).
         XCTAssertTrue(dialog.tables.count > 0 || dialog.outlines.count > 0,
-                      "no list in \(dialog.debugDescription)")
-        attach(dialog, "02-scrc-checksum-list")
+                      "the checksum dialog has no results list")
+        screenshot("02-checksum-information")
 
-        dismissAndExpectExit(dialog, preferring: ["Close", "OK", "Cancel"])
-    }
-
-    /// `-sfx<module>` with a module that is not there: an error box and nothing written, instead of
-    /// the bundled stub or a plain archive (01b section 4.23, parity.md F.3). Without `-y` the box
-    /// is shown, which is what makes it visible to a test.
-    func testMissingSfxModuleShowsAnErrorAndWritesNothing() throws {
-        let fixture = try makeFixtureTree()
-        let output = work.appendingPathComponent("never-written.exe")
-        launchCommandMode(["a", "-sfx/nonexistent/none.sfx", output.path, fixture.files[0]])
-        let dialog = try XCTUnwrap(waitForDialog(), "the error box did not appear")
-        let text = dialog.staticTexts.allElementsBoundByIndex.map { $0.label }.joined(separator: " ")
-        XCTAssertTrue(text.contains("SFX module"), "unexpected box text: \(text)")
-        attach(dialog, "03-sfx-module-error")
-
-        dismissAndExpectExit(dialog, preferring: ["OK"])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path),
-                       "nothing may be written when the SFX module is missing")
-    }
-
-    /// The plainest fact about command mode: it shows no file-manager window and it exits by itself.
-    /// The exit **codes** are checked against the real process in `Mac/docs/reports/cmdmode.md`,
-    /// because XCUITest cannot read one.
-    func testCommandModeShowsNoWindowAndExits() throws {
-        let fixture = try makeFixtureTree()
-        launchCommandMode(["t", "-y", fixture.archive])
-        XCTAssertTrue(sevenZip.app.wait(for: .notRunning, timeout: 120),
-                      "`t -y` must finish and exit on its own")
+        // Its button is Close (lang 408), not OK.
+        if !sevenZip.dismissDialog(dialog, button: "Close") {
+            XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "OK"))
+        }
+        XCTAssertTrue(panel.waitForRow(named: "one.txt"))
     }
 }

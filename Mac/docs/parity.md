@@ -362,3 +362,12 @@ not granted, XCUITest cannot drag to the Dock, and `LSHandlerRank: None` grantin
 documented behaviour that has not been observed here. The routing, the argv, the sender detection and
 the plist are unit-tested; a human still owes one check — drag two files onto the Dock icon and
 confirm the Compress dialog opens, then drag one `.7z` and confirm it opens in a panel.
+
+**And a second one, measured this time: command mode is not reachable from XCUITest at all.**
+`XCUIApplication.launch()` with a command word fails after ~69 s either with "has not loaded
+accessibility" (the command finished and the process exited before the runner could attach) or the
+same way because the app is inside `NSApp.runModal` while still handling
+`applicationDidFinishLaunching` and therefore never becomes idle. Both were observed in a real run.
+Exit codes are verified by running the built binary from a shell instead — 25 cases in
+`Mac/docs/reports/cmdmode.md` section 4.2 — and the two dialogs command mode may show are
+screenshotted through the file manager, where the same code builds them.
