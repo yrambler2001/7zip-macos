@@ -157,6 +157,8 @@ state directory instead. Filed in `requests.md`.
 rm -rf Mac/build && Mac/scripts/build.sh      -> BUILD SUCCEEDED, no warnings from Mac/ code
 Mac/scripts/test.sh                           -> 342 passed, 0 failed   (311 before, 31 new)
 Mac/scripts/test.sh --ui                      -> 65 passed, 0 failed    (54 before, 11 new)
+                                                 2170 s for 65 tests = 33.4 s each, which is the
+                                                 baseline shape: every test still relaunches.
 ```
 
 The app-launch lock (`harness` api §1a) was held for every launch, every driver run and every UI run.
