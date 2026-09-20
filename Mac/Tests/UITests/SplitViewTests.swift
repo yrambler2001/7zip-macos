@@ -35,10 +35,26 @@ final class SplitViewTests: SevenZipUITestCase {
         (sevenZip.panel(0).addressBar.frame.width, sevenZip.panel(1).addressBar.frame.width)
     }
 
+    /// A panel that has just been inserted is in the tree before its own subviews have their
+    /// final frames -- the address combo grows over a few hundred milliseconds while the folder
+    /// is read. Wait for that to settle before measuring, so the test asserts the *result* of the
+    /// split and not a frame caught mid-layout.
+    private func waitForPanelsToSettle(timeout: TimeInterval = 10) {
+        let deadline = Date().addingTimeInterval(timeout)
+        var previous: (CGFloat, CGFloat) = (-1, -1)
+        repeat {
+            let current = addressBarWidths()
+            if current == previous, current.0 > 1, current.1 > 1 { return }   // two samples agree
+            previous = current
+            usleep(250_000)
+        } while Date() < deadline
+    }
+
     /// Both panels the same width, to within `tolerance`, and the divider in the middle.
     private func assertEvenSplit(_ what: String, tolerance: CGFloat = 12) {
         XCTAssertEqual(sevenZip.panelCount, 2, "\(what): the second panel is not in the tree")
         XCTAssertTrue(sevenZip.panelsAreOrderedLeftToRight, "\(what): panels out of order")
+        waitForPanelsToSettle()
         let (left, right) = addressBarWidths()
         XCTAssertEqual(left, right, accuracy: tolerance,
                        "\(what): panel widths differ (address combos \(left) and \(right))")
@@ -70,6 +86,8 @@ final class SplitViewTests: SevenZipUITestCase {
             XCTAssertTrue(sevenZip.panel(0).table.waitForExistence(timeout: 30))
             XCTAssertEqual(sevenZip.panelCount, 1, "trial \(trial): started with two panels")
             XCTAssertTrue(sevenZip.ensurePanelCount(2), "trial \(trial): View > 2 Panels did nothing")
+            XCTAssertTrue(sevenZip.panel(1).waitForRow(named: "test.7z", timeout: 20),
+                          "trial \(trial): the second panel never listed its folder")
             assertEvenSplit("toggle trial \(trial)")
             if trial == 1 { screenshot("11-two-panels-even") }
             sevenZip.terminate()
@@ -81,7 +99,9 @@ final class SplitViewTests: SevenZipUITestCase {
     func testStoredSplitterPositionIsRestoredOnLaunch() {
         launch(seed: twoPanelSeed(ratio: "0.350000"))
         XCTAssertTrue(sevenZip.panel(0).table.waitForExistence(timeout: 30))
+        XCTAssertTrue(sevenZip.panel(1).waitForRow(named: "test.7z", timeout: 20))
         XCTAssertEqual(sevenZip.panelCount, 2)
+        waitForPanelsToSettle()
         guard let position = dividerPosition else { return XCTFail("no divider") }
         let width = splitGroup.frame.width
         XCTAssertEqual(position, width * 0.35, accuracy: 12,
@@ -96,6 +116,7 @@ final class SplitViewTests: SevenZipUITestCase {
     func testTwoPanelsAtMinimumWindowSize() {
         launch(seed: twoPanelSeed(ratio: "0.500000", position: "200 200 360 240"))
         XCTAssertTrue(sevenZip.panel(0).table.waitForExistence(timeout: 30))
+        XCTAssertTrue(sevenZip.panel(1).waitForRow(named: "test.7z", timeout: 20))
         XCTAssertEqual(sevenZip.window.frame.width, 360, accuracy: 2)
         assertEvenSplit("minimum window size", tolerance: 8)
         screenshot("13-two-panels-minimum-size")
@@ -106,6 +127,7 @@ final class SplitViewTests: SevenZipUITestCase {
     func testSplitterPositionSurvivesRelaunch() {
         launch(seed: twoPanelSeed(ratio: "0.500000"))
         XCTAssertTrue(sevenZip.panel(0).table.waitForExistence(timeout: 30))
+        XCTAssertTrue(sevenZip.panel(1).waitForRow(named: "test.7z", timeout: 20))
         assertEvenSplit("before the drag")
         let divider = splitGroup.descendants(matching: .splitter).firstMatch
         XCTAssertTrue(divider.exists, "no divider to drag")
@@ -124,6 +146,7 @@ final class SplitViewTests: SevenZipUITestCase {
 
         sevenZip.launch(seed: .keep)
         XCTAssertTrue(sevenZip.panel(0).table.waitForExistence(timeout: 30))
+        XCTAssertTrue(sevenZip.panel(1).waitForRow(named: "test.7z", timeout: 20))
         XCTAssertEqual(sevenZip.panelCount, 2, "the second panel did not come back")
         guard let restored = dividerPosition else { return XCTFail("no divider after the relaunch") }
         XCTAssertEqual(restored, dragged, accuracy: 12,

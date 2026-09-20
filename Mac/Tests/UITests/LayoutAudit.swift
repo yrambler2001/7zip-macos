@@ -12,7 +12,10 @@
 //   TIGHT    a label or button title needs more width than its frame gives it, so AppKit
 //            truncates it with an ellipsis. This one is a heuristic (the text is measured with
 //            the system font, which is not always the control's font), so it is reported as a
-//            warning to look at on the screenshot, never as a hard failure.
+//            warning to look at on the screenshot, never as a hard failure. A label tall enough
+//            to hold two lines is skipped -- it wraps, it does not truncate -- and so is anything
+//            inside a toolbar, whose items report the icon's frame rather than the icon's plus
+//            the label's.
 //
 // Frames come from `XCUIElementSnapshot`, i.e. one query for the whole tree: resolving elements
 // one at a time is slow and has crashed the runner (harness api section 7).
@@ -85,9 +88,10 @@ public enum LayoutAudit {
     }
 
     private static func walk(_ node: XCUIElementSnapshot, path: String, bounds: CGRect,
-                             findings: inout [String]) {
+                             findings: inout [String], insideToolbar: Bool = false) {
         var siblings: [(XCUIElementSnapshot, String)] = []
         for child in node.children {
+            let childInToolbar = insideToolbar || child.elementType == .toolbar
             let label = describe(child)
             let childPath = path + " > " + label
             let frame = child.frame
@@ -101,10 +105,13 @@ public enum LayoutAudit {
                 if controlTypes.contains(child.elementType) {
                     siblings.append((child, childPath))
                 }
-                if let tight = tightText(child, path: childPath) { findings.append(tight) }
+                if !childInToolbar, let tight = tightText(child, path: childPath) {
+                    findings.append(tight)
+                }
             }
             if !isBoundary(child.elementType) {
-                walk(child, path: childPath, bounds: bounds, findings: &findings)
+                walk(child, path: childPath, bounds: bounds, findings: &findings,
+                     insideToolbar: childInToolbar)
             }
         }
         for i in siblings.indices {
@@ -128,6 +135,8 @@ public enum LayoutAudit {
             ? ((node.value as? String) ?? node.label)
             : (node.title.isEmpty ? node.label : node.title)
         guard !text.isEmpty, !text.contains("\n") else { return nil }
+        // Tall enough for a second line: it is a wrapping label, so it does not truncate.
+        guard node.frame.height < 24 else { return nil }
         let needed = (text as NSString)
             .size(withAttributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]).width
         let available = node.frame.width - chromeWidth(type)

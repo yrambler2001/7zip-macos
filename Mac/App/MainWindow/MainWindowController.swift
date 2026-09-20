@@ -192,6 +192,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     /// edge. `adjustSubviews()` first, because `setPosition(_:ofDividerAt:)` needs subview frames
     /// that already add up to the split view's width: called with a freshly inserted, zero-width
     /// subview it collapses *both* panels to zero (measured -- see Mac/docs/reports/polish.md).
+    ///
+    /// Only these two calls. Assigning the arranged subviews' frames by hand as a fallback looks
+    /// safe and is not: the panels are constraint-driven, so a raw frame is not propagated to
+    /// their own subviews, and the second panel comes up with its address bar, header and status
+    /// line laid out for the width it had before -- all crammed into a strip at the top.
     @discardableResult
     private func applySplitterRatio() -> Bool {
         guard !isApplyingSplitter else { return true }       // setPosition can re-enter the layout
@@ -204,15 +209,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         let minimum = min(Self.panelSizeMin, usable / 2)
         let position = min(max(usable * CGFloat(splitterRatio), minimum), usable - minimum)
         splitView.setPosition(position, ofDividerAt: 0)
-        // Last resort: if the split view still has not distributed the width (both frames zero),
-        // lay the two panels out directly so the window is never left with no visible panel.
-        let widths = splitView.arrangedSubviews.map { $0.frame.width }
-        if widths.reduce(0, +) < usable - 1 {
-            let height = splitView.bounds.height
-            splitView.arrangedSubviews[0].frame = NSRect(x: 0, y: 0, width: position, height: height)
-            splitView.arrangedSubviews[1].frame = NSRect(x: position + splitView.dividerThickness, y: 0,
-                                                        width: usable - position, height: height)
-        }
         return true
     }
 
@@ -248,6 +244,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         // ran first was a coin toss. When the block won, `setPosition` ran against a zero-width
         // new subview and left both panels at zero width -- the "2 Panels collapses" report.
         applySplitterRatio()
+        // ... and let the new panel lay its own subviews out at the width it has just been given,
+        // rather than on some later pass that may not come.
+        splitView.layoutSubtreeIfNeeded()
     }
 
     func switchOnOffOnePanel() {
