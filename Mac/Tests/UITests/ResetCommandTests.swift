@@ -370,6 +370,63 @@ final class ResetCommandTests: XCTestCase {
 
     // MARK: - 4. The measurement
 
+    /// `SZ_DISABLE_ANIMATIONS` has to remove the time, not shorten it. The cycle measured is a
+    /// dialog appearing and disappearing -- a tiny `h` command, whose results list is a modal dialog,
+    /// closed again by a reset -- repeated with the switch on and off. The hash itself is the same
+    /// constant in both series, so the difference is the animation.
+    func testAnimationSuppressionRemovesTime() {
+        let tiny = Bundle(for: Self.self).resourceURL!
+            .appendingPathComponent("Fixtures/readme.txt").path
+        let target = FileManager.default.fileExists(atPath: tiny)
+            ? tiny : Bundle(for: Self.self).resourceURL!.appendingPathComponent("Fixtures/test.7z").path
+
+        func cycle(animationsDisabled: Bool, rounds: Int) -> [TimeInterval] {
+            app?.terminate()
+            let application = XCUIApplication()
+            var environment = ["SZ_TEST_SUPPORT": "1", "SZ_STATE_DIR": stateDirectory.path]
+            if animationsDisabled { environment["SZ_DISABLE_ANIMATIONS"] = "1" }
+            application.launchEnvironment = environment
+            if application.state != .notRunning {
+                application.terminate()
+                _ = waitFor(timeout: 15) { application.state == .notRunning }
+            }
+            application.launch()
+            app = application
+            XCTAssertTrue(application.windows.firstMatch.waitForExistence(timeout: 30))
+
+            var samples: [TimeInterval] = []
+            for _ in 0..<rounds {
+                let started = Date()
+                send(url: runURL(argv: ["h", "-scrcCRC32", target]))
+                guard waitFor(timeout: 20, { self.app.dialogs.count > 0 }) else {
+                    XCTFail("no results dialog (animations disabled: \(animationsDisabled))")
+                    return samples
+                }
+                guard sendReset([:]) != nil else {
+                    XCTFail("the reset that closes the dialog was not acknowledged")
+                    return samples
+                }
+                guard waitFor(timeout: 20, { self.app.dialogs.count == 0 }) else {
+                    XCTFail("the dialog did not close")
+                    return samples
+                }
+                samples.append(Date().timeIntervalSince(started))
+            }
+            return samples
+        }
+
+        let off = cycle(animationsDisabled: true, rounds: 6)
+        let on = cycle(animationsDisabled: false, rounds: 6)
+        func mean(_ v: [TimeInterval]) -> Double { v.reduce(0, +) / Double(max(1, v.count)) }
+        let text = String(format: "dialog open+close cycle: animations off %.3f s (n=%d), "
+                          + "animations on %.3f s (n=%d)",
+                          mean(off), off.count, mean(on), on.count)
+        add(XCTAttachment(string: text))
+        print("== resetcmd animation measurement ==\n" + text)
+        XCTAssertFalse(off.isEmpty)
+        XCTAssertFalse(on.isEmpty)
+    }
+
     /// Prints the two numbers `Mac/docs/api/resetcmd.md` reports: what a reset costs against what a
     /// relaunch costs, both measured the way a test pays for them.
     func testMeasureResetAgainstRelaunch() {
