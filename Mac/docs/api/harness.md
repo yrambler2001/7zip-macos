@@ -181,6 +181,8 @@ relaunch()                       // graceful quit + launch(seed: .keep): asserts
 quit() -> Bool                   // "7-Zip > Quit 7-Zip", waits for exit (state is saved)
 terminate()                      // SIGKILL, no state saved
 isRunning
+seedFile                         // this test's settings domain (§3); .values is what the app saved
+seedName                         // goes into its file name; the base class sets it to the test name
 
 // window and panels
 window, windowTitle              // title = focused panel path, "7-Zip" when empty
@@ -204,7 +206,7 @@ closeOpenMenus()
 waitForDialog(title:timeout:) -> XCUIElement?
 texts(of: dialog) -> [String]               // message text, informative text, ...
 dismissDialog(dialog, button: "OK") -> Bool
-waitForNoDialog()
+waitForNoDialog()               // nothing modal is left, e.g. no Confirm File Replace prompt
 
 // artifacts
 screenshot("01-home", prefix: "extract", test: self) -> URL?
@@ -292,3 +294,17 @@ Fixtures (from `Mac/scripts/make-fixtures.sh`): `test.7z`, `test.zip`, `test.tar
 * If a test needs something the app does not expose to accessibility, ask the owning scope for it
   in your report and add a line to `Mac/docs/requests.md`, instead of touching their files
   (`00-orchestration.md` ownership table).
+* **Never let a lookup that misses be silent.** Every one of the harness bugs found on `mac/harness2`
+  had the same shape: an element query that matched nothing (or matched the wrong thing) turned into
+  a wrong *assertion* rather than a failure — `if field.exists { … }` around the text to type,
+  `app.menus.firstMatch` when the Apple menu is also a match, a `navigate` that returned nothing.
+  Assert the element, and read back what you typed or chose.
+* **Do not send `Cmd+A`, `Cmd+R`, `Cmd+Z`, `Cmd+N`, `Cmd+Up/Down`, `Cmd+[`/`]`, `Cmd+Backspace`,
+  `Shift`/`Option+Return` or the numeric-pad `+`/`-` to a text field**: the menu bar binds all of
+  them (`MainMenu.swift`) and AppKit offers a key equivalent to the menu before the key window's
+  responder chain, so the field editor never sees them. `Cmd+Right` / `Shift+Cmd+Left` are free and
+  are what `SevenZipPanel.navigate(to:)` uses to replace the address bar's text.
+* **Build a test's fixture so the behaviour it asserts is the only thing that could make it pass.**
+  `testCopyBetweenPanels` gave its source and destination the same file names, so "the file is in
+  the other panel" was true before the copy ran — and the copy then stopped on a Confirm File
+  Replace prompt. Assert the starting state too, and check the file system, not only the listing.
