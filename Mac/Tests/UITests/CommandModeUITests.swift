@@ -81,6 +81,22 @@ final class CommandModeUITests: SevenZipUITestCase {
         add(attachment)
     }
 
+    /// Close a command-mode dialog whatever its button is called (lang 401 OK / 402 Cancel /
+    /// 408 Close), then assert the process really exited -- command mode calls `exit()` with the
+    /// 7zG code, so "the app is gone" is the observable end of the command.
+    private func dismissAndExpectExit(_ dialog: XCUIElement, preferring titles: [String]) {
+        for title in titles where dialog.buttons[title].exists {
+            dialog.buttons[title].click()
+            if sevenZip.app.wait(for: .notRunning, timeout: 60) { return }
+        }
+        dialog.typeKey(.escape, modifierFlags: [])
+        if sevenZip.app.wait(for: .notRunning, timeout: 20) { return }
+        let any = dialog.buttons.firstMatch
+        if any.exists { any.click() }
+        XCTAssertTrue(sevenZip.app.wait(for: .notRunning, timeout: 60),
+                      "command mode must exit once its dialog is closed")
+    }
+
     /// A small tree to compress, and a 7z archive made from it by the app itself.
     private func makeFixtureTree() throws -> (files: [String], archive: String) {
         let one = work.appendingPathComponent("one.txt")
@@ -133,14 +149,7 @@ final class CommandModeUITests: SevenZipUITestCase {
         attach(dialog, "01-dock-drop-compress")
 
         // Cancel is E_ABORT, i.e. exit 255, and the process really goes away.
-        let cancel = dialog.buttons["Cancel"]
-        if cancel.exists {
-            cancel.click()
-        } else {
-            dialog.typeKey(.escape, modifierFlags: [])
-        }
-        XCTAssertTrue(sevenZip.app.wait(for: .notRunning, timeout: 60),
-                      "command mode must exit after its dialog closes")
+        dismissAndExpectExit(dialog, preferring: ["Cancel", "Close"])
     }
 
     /// `t -scrc<M>`: the checksums of the extracted data go to the hash results list **instead of**
@@ -155,9 +164,7 @@ final class CommandModeUITests: SevenZipUITestCase {
                       "no list in \(dialog.debugDescription)")
         attach(dialog, "02-scrc-checksum-list")
 
-        let ok = dialog.buttons["OK"]
-        if ok.exists { ok.click() } else { dialog.typeKey(.escape, modifierFlags: []) }
-        XCTAssertTrue(sevenZip.app.wait(for: .notRunning, timeout: 60))
+        dismissAndExpectExit(dialog, preferring: ["Close", "OK", "Cancel"])
     }
 
     /// `-sfx<module>` with a module that is not there: an error box and nothing written, instead of
@@ -172,9 +179,7 @@ final class CommandModeUITests: SevenZipUITestCase {
         XCTAssertTrue(text.contains("SFX module"), "unexpected box text: \(text)")
         attach(dialog, "03-sfx-module-error")
 
-        let ok = dialog.buttons.firstMatch
-        if ok.exists { ok.click() } else { dialog.typeKey(.return, modifierFlags: []) }
-        XCTAssertTrue(sevenZip.app.wait(for: .notRunning, timeout: 60))
+        dismissAndExpectExit(dialog, preferring: ["OK"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: output.path),
                        "nothing may be written when the SFX module is missing")
     }
