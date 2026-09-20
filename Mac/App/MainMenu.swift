@@ -37,6 +37,12 @@ enum MainMenu {
         it.keyEquivalentModifierMask = mods
         it.tag = tag ?? idm
         it.isHidden = hidden
+        // Pin the accessibility identity to the selector the item is *declared* with. Without
+        // this an NSMenuItem reports whatever action it currently carries, so retargeting one at
+        // runtime renames it for VoiceOver and for any test that addresses it by selector --
+        // which is what happened to the two IDM_ABOUT 961 items (Mac/docs/requests.md,
+        // `harness` -> `tools`/`panel`).
+        if let action { it.setAccessibilityIdentifier(NSStringFromSelector(action)) }
         menu.addItem(it)
         return it
     }
@@ -47,6 +53,7 @@ enum MainMenu {
         ExtractVerificationContext.installIfRequested()   // SZ_EXTRACT_CONTEXT: extract scope verification hook
         CompressDemo.installIfRequested()   // SZ_COMPRESS_DEMO: compress scope verification hook
         FinderIntegration.install()         // finder scope: Services provider, sevenzip:// URLs, 7zG argv
+        PanelDragOutVerification.installIfRequested()   // SZ_POLISH_DRAGOUT: polish scope drag-out hook
         let bar = NSMenu(title: "MainMenu")
         bar.addItem(appMenu())
         bar.addItem(fileMenu())

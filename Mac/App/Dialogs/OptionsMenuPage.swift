@@ -86,6 +86,14 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         diagnosticsField.textColor = .secondaryLabelColor
         diagnosticsField.isSelectable = true
         diagnosticsField.lineBreakMode = .byTruncatingTail
+        // `lineBreakMode` alone only says *how* to truncate: a label still resists compression
+        // below its full text, and this one's text is a pluginkit command line with a bundle
+        // identifier, a version and a path in it. Tied to the stack width, that pushed the whole
+        // Options window out to 2191 pt -- wider than the screen, with the tab strip and the
+        // OK / Cancel buttons off the right edge. Let it be squeezed and truncated instead.
+        diagnosticsField.cell?.usesSingleLineMode = true
+        diagnosticsField.maximumNumberOfLines = 1
+        diagnosticsField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         cascadedCheckbox = OptionsUI.checkbox(2302, "Cascaded context menu", self, #selector(optionClicked(_:)))
         iconsCheckbox = OptionsUI.checkbox(2304, "Icons in context menu", self, #selector(optionClicked(_:)))
@@ -201,7 +209,7 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     private func refreshIntegrationState() {
         integrateCheckbox.isEnabled = false
         integrateStatus.stringValue = "Checking the Finder integration state\u{2026}"
-        diagnosticsField.stringValue = "pluginkit -e use -i \(Self.finderSyncBundleID)"
+        setDiagnostics("pluginkit -e use -i \(Self.finderSyncBundleID)")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let output = Self.runPluginkit()
             let line = output.split(separator: "\n").first { $0.contains(Self.finderSyncBundleID) }
@@ -222,10 +230,17 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
                         + "from /Applications once, then enable it in System Settings > General > "
                         + "Login Items & Extensions."
                 }
-                self.diagnosticsField.stringValue = "pluginkit -e use -i \(Self.finderSyncBundleID)"
-                    + "   |   " + (line.map(String.init) ?? "pluginkit -m -p com.apple.FinderSync -v: not listed")
+                self.setDiagnostics("pluginkit -e use -i \(Self.finderSyncBundleID)"
+                    + "   |   " + (line.map(String.init) ?? "pluginkit -m -p com.apple.FinderSync -v: not listed"))
             }
         }
+    }
+
+    /// The field truncates (it must not widen the window), so the full command stays reachable
+    /// as a tool tip and by selecting the text.
+    private func setDiagnostics(_ text: String) {
+        diagnosticsField.stringValue = text
+        diagnosticsField.toolTip = text
     }
 
     private static func runPluginkit() -> String {

@@ -394,24 +394,11 @@ extension MainWindowController {
 
 enum ToolsCommands {
 
-    /// Called from MainMenu.build(). Retargets the About items (tag 961) at the real dialog
-    /// once the app has launched; everything else in this scope is reached through selectors
-    /// nobody else implements.
-    static func install() {
-        NotificationCenter.default.addObserver(forName: NSApplication.didFinishLaunchingNotification,
-                                              object: nil, queue: .main) { _ in
-            retargetAboutItems(NSApp.mainMenu)
-        }
-    }
-
-    private static func retargetAboutItems(_ menu: NSMenu?) {
-        guard let menu else { return }
-        for item in menu.items {
-            if item.tag == 961 {
-                item.action = #selector(MainWindowController.toolsShowAbout(_:))
-                item.target = nil            // straight down the responder chain
-            }
-            retargetAboutItems(item.submenu)
-        }
-    }
+    /// Called from MainMenu.build(). Nothing to install any more: the two IDM_ABOUT 961 items
+    /// point straight at `MainWindowController.helpAbout`, which now shows the real IDD_ABOUT
+    /// 2900 dialog. It used to retarget them at `toolsShowAbout:` on `didFinishLaunching`, which
+    /// changed their accessibility identifier out from under any test or assistive technology
+    /// addressing them by selector (Mac/docs/requests.md, `harness` -> `tools`/`panel`). The hook
+    /// is kept so `MainMenu.build()` needs no edit and a later tools wave has a place to install.
+    static func install() {}
 }

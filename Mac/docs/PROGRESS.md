@@ -84,7 +84,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] `Toolbars` mask persistence: bit0 labels, bit1 large, bit2 standard, bit3 archive, bit31 "never saved → defaults" = labels on, small buttons, both toolbars (`kDefaultToolbarMask = bit31|8|4|1`) (01 §1.3, 01b §5.2)
 - [ ] Toolbar clicks Add / Extract / Test forward to the focused panel with panel timers disabled; standard buttons dispatch the ordinary menu IDs (01 §1.3, §2.7)
 - [x] `CApp::ReloadToolbars` / `SaveToolbarChanges` equivalents rebuild after Options / language changes (01 §1.3)
-- [ ] Window persistence: frame + maximized via autosave name, `NumPanels` clamped 1..2, `CurrentPanel` clamped 0..1, splitter from stored position or the middle when nothing stored (01 §1.5, 01b §5.7)
+- [x] Window persistence: frame + maximized via autosave name, `NumPanels` clamped 1..2, `CurrentPanel` clamped 0..1, splitter from stored position or the middle when nothing stored (01 §1.5, 01b §5.7)
 - [x] `Support/Formatting`: `ConvertSizeToString` with space thousands separators (`1 234 567`), timestamp levels DAY / MIN (default) / SEC / NTFS (7 digits) / NS, UTC vs local switch (01 §3.12)
 - [ ] `Support/Icons`: `NSWorkspace` icon per extension with a `g_Ext_to_Icon_Map`-style cache, folder icon for directories, real icons for bundles / apps (01 §3.12, §9 #15)
 

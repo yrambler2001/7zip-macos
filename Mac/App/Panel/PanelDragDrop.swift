@@ -326,13 +326,18 @@ extension PanelViewController: NSFilePromiseProviderDelegate {
     /// for a drag, so a dragged directory keeps its subtree), the shared Progress dialog in
     /// WaitMode and the error reporting included. Main thread, with the panel queue parked by the
     /// caller above.
+    /// `rememberedPassword` is what the panel was given when it opened this archive chain
+    /// (CFolderLink, PanelNavigation.passwordForArchive); passing it means a drag out of an
+    /// archive that is already unlocked does not raise a second prompt (Mac/docs/requests.md,
+    /// `cleanup` -> `extract`).
     func extractForPromise(engineIndex: Int, toDirectory directory: String) -> Bool {
         guard let folder = currentFolderForContext() else { return false }
         let destination = directory.hasSuffix("/") ? directory : directory + "/"
         return ArchiveDragOut.extract(indices: [engineIndex], from: folder, to: destination,
                                       archiveDisplayPath: currentPath,
                                       parentWindow: view.window,
-                                      overwriteMode: .overwrite) != nil
+                                      overwriteMode: .overwrite,
+                                      password: rememberedPassword) != nil
     }
 }
 
