@@ -37,12 +37,8 @@ Mac/scripts/test.sh      # unit tests
 
 ## Commits
 
-One scope per branch, commit early and often, message prefix `mac(<scope>): `. End every
-commit message with:
-
-```
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01Gdw1PTb1YfTS9NULnA9BcC
-```
+One scope per branch, commit early and often, message prefix `mac(<scope>): `. End every commit
+message with the `Co-Authored-By` and `Claude-Session` attribution lines your own session gives
+you, not the ones from an earlier session.
 
 Never merge, rebase, or switch branches; the orchestrator integrates.
