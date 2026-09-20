@@ -161,6 +161,13 @@ Mac/scripts/test.sh --ui                      -> 65 passed, 0 failed    (54 befo
 
 The app-launch lock (`harness` api §1a) was held for every launch, every driver run and every UI run.
 
+One housekeeping note for whoever runs the suite next: `test.sh` exports every screenshot attachment
+into `Mac/docs/reports/screenshots/`, so a UI run **rewrites 96 PNGs belonging to other scopes**
+(`finder`, `harness`, `packaging`, `panel`, `polish`, `cmdmode`) with freshly captured, byte-different
+images, and adds a `*-failure-*.png` for every failing test. They were restored to the state this
+branch started from and this scope adds none of its own; anyone else should check `git status` for the
+same churn before committing.
+
 ### The first full UI run failed 11 pre-existing tests, and why it was not this branch
 
 The first `--ui` run after the clean build reported **54 passed, 11 failed**, and all 11 failures were
