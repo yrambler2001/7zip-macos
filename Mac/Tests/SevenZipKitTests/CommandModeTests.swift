@@ -430,6 +430,42 @@ final class CommandModeTests: UpdaterTestCase {
         }
     }
 
+    /// `d` with an exclude-only censor must not fall back to the universal wildcard and delete the
+    /// whole archive. The command layer guards it too, but the bridge is the last line.
+    func testDeleteWithNoIncludeEntryIsRefused() throws {
+        let dir = try tempDir("d-guard")
+        try makeSourceTree(in: dir)
+        let archive = (dir as NSString).appendingPathComponent("arc.7z")
+        try update(SZUpdateOptions.options(archivePath: archive),
+                   [(dir as NSString).appendingPathComponent("readme.txt"),
+                    (dir as NSString).appendingPathComponent("notes.md")])
+
+        let excludeOnly = [SZPathSpec.spec(path: "*.md", include: false,
+                                           recursedType: .nonRecursed, wildcardMatching: true,
+                                           markMode: .fileOrDir)]
+        let outcome: Result<SZUpdateResult, Error> = offMain {
+            do {
+                return .success(try SZUpdater.deleteItems(specs: excludeOnly, fromArchiveAt: archive,
+                                                          options: nil, progress: nil))
+            } catch { return .failure(error) }
+        }
+        XCTAssertThrowsError(try outcome.get())
+        XCTAssertEqual(try archiveEntryNames(archive), ["notes.md", "readme.txt"],
+                       "the archive must be untouched")
+
+        // With an include entry it really deletes just that one.
+        let ok = [SZPathSpec.spec(path: "*.md", include: true, recursedType: .nonRecursed,
+                                  wildcardMatching: true, markMode: .fileOrDir)]
+        let done: Result<SZUpdateResult, Error> = offMain {
+            do {
+                return .success(try SZUpdater.deleteItems(specs: ok, fromArchiveAt: archive,
+                                                          options: nil, progress: nil))
+            } catch { return .failure(error) }
+        }
+        _ = try done.get()
+        XCTAssertEqual(try archiveEntryNames(archive), ["readme.txt"])
+    }
+
     // MARK: - 03 section 2.6: `-scrc` on `x` / `t`
 
     func testScrcIsParsedForExtractAndTest() throws {

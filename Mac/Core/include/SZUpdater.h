@@ -274,8 +274,9 @@ typedef NS_ENUM(NSInteger, SZWildcardMarkMode) {
     NS_SWIFT_NAME(addPaths(_:toArchiveAt:options:progress:));
 
 /// `deleteItemsNamed:` with the censor entries spelled out, so `d -x!…` and a wildcard in a
-/// positional name reach the engine unexpanded. An empty `itemSpecs` list deletes nothing, because
-/// the caller must say `*` explicitly.
+/// positional name reach the engine unexpanded. `itemSpecs` with **no include entry** is refused
+/// with `SZErrorCodeInvalidArgument`: the update core would otherwise fall back to the universal
+/// wildcard `*`, which for a delete means "every item".
 + (nullable SZUpdateResult *)deleteItemsWithSpecs:(NSArray<SZPathSpec *> *)itemSpecs
                                 fromArchiveAtPath:(NSString *)archivePath
                                           options:(nullable SZUpdateOptions *)options

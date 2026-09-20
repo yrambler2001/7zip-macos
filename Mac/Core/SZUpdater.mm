@@ -1239,6 +1239,19 @@ static BOOL SZLooksLikeSFXStub(NSString *path)
                                          progress:(nullable id<SZProgressDelegate>)progress
                                             error:(NSError **)error
 {
+  // Without this the update core would add AddPreItem_Wildcard(), i.e. delete every item.
+  BOOL thereIsInclude = NO;
+  for (SZPathSpec *spec in itemSpecs)
+    if (spec.include)
+      thereIsInclude = YES;
+  if (!thereIsInclude)
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeInvalidArgument
+                              message:@"You must select one or more files"];
+    return nil;
+  }
+
   SZUpdateOptions *o = [(options ?: [SZUpdateOptions optionsWithArchivePath:archivePath]) copy];
   o.archivePath = archivePath;
   o.formatIndex = -1;
