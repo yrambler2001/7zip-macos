@@ -511,11 +511,12 @@ targets:
     #    needed as well: Xcode 15+ drives that one key from the build setting and strips it from the
     #    entitlements file when the setting is NO.
     #  * shared-preference.read-only: lets the sandboxed extension read the five Options.* values of
-    #    CContextMenuInfo straight from the app's domain (03 section 1.3). Xcode's entitlement
-    #    processing drops `temporary-exception.*` from an **ad-hoc** signature, so it only takes
-    #    effect in a Developer ID build whose profile grants it; the snapshot the app pushes into the
-    #    extension container is the path that always works. No App Group: macOS 15+ rejects a group
-    #    identifier that is not prefixed by a Team ID.
+    #    CContextMenuInfo straight from the app's domain (03 section 1.3); cfprefsd otherwise
+    #    redirects every domain into the extension's own container. It does survive the ad-hoc
+    #    signature -- but only a *clean* build re-signs the appex, so verify with
+    #    `codesign -d --entitlements` after `rm -rf Mac/build`. The snapshot the app pushes into the
+    #    extension container is the second path. No App Group: macOS 15+ rejects a group identifier
+    #    that is not prefixed by a Team ID.
     entitlements:
       path: FinderSync/FinderSync.entitlements
       properties:

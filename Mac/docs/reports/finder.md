@@ -100,10 +100,11 @@ A sandboxed appex cannot read the app's preferences domain. The app (unsandboxed
 of the five `Options.*` values into each extension's container
 (`FinderSettingsBridge.push()`), on launch, on a context-menu settings change and on a language
 change; the extension reads it on **every** `menu(for:)`, because Finder never announces a settings
-change. `com.apple.security.temporary-exception.shared-preference.read-only` is declared as the
-second path but Xcode strips it from an ad-hoc signature (§4). The snapshot also carries the eleven
-resolved menu lang strings, because the `Lang/*.txt` reader lives in `SevenZipKit`, which the appex
-must not link.
+change. `com.apple.security.temporary-exception.shared-preference.read-only` is the second path and it
+does survive the ad-hoc signature (§4), so the extension can also read
+`com.yrambler2001.7zip` directly if no snapshot has been written yet. The snapshot also carries the
+eleven resolved menu lang strings, because the `Lang/*.txt` reader lives in `SevenZipKit`, which the
+appex must not link.
 
 ---
 
@@ -160,11 +161,13 @@ plist against itself instead.
    discarding hand-written contents (this is what the Wave 1 `FinderSync.entitlements` was). The
    keys now live under `entitlements.properties` in `project.yml`; the two `.entitlements` files
    are generated artefacts.
-3. Consequence: `com.apple.security.temporary-exception.shared-preference.read-only` survives into
-   the file but **not** into an ad-hoc signature — Xcode's entitlement processing keeps only
-   `app-sandbox` and `get-task-allow` without a provisioning profile. Verified with
-   `codesign -d --entitlements`. The container snapshot is therefore the operative settings path;
-   the entitlement starts working in a Developer ID build.
+3. **An incremental build re-signs nothing.** While chasing (1) and (2) the appex kept its old
+   signature, so `codesign -d --entitlements` reported an entitlement set that no longer matched
+   the file and sent the investigation down a wrong path ("ad-hoc signing strips
+   `temporary-exception.*`"). On the final **clean** build all three appexes carry
+   `com.apple.security.app-sandbox`, `com.apple.security.get-task-allow` **and**
+   `com.apple.security.temporary-exception.shared-preference.read-only` — verified. Lesson: verify
+   an entitlement change only after `rm -rf Mac/build`.
 
 ---
 
@@ -266,11 +269,20 @@ pluginkit -m -p com.apple.ui-services -v | grep 7zip
 ```
 
 All three carry `+` (enabled) and none carries `!` (blocked). Their sandbox containers exist, which
-only happens after the system has actually started the extension process. `codesign -d
---entitlements` on each appex inside the built bundle reports
-`com.apple.security.app-sandbox = true`.
+only happens after the system has actually started the extension process. `codesign -d --entitlements` on each appex of the clean build reports
+`com.apple.security.app-sandbox`, `get-task-allow` and
+`temporary-exception.shared-preference.read-only`.
 
-### 5.6 UI tests
+### 5.6 Association handlers, measured
+
+After the build was registered, `UTType(filenameExtension:)` returns a declared, non-`dyn.`
+identifier for **all 40** extensions (17 system types, 23 `org.7-zip.<ext>-archive`), and
+`NSWorkspace.urlForApplication(toOpen:)` reports `7-Zip.app` as the handler for the 23 types
+nothing else claims (`rar`, `arj`, `lzh`, `wim`, `apfs`, `squashfs`, …) while leaving
+`public.zip-archive` with Archive Utility and `com.apple.disk-image-udif` with DiskImageMounter,
+which is the intended `LSHandlerRank = Alternate` behaviour.
+
+### 5.7 UI tests
 
 `Mac/Tests/UITests/FinderIntegrationTests.swift` (new, 10 cases) launches the app through the
 harness and then sends exactly the URLs the Finder menu items build, asserting what the app does:
@@ -279,7 +291,8 @@ the Extract dialog for `-ad`, the Compress dialog for `a -ad`, the checksum resu
 "Unsupported command" and "Unknown switch:" boxes, a silent Extract Here that just produces files,
 the open-archive form listing the archive in panel 0 (with and without `-t7z`), and command mode
 from a real `argv` showing only the command's dialog and no file-manager window. Screenshots are
-attached as `Mac/docs/reports/screenshots/finder-*.png`.
+attached as `Mac/docs/reports/screenshots/finder-*.png` (ten files). Result: **10 passed,
+0 failed**.
 
 ---
 
@@ -305,9 +318,14 @@ attached as `Mac/docs/reports/screenshots/finder-*.png`.
 
 ## 7. Known gaps and follow-ups
 
-* `-scrc` on `x`/`t` (hash while extracting) is not wired: the executor passes hash methods to
-  `SZHasher` only for `h`. `mac/cleanup` has since added `SZExtractOptions.hashMethods` and
-  `SZExtractResult.hashResults` (`requests.md`), so this is a two-line change after that merge.
+* **`-scrc` on `x` / `t` (hash while extracting, `03 §2.6`) is parsed but not yet acted on.** The
+  grammar side is complete — `SevenZipCommandLine.hashMethods` is filled for every command — but
+  the bridge properties that would carry it, `SZExtractOptions.hashMethods` and
+  `SZExtractResult.hashResults`, exist on `macos` (added by `mac/cleanup`) and **not** on
+  `mac/finder`, which was branched from `d06136d`. Code against them would not compile here and the
+  rules forbid merging, so the work is written up as an exact three-line recipe in `requests.md`
+  for the next `finder` agent to apply after the merge. Nothing else in the grammar is blocked by
+  it.
 * No `Contents/Helpers/7zG.app` (`03 §6.4` variant (a)); command mode covers the same argv
   contract. Listed as still-open in `PROGRESS.md`.
 * Dropping on the Dock icon **opens** the archive instead of offering "Add to archive…"
@@ -315,8 +333,6 @@ attached as `Mac/docs/reports/screenshots/finder-*.png`.
 * `-snz` reaches the engine but `ReadZoneFile_Of_BaseFile` is `_WIN32`-only, so a plain extraction
   still writes no `com.apple.quarantine`; `SZTempOpen.applyQuarantine` is the helper that would
   post-process it (`extract` scope's gap).
-* `com.apple.security.temporary-exception.shared-preference.read-only` does not survive ad-hoc
-  signing (§4); harmless because the snapshot path is primary.
 * A failed hand-off (`NSWorkspace.open` returning false) is silent: a Finder Sync appex has no
   reliable way to show an alert.
 * The Quick Actions use `NSActionTemplate` as their preview icon; a bundled asset would look better.

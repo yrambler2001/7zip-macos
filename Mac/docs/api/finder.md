@@ -209,7 +209,7 @@ Two ways in, tried in order:
 2. `CFPreferencesCopyAppValue` on `SevenZipBundle.preferencesDomain`, which follows
    `SEVENZIP_DEFAULTS_SUITE` exactly as `NMacPrefs::ApplicationID()` does. Inside the sandbox this
    needs `com.apple.security.temporary-exception.shared-preference.read-only`, which the appex
-   declares but which Xcode strips from an **ad-hoc** signature — see §8.
+   declares and which does survive the ad-hoc signature (verified on a clean build — see §8).
 
 The app pushes on launch, on `Settings.Group.contextMenu` and on a language change; the extension
 re-reads on **every** `menu(for:)`, because Finder never tells an extension that settings changed.
@@ -263,11 +263,9 @@ forces it.
   `Mac/FinderSync/FinderSync.entitlements` and `Mac/QuickAction/QuickAction.entitlements` are
   generated artefacts — edit `project.yml`, not the plists. (With only a `path:` and no
   `properties:`, XcodeGen overwrites them with an empty dict on every run.)
-* `com.apple.security.temporary-exception.shared-preference.read-only` is declared but **does not
-  survive ad-hoc signing**: Xcode's entitlement processing keeps only `app-sandbox` and
-  `get-task-allow` when there is no provisioning profile. The container snapshot of §6 is therefore
-  the operative path; the entitlement starts working in a Developer ID build whose profile grants
-  it.
+* `com.apple.security.temporary-exception.shared-preference.read-only` **does** survive the ad-hoc
+  signature. Verify entitlements only after `rm -rf Mac/build`: an incremental build does not
+  re-sign the appex, so `codesign -d --entitlements` keeps reporting the previous set.
 * No App Group: macOS 15+ rejects a group identifier that is not prefixed by a Team ID, and this
   build has no Team ID.
 * The host app stays unsandboxed and declares `NSDesktopFolderUsageDescription`,
