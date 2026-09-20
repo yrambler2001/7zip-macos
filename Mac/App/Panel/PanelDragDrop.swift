@@ -275,6 +275,10 @@ extension PanelViewController {
 
 extension PanelViewController: NSFilePromiseProviderDelegate {
 
+    /// The name Finder shows while the drag is in flight. `ArchiveDragOut.promisedNames`
+    /// (extract api §5) is the same string read straight off the folder; the row's cached name
+    /// is used instead because it was captured on the panel queue and the folder must not be
+    /// touched from the main thread (panel api §1).
     func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
                              fileNameForType fileType: String) -> String {
         (filePromiseProvider.userInfo as? [String: Any])?["name"] as? String ?? "item"
@@ -287,12 +291,23 @@ extension PanelViewController: NSFilePromiseProviderDelegate {
             completionHandler(SZErrors.error(with: .invalidArgument, message: "no item"))
             return
         }
+        // This runs on `promiseQueue`, off the main thread. Park the panel queue from *here*
+        // (never from the main thread, which the extraction itself needs) so exactly one thread
+        // touches the folder while ArchiveDragOut runs -- the ownership rule of
+        // runFolderOperation / opsinfra api §1.
         let directory = url.deletingLastPathComponent().path
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { completionHandler(nil); return }
-            let ok = self.extractForPromise(engineIndex: index, toDirectory: directory)
-            completionHandler(ok ? nil : SZErrors.error(with: .engine, message: "extraction failed"))
+        var ok = false
+        if Thread.isMainThread {
+            ok = extractForPromise(engineIndex: index, toDirectory: directory)   // cannot park
+        } else {
+            let parked = DispatchSemaphore(value: 0)
+            let release = DispatchSemaphore(value: 0)
+            runOnQueue { parked.signal(); release.wait() }
+            parked.wait()
+            DispatchQueue.main.sync { ok = self.extractForPromise(engineIndex: index, toDirectory: directory) }
+            release.signal()
         }
+        completionHandler(ok ? nil : SZErrors.error(with: .engine, message: "extraction failed"))
     }
 
     func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue {
@@ -306,18 +321,18 @@ extension PanelViewController: NSFilePromiseProviderDelegate {
         return queue
     }()
 
-    /// CopyTo of one item into the receiver's directory, with the shared progress dialog.
+    /// `ArchiveDragOut.extract` (extract api §5) is the one lazy-extraction path for a drag-out:
+    /// `kCurPaths` relative to the folder being dragged from (what `CAgentFolder::CopyTo` does
+    /// for a drag, so a dragged directory keeps its subtree), the shared Progress dialog in
+    /// WaitMode and the error reporting included. Main thread, with the panel queue parked by the
+    /// caller above.
     func extractForPromise(engineIndex: Int, toDirectory directory: String) -> Bool {
-        var options = OperationRunner.Options(title: Lang.text(6004, "Copying"))
-        options.initialStatus = .extracting
-        options.password = rememberedPassword
+        guard let folder = currentFolderForContext() else { return false }
         let destination = directory.hasSuffix("/") ? directory : directory + "/"
-        let result = runFolderOperation(options) { folder, runner -> Bool in
-            try folder.copyItems(at: [NSNumber(value: engineIndex)], toPath: destination, progress: runner)
-            return true
-        }
-        if case .success = result { return true }
-        return false
+        return ArchiveDragOut.extract(indices: [engineIndex], from: folder, to: destination,
+                                      archiveDisplayPath: currentPath,
+                                      parentWindow: view.window,
+                                      overwriteMode: .overwrite) != nil
     }
 }
 
