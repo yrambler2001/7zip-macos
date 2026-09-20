@@ -448,7 +448,16 @@ in five places:
    be a deliberate divergence and is not one this scope took.
 6. **A real Dock drop has never been performed.** See section 4 and `parity.md` F.4; one human check
    is filed in `requests.md`.
-7. **`-spm` is still accepted and ignored**, so the global mark mode cannot be set from the command
+7. **A failing command can leave its Progress window open.** `t -y <archive that does not exist>`
+   collects a message, and the Progress dialog then stays up with Cancel relabelled Close — `01b
+   §4.17`'s "keep the window open when there were messages", which is not gated by
+   `g_DisableUserQuestions` upstream either. The exit code behind that window is right; an
+   unattended caller still sees a window. It is `opsinfra`'s dialog, it is faithful to 7zG, and
+   changing it would be a deliberate divergence, so it is recorded rather than fixed.
+8. **Command mode cannot be driven by XCUITest**, measured (section 4.3). Anything about it that
+   needs a running process is verified from a shell instead; anything visual is screenshotted
+   through the file manager, where the same code builds the same dialogs.
+9. **`-spm` is still accepted and ignored**, so the global mark mode cannot be set from the command
    line even though the per-switch `m` modifier is now honoured end to end. It only affects whether a
    trailing separator forces "directories only", and no shell command generates it.
 
