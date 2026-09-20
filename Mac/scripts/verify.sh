@@ -6,6 +6,8 @@
 # Usage: Mac/scripts/verify.sh [options]
 #   -f, --fast             skip the clean step (incremental build)
 #   -n, --no-ui            unit tests only (use when no display is available)
+#   -s, --shards           run the tests with test.sh --shards: one build-for-testing, the
+#                          read-only targets concurrently, the input shard alone
 #   -c, --config <CFG>     Debug (default) or Release
 #   -s, --scope <NAME>     name the scope in the summary (default: the git branch)
 #   -o, --out <PATH>       summary file (default Mac/docs/reports/verify-latest.md)
@@ -24,6 +26,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app}"
 
 FAST=0
 NO_UI=0
+SHARDS=0
 CONFIG="Debug"
 SCOPE=""
 OUT="$MAC/docs/reports/verify-latest.md"
@@ -31,6 +34,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -f|--fast) FAST=1 ;;
     -n|--no-ui) NO_UI=1 ;;
+    -s|--shards) SHARDS=1 ;;
     -c|--config) CONFIG="${2:?--config needs a value}"; shift ;;
     -s|--scope) SCOPE="${2:?--scope needs a value}"; shift ;;
     -o|--out) OUT="${2:?--out needs a value}"; shift ;;
@@ -121,9 +125,22 @@ else
 fi
 
 if [ $RC -eq 0 ]; then
-  step "unit tests" "$MAC/scripts/test.sh" --target SevenZipKitTests --config "$CONFIG"
-  if [ "$NO_UI" = 0 ]; then
-    step "UI tests" "$MAC/scripts/test.sh" --ui --config "$CONFIG"
+  if [ "$SHARDS" = 1 ]; then
+    # One build-for-testing, then the read-only targets concurrently and the input shard alone.
+    if [ "$NO_UI" = 0 ]; then
+      step "all tests (sharded)" "$MAC/scripts/test.sh" --shards --config "$CONFIG"
+    else
+      step "unit tests" "$MAC/scripts/test.sh" --target SevenZipKitTests --config "$CONFIG"
+      step "app-hosted tests" "$MAC/scripts/test.sh" --host --config "$CONFIG"
+    fi
+  else
+    step "unit tests" "$MAC/scripts/test.sh" --target SevenZipKitTests --config "$CONFIG"
+    # The app-hosted unit tests run inside the app's own process: no window is driven, but a
+    # display is still needed, so they follow the same --no-ui switch as the UI shards.
+    if [ "$NO_UI" = 0 ]; then
+      step "app-hosted tests" "$MAC/scripts/test.sh" --host --config "$CONFIG"
+      step "UI tests" "$MAC/scripts/test.sh" --ui --config "$CONFIG"
+    fi
   fi
 else
   RESULTS="$RESULTS
@@ -150,7 +167,9 @@ PARITY="$("$MAC/scripts/parity-check.sh" 2>/dev/null || echo '(parity-check fail
   printf '%s\n' "$PARITY"
   echo '```'
   echo
-  echo "Logs: \`Mac/build/build-$CONFIG.log\`, \`Mac/build/test-SevenZipKitTests.log\`, \`Mac/build/test-7-ZipUITests.log\`."
+  echo "Logs: \`Mac/build/build-$CONFIG.log\`, \`Mac/build/test-SevenZipKitTests.log\`,"
+  echo "\`Mac/build/test-SevenZipAppTests.log\`, \`Mac/build/test-7-ZipUITests.log\`,"
+  echo "\`Mac/build/test-7-ZipUITestsProbe1.log\`, \`Mac/build/test-7-ZipUITestsProbe2.log\`."
   echo "Screenshots: \`Mac/docs/reports/screenshots/\`."
 } >"$OUT"
 

@@ -3,10 +3,12 @@
 // rename, create folder, delete to the Trash and the list context menu.
 //
 // They use the `harness` scope's helpers (`SevenZipUITestCase`, `SevenZipApp`, `SevenZipPanel`,
-// `SettingsDomain`, `TestPaths`; see Mac/docs/api/harness.md). Those helpers and the `7-ZipUITests`
-// target live on `mac/harness`, which is not merged into `macos` yet, so this file is compiled and
-// run only after that merge -- `Mac/scripts/test.sh --ui`. Everything it asserts was verified by
-// hand in the running app first (Mac/docs/reports/panel.md).
+// `SettingsDomain`, `TestPaths`; see Mac/docs/api/harness.md). Everything they assert was verified
+// by hand in the running app first (Mac/docs/reports/panel.md).
+//
+// Every case here clicks, double-clicks or types, so the class belongs to the **input shard** and
+// runs alone: macOS delivers a synthesized event to whatever application is frontmost. The app is
+// launched once for the class and reset between tests (`SevenZipUITestCase`).
 
 import XCTest
 
@@ -246,14 +248,4 @@ final class PanelTests: SevenZipUITestCase {
         app.typeKey(.escape, modifierFlags: [])
     }
 
-    // MARK: helpers
-
-    private func waitFor(_ what: String, timeout: TimeInterval = 20, _ condition: () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if condition() { return true }
-            usleep(200_000)
-        } while Date() < deadline
-        return false
-    }
 }

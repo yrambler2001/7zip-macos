@@ -1,5 +1,13 @@
-// SplitViewTests.swift -- View > 2 Panels and the stored divider position (01 section 1.2,
+// SplitViewTests.swift -- the divider **drag** and what it persists (01 section 1.2,
 // 01b section 5.7; `polish` scope, Mac/docs/reports/polish.md).
+//
+// The other three cases of this class moved to `SevenZipAppTests/MainWindowLayoutTests`: "the split
+// is even on first use", "a stored splitterPos is restored" and "the split survives the minimum
+// window size" are all frame comparisons on a `MainWindowController`, and a frame does not need a
+// second process -- `showSecondPanel()` runs the same code whether the toggle came from the View
+// menu or from a method call. What is left here cannot move: a press-and-drag is synthesized input,
+// and the assertion is the round trip through `splitViewDidResizeSubviews` -> `captureSplitterRatio`
+// -> the settings domain -> a relaunch, which needs two real processes.
 //
 // The defect these cover: `showSecondPanel` used to place the divider from a
 // `DispatchQueue.main.async` block, and whether that block or the split view's own layout pass ran
@@ -74,53 +82,6 @@ final class SplitViewTests: SevenZipUITestCase {
     }
 
     // MARK: - tests
-
-    /// Toggling View > 2 Panels splits the window evenly -- three separate launches, because the
-    /// defect was a race that only showed up in some of them.
-    func testTwoPanelsSplitEvenlyOnFirstUse() {
-        for trial in 1...3 {
-            launch(seed: .typed([SettingsDomain.Key.numPanels: 1,
-                                 SettingsDomain.Key.splitterPos: "0.500000",
-                                 SettingsDomain.Key.panelPath0: TestPaths.fixtures,
-                                 SettingsDomain.Key.panelPath1: TestPaths.fixtures]))
-            XCTAssertTrue(sevenZip.panel(0).table.waitForExistence(timeout: 30))
-            XCTAssertEqual(sevenZip.panelCount, 1, "trial \(trial): started with two panels")
-            XCTAssertTrue(sevenZip.ensurePanelCount(2), "trial \(trial): View > 2 Panels did nothing")
-            XCTAssertTrue(sevenZip.panel(1).waitForRow(named: "test.7z", timeout: 20),
-                          "trial \(trial): the second panel never listed its folder")
-            assertEvenSplit("toggle trial \(trial)")
-            if trial == 1 { screenshot("11-two-panels-even") }
-            sevenZip.terminate()
-        }
-    }
-
-    /// Launching straight into two panels (`FM.Panels.numPanels` = 2) puts the divider where
-    /// `FM.Panels.splitterPos` says, not at the 120 pt minimum and not at the middle.
-    func testStoredSplitterPositionIsRestoredOnLaunch() {
-        launch(seed: twoPanelSeed(ratio: "0.350000"))
-        XCTAssertTrue(sevenZip.panel(0).table.waitForExistence(timeout: 30))
-        XCTAssertTrue(sevenZip.panel(1).waitForRow(named: "test.7z", timeout: 20))
-        XCTAssertEqual(sevenZip.panelCount, 2)
-        waitForPanelsToSettle()
-        guard let position = dividerPosition else { return XCTFail("no divider") }
-        let width = splitGroup.frame.width
-        XCTAssertEqual(position, width * 0.35, accuracy: 12,
-                       "divider at \(position) of \(width), expected 35%")
-        let (left, right) = addressBarWidths()
-        XCTAssertLessThan(left, right, "panel 0 should be the narrow one at 35%")
-        screenshot("12-two-panels-stored-ratio")
-    }
-
-    /// The window at its smallest (360x240, `MainWindowController.init`): 0.5 of 360 is still
-    /// wider than kPanelSizeMin, so the split stays even instead of snapping to a minimum.
-    func testTwoPanelsAtMinimumWindowSize() {
-        launch(seed: twoPanelSeed(ratio: "0.500000", position: "200 200 360 240"))
-        XCTAssertTrue(sevenZip.panel(0).table.waitForExistence(timeout: 30))
-        XCTAssertTrue(sevenZip.panel(1).waitForRow(named: "test.7z", timeout: 20))
-        XCTAssertEqual(sevenZip.window.frame.width, 360, accuracy: 2)
-        assertEvenSplit("minimum window size", tolerance: 8)
-        screenshot("13-two-panels-minimum-size")
-    }
 
     /// Drag the divider, quit, launch again from the same settings domain: the position is saved
     /// as a ratio and restored (CApp::Save / FM.Panels.splitterPos).

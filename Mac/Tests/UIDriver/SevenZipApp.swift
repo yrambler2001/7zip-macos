@@ -23,7 +23,10 @@ import XCTest
 
 public final class SevenZipApp {
 
-    public static let bundleIdentifier = "com.yrambler2001.7zip"
+    /// The app this shard drives. Every UI-test target is built against an app target with its own
+    /// bundle identifier so the read-only shards can run at the same time (`TestShard`); the input
+    /// shard drives the shipping identifier.
+    public static var bundleIdentifier: String { TestShard.appBundleIdentifier }
     /// Title of the application menu and of its Quit item (from the bundle name).
     public static let appMenuTitle = "7-Zip"
     public static let quitItemTitle = "Quit 7-Zip"
@@ -39,6 +42,12 @@ public final class SevenZipApp {
     public private(set) var seedFile: SettingsSeedFile?
     /// Name the seed files carry, so a leftover file says which test wrote it.
     public var seedName = "uitest"
+    /// The test class this instance belongs to. `SZ_STATE_DIR` is derived from it, so two classes --
+    /// and two shards -- never share a work directory (contract, "Running several instances").
+    public var owner = "ui"
+    /// How the last `prepare(...)` brought the app to its state, for the report and for a test that
+    /// wants to assert the fast path is really being taken.
+    public private(set) var lastPreparation: ResetOutcome?
 
     public init(app: XCUIApplication = XCUIApplication(), settings: SettingsDomain = SettingsDomain()) {
         self.app = app
@@ -76,6 +85,9 @@ public final class SevenZipApp {
         app.launchArguments = args
         var env = environment
         env["SEVENZIP_UITEST"] = "1"
+        // The test-support contract: the affordances on, animations at zero duration, and a state
+        // directory of this class's own so parallel shards cannot collide.
+        env.merge(TestShard.environment(for: owner)) { mine, _ in mine }
         if env[SettingsDomain.suiteEnvironmentVariable] == nil {
             if let values = seed.preferences {
                 // A fresh domain per launch. A failure to write it would silently hand the app the
@@ -98,6 +110,63 @@ public final class SevenZipApp {
         }
         _ = panel(0).table.waitForExistence(timeout: timeout)
         return window
+    }
+
+    /// Bring the app to `seed` for the next test: a `sevenzip://test/reset` of the running instance
+    /// when the contract allows it, a launch when it does not.
+    ///
+    /// A reset is used only when **all** of this holds: the app is running, it implements the
+    /// contract (`testSupportIsImplemented`), and the test asks for nothing a reset cannot express --
+    /// no argv path, no extra launch arguments, no extra environment, and a seed that is a set of
+    /// values rather than `.keep`. Anything else launches a process, which is what the whole suite
+    /// did for every test before this. The decision is recorded in `lastPreparation`.
+    @discardableResult
+    public func prepare(seed: SettingsSeed = .clean,
+                        path: String? = nil,
+                        formatHint: String? = nil,
+                        arguments: [String] = [],
+                        environment: [String: String] = [:],
+                        timeout: TimeInterval = 60) -> XCUIElement {
+        func relaunch() -> XCUIElement {
+            lastPreparation = .relaunched
+            return launch(seed: seed, path: path, formatHint: formatHint,
+                          arguments: arguments, environment: environment, timeout: timeout)
+        }
+        guard isRunning, window.exists,
+              path == nil, formatHint == nil, arguments.isEmpty, environment.isEmpty,
+              let values = seed.preferences, let domain = seedFile,
+              testSupportIsImplemented else {
+            return relaunch()
+        }
+        // The app's whole settings domain is this file, so the seed is applied by rewriting it and
+        // telling the reset to reload from it.
+        do {
+            try domain.write(values)
+        } catch {
+            XCTFail("could not rewrite the settings domain at \(domain.url.path): \(error)")
+            return relaunch()
+        }
+        var options = ResetOptions()
+        options.defaults = domain.url.path
+        options.language = values[SettingsDomain.Key.lang] as? String
+        options.panels = values[SettingsDomain.Key.numPanels] as? Int
+        options.path0 = values[SettingsDomain.Key.panelPath0] as? String
+        options.path1 = values[SettingsDomain.Key.panelPath1] as? String
+        options.view = values[SettingsDomain.Key.listMode0] as? Int
+        let outcome = reset(options, seed: seed, timeout: min(timeout, 30))
+        lastPreparation = outcome
+        switch outcome {
+        case .reset:
+            _ = panel(0).table.waitForExistence(timeout: timeout)
+            return window
+        case .relaunched:
+            return window
+        case .failed(let why):
+            // The app said it implements the contract and then did not honour it. That is a defect
+            // worth failing on, but the test itself still gets a usable app.
+            XCTFail("sevenzip://test/reset did not complete: \(why)")
+            return relaunch()
+        }
     }
 
     /// Quit gracefully (so `applicationWillTerminate` saves the state) and launch again with the

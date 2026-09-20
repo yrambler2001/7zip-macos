@@ -9,6 +9,9 @@
 #   -k, --clean            clean the configuration first (xcodebuild clean)
 #   -K, --clean-all        remove Mac/build entirely (fresh DerivedData), then build
 #   -t, --target <NAME>    build one target instead of the 7-Zip scheme
+#   -T, --for-testing      build-for-testing the 7-Zip-AllTests scheme, so every test target and
+#                          every app copy is compiled once and the shards can then be run with
+#                          `test.sh --shards` (or xcodebuild test-without-building) without a rebuild
 #   -q, --quiet            print only the verdict line
 #   -h, --help             this text
 # Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA (extra args),
@@ -24,6 +27,7 @@ MAC="$ROOT/Mac"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app}"
 
 CONFIG=""
+FOR_TESTING=0
 CLEAN=0
 CLEAN_ALL=0
 TARGET=""
@@ -36,6 +40,7 @@ while [ $# -gt 0 ]; do
     -k|--clean) CLEAN=1 ;;
     -K|--clean-all) CLEAN_ALL=1 ;;
     -t|--target) TARGET="${2:?--target needs a value}"; shift ;;
+    -T|--for-testing) FOR_TESTING=1 ;;
     -q|--quiet) QUIET=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "build.sh: unknown argument '$1'" >&2; usage >&2; exit 2 ;;
@@ -79,6 +84,7 @@ perl -e 'alarm 120; exec @ARGV' xcodegen generate -s "$MAC/project.yml" -q
 # single-target build points SYMROOT/OBJROOT at the same DerivedData tree by hand instead.
 DD="$MAC/build/DerivedData"
 SCHEME_ARGS=(-scheme 7-Zip -derivedDataPath "$DD")
+if [ "$FOR_TESTING" = 1 ]; then SCHEME_ARGS=(-scheme 7-Zip-AllTests -derivedDataPath "$DD"); fi
 if [ -n "$TARGET" ]; then
   SCHEME_ARGS=(-target "$TARGET"
     "SYMROOT=$DD/Build/Products"
@@ -109,11 +115,13 @@ else
   say "== signing: $SIGN_IDENTITY (hardened runtime on)"
 fi
 
-say "== xcodebuild ($CONFIG) -> $LOG"
+ACTION=build
+if [ "$FOR_TESTING" = 1 ]; then ACTION=build-for-testing; fi
+say "== xcodebuild $ACTION ($CONFIG) -> $LOG"
 set +e
 xcodebuild -project "$MAC/7-Zip.xcodeproj" "${SCHEME_ARGS[@]}" -configuration "$CONFIG" \
   -destination 'platform=macOS,arch=arm64' \
-  "${SIGN_ARGS[@]}" ${XCODEBUILD_EXTRA:-} build >"$LOG" 2>&1
+  "${SIGN_ARGS[@]}" ${XCODEBUILD_EXTRA:-} "$ACTION" >"$LOG" 2>&1
 RC=$?
 set -e
 # Show our own diagnostics (anything under Mac/) and the verdict.
@@ -128,4 +136,10 @@ fi
 APP="$MAC/build/DerivedData/Build/Products/$CONFIG/7-Zip.app"
 mkdir -p "$MAC/build/$CONFIG"
 ln -sfn "$APP" "$MAC/build/$CONFIG/7-Zip.app"
-echo "OK: $MAC/build/$CONFIG/7-Zip.app -> $APP"
+if [ "$FOR_TESTING" = 1 ]; then
+  PLAN="$(ls -t "$DD/Build/Products"/*.xctestrun 2>/dev/null | head -1)"
+  echo "OK: $MAC/build/$CONFIG/7-Zip.app -> $APP"
+  echo "    test plan: ${PLAN:-none produced}"
+else
+  echo "OK: $MAC/build/$CONFIG/7-Zip.app -> $APP"
+fi
