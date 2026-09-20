@@ -237,7 +237,12 @@ TOTAL_FAIL=0
 
 # Copy the screenshot attachments of a result bundle into Mac/docs/reports/screenshots.
 export_screenshots() {
-  local bundle="$1" tmp="$MAC/build/attachments-$(basename "$bundle" .xcresult)" n=0
+  # Declared one at a time: `local a=$1 b=$(f "$a")` is evaluated with `a` still unset under
+  # `set -u` in bash 3.2, which is what "line 240: bundle: unbound variable" was.
+  local bundle="$1"
+  local n=0
+  local tmp
+  tmp="$MAC/build/attachments-$(basename "$bundle" .xcresult)"
   [ -d "$bundle" ] || return 0
   rm -rf "$tmp"; mkdir -p "$tmp" "$MAC/docs/reports/screenshots"
   xcrun xcresulttool export attachments --path "$bundle" --output-path "$tmp" >/dev/null 2>&1 || return 0
