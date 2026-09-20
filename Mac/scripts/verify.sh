@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # verify.sh -- the one command to run before reporting a scope done: clean build, unit tests,
-# UI tests, a dated summary in Mac/docs/reports/verify-latest.md. Non-zero on any failure.
+# app-hosted tests, UI tests, a dated summary in Mac/docs/reports/verify-latest.md. Non-zero on
+# any failure.
 # Works from any directory.
 #
 # Usage: Mac/scripts/verify.sh [options]
 #   -f, --fast             skip the clean step (incremental build)
 #   -n, --no-ui            unit tests only (use when no display is available)
-#   -s, --shards           run the tests with test.sh --shards: one build-for-testing, the
+#   -S, --shards           run the tests with test.sh --shards: one build-for-testing, the
 #                          read-only targets concurrently, the input shard alone
+#                          (capital S: -s stays --scope, as it always was)
 #   -c, --config <CFG>     Debug (default) or Release
 #   -s, --scope <NAME>     name the scope in the summary (default: the git branch)
 #   -o, --out <PATH>       summary file (default Mac/docs/reports/verify-latest.md)
@@ -34,7 +36,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -f|--fast) FAST=1 ;;
     -n|--no-ui) NO_UI=1 ;;
-    -s|--shards) SHARDS=1 ;;
+    -S|--shards) SHARDS=1 ;;
     -c|--config) CONFIG="${2:?--config needs a value}"; shift ;;
     -s|--scope) SCOPE="${2:?--scope needs a value}"; shift ;;
     -o|--out) OUT="${2:?--out needs a value}"; shift ;;

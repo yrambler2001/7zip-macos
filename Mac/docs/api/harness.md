@@ -52,7 +52,7 @@ Mac/scripts/test.sh --target 7-ZipUITestsProbe1                # one target
 Mac/scripts/test.sh --only SmokeTests/testPasswordPromptOpensEncryptedArchive   # one class or case
 Mac/scripts/verify.sh                # clean build + unit + app-hosted + UI + verify-latest.md
 Mac/scripts/verify.sh --fast         # same without the clean build
-Mac/scripts/verify.sh --shards       # the fast plan for the test steps
+Mac/scripts/verify.sh -S            # --shards: the fast plan for the test steps
 Mac/scripts/verify.sh --no-ui        # unit tests only (no display needed)
 Mac/scripts/parity-check.sh          # ticked/total per scope from Mac/docs/PROGRESS.md
 Mac/scripts/parity-check.sh --list panel      # the open items of one scope
@@ -90,7 +90,11 @@ when the run ends** (`--keep-prefs` opts out). Since every test now seeds its ow
 (§3) this is only a safety net for a test that launches the app without a seed, but it is kept:
 it costs nothing and it is the difference between a stray launch and a wiped settings domain.
 Do not use the app by hand while UI tests run.
-Screenshot attachments are exported from the result bundle into `Mac/docs/reports/screenshots/`.
+Only the **input shard** does this: it is the one that drives `com.yrambler2001.7zip`. The probe
+shards and the app-hosted target each have a settings plist of their own and never touch the real
+domain.
+Screenshot attachments are exported from every result bundle into `Mac/docs/reports/screenshots/`;
+the app-hosted target also writes its PNGs there directly, because its process is not sandboxed.
 
 ## 1a. App-launch lock (read this before running UI tests)
 
@@ -113,7 +117,11 @@ on every exit path, including a failure or Ctrl-C:
 * acquire: `mkdir` in a loop, 180 tries five seconds apart (15 minutes), then the scope name and
   pid go into `$LOCK/owner`;
 * a lock whose directory is **older than 30 minutes** is reported and broken, so a killed run never
-  blocks the repository;
+  blocks the repository — and a lock taken by hand keeps no pid worth checking, so **if you take it
+  yourself, take it with the recipe below and release it**: a run that breaks a lock whose owner is
+  still driving the app produces failures in both (measured: two agents on
+  `com.yrambler2001.7zip` at once, four false failures in the input shard, every one of them a
+  synthesized event that went to the wrong instance);
 * the scripts print `== app lock acquired`, `== waiting for the app lock … (owner: …)` and
   `== app lock released`; if the wait times out they exit 3 and name the owner;
 * `verify.sh` holds it for its whole run and exports `SEVENZIP_APP_LOCK_HELD=1`, so the `test.sh`
