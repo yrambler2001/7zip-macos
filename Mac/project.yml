@@ -37,6 +37,93 @@ settings:
       # A Release build is the one we ship, so it must not ask to be debuggable. Measured before
       # the change: all four binaries in the Release bundle carried the key.
       CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+# -----------------------------------------------------------------------------
+# fastui scope: a test-only copy of the app. Same sources and resources as the
+# 7-Zip target, minus the three app extensions (a test never loads them, and
+# every build registers another copy with pluginkit), and with a bundle
+# identifier of its own.
+#
+# Why the copies exist: `XCUIApplication.launch()` attaches to an instance that
+# is already running instead of replacing it, and `terminate()` kills every
+# process with that bundle id -- so two XCUITest bundles that share an
+# identifier fail each other's tests, and the app-hosted unit tests would be
+# killed by the input shard's first launch. One app target per shard is what
+# `Mac/docs/test-support-contract.md` ("Running several instances at once")
+# asks the app to tolerate, expressed in the build.
+# -----------------------------------------------------------------------------
+targetTemplates:
+  SevenZipTestApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+        excludes:
+          - "Info.plist"
+      - path: Resources/Assets.xcassets
+      - path: Resources/Icons
+        buildPhase: resources
+      - path: Resources/SFX
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: SevenZipKit
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: ${productName}
+        # A module name of its own: every app target installs its `.swiftmodule` into the shared
+        # products directory, so four targets called SevenZipApp are four commands writing
+        # Products/Debug/SevenZipApp.swiftmodule -- "Multiple commands produce ...", measured.
+        # `SevenZipAppTests` imports the host's name (`@testable import SevenZipAppHost`).
+        PRODUCT_MODULE_NAME: ${moduleName}
+        PRODUCT_BUNDLE_IDENTIFIER: ${bundleId}
+        # NOT App/Info.plist: a copy that claims the sevenzip:// scheme, the 40 archive document
+        # types or the five Services is a copy Launch Services can route a real URL to. It happened
+        # -- with the probes registered, `NSWorkspace.open(sevenzip://…)` from another scope's tests
+        # was answered by a probe, which then stole the frontmost menu bar and failed eleven of their
+        # tests. Mac/Tests/AppVariants/Info.plist is App/Info.plist with those four keys removed.
+        INFOPLIST_FILE: Tests/AppVariants/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        SWIFT_STRICT_CONCURRENCY: minimal
+        OTHER_LDFLAGS: ["$(inherited)", "-lc++"]
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
+        ENABLE_HARDENED_RUNTIME: NO
+        COMBINE_HIDPI_IMAGES: YES
+
+  # One XCUITest shard. `SEVENZIP_APP_*` reach the test bundle through its
+  # Info.plist, which is how `TestShard` (Mac/Tests/UIDriver/TestSupport.swift)
+  # knows which instance to drive and where to send a reset URL -- one
+  # `.xctestrun` can then run every shard without per-shard environment.
+  SevenZipUIShard:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: Tests/UIDriver
+      - path: ${casesPath}
+        excludes:
+          - "Info.plist"
+      - path: Tests/Fixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: ${appTarget}
+    settings:
+      base:
+        PRODUCT_NAME: ${productName}
+        PRODUCT_MODULE_NAME: ${moduleName}
+        PRODUCT_BUNDLE_IDENTIFIER: ${bundleId}
+        INFOPLIST_FILE: ${casesPath}/Info.plist
+        TEST_TARGET_NAME: ${appTarget}
+        SEVENZIP_APP_NAME: ${appTarget}
+        SEVENZIP_APP_BUNDLE_ID: ${appBundleId}
+        SEVENZIP_SHARD_NAME: ${shardName}
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        # No entitlements file: Xcode signs the generated *-Runner.app with its own
+        # (app-sandboxed) entitlements and ignores CODE_SIGN_ENTITLEMENTS here -- verified, see
+        # Mac/docs/reports/harness.md section 1.
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
+
 targets:
 
   # ---------------------------------------------------------------------------
@@ -501,6 +588,36 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
 
   # ---------------------------------------------------------------------------
+  # fastui scope: the test-only app copies (see the SevenZipTestApp template).
+  #   7-Zip-Host    hosts SevenZipAppTests, so the app-hosted unit tests run in
+  #                 a process no XCUITest shard will terminate.
+  #   7-Zip-Probe1  the first read-only XCUITest shard.
+  #   7-Zip-Probe2  the second.
+  # The input shard drives the real `7-Zip` target, so `run.sh`, the packaging
+  # scope and the Finder extension registration are untouched.
+  # ---------------------------------------------------------------------------
+  7-Zip-Host:
+    templates: [SevenZipTestApp]
+    templateAttributes:
+      productName: 7-Zip-Host
+      moduleName: SevenZipAppHost
+      bundleId: com.yrambler2001.7zip-host
+
+  7-Zip-Probe1:
+    templates: [SevenZipTestApp]
+    templateAttributes:
+      productName: 7-Zip-Probe1
+      moduleName: SevenZipAppProbe1
+      bundleId: com.yrambler2001.7zip-p1
+
+  7-Zip-Probe2:
+    templates: [SevenZipTestApp]
+    templateAttributes:
+      productName: 7-Zip-Probe2
+      moduleName: SevenZipAppProbe2
+      bundleId: com.yrambler2001.7zip-p2
+
+  # ---------------------------------------------------------------------------
   # FinderSync: Finder Sync extension stub (later waves fill the menu).
   # ---------------------------------------------------------------------------
   FinderSync:
@@ -661,35 +778,95 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
 
   # ---------------------------------------------------------------------------
-  # 7-ZipUITests: XCUITest bundle driving the 7-Zip app (harness scope).
-  # Runs in the generated 7-ZipUITests-Runner.app; TEST_TARGET_NAME names the app
-  # under test so XCUIApplication() picks it up with no bundle id. The Fixtures
-  # folder is copied into the bundle so tests find archives without the repo.
+  # SevenZipAppTests (fastui scope): XCTest cases that run **inside the app's own
+  # process** (TEST_HOST), so they get real AppKit objects, real Auto Layout and
+  # the real lang files at unit-test speed. This is where the dialog layout
+  # sweep, the menu inventory and the 93-language localization sweep live now --
+  # see Mac/Tests/AppTests and Mac/docs/reports/fastui.md.
+  #
+  # Build settings that turned out to be necessary, all measured:
+  #   TEST_HOST / BUNDLE_LOADER    the app is the host and the linkage target,
+  #                               so `@testable import SevenZipApp` resolves.
+  #   ENABLE_TESTABILITY (Debug)   already set project-wide; without it the
+  #                               internal types of the app module are invisible.
+  #   PRODUCT_MODULE_NAME on the app is SevenZipApp, which is the module name the
+  #                               test bundle imports (not "7-Zip", which is not
+  #                               a valid Swift identifier).
+  #   LD_RUNPATH_SEARCH_PATHS with @loader_path/../Frameworks so SevenZipKit.framework,
+  #                               embedded in the host app, loads from the test bundle too.
+  #   CODE_SIGN_IDENTITY "-"       inherited from the project: the ad-hoc signed host app
+  #                               accepts an ad-hoc signed injected bundle.
   # ---------------------------------------------------------------------------
-  7-ZipUITests:
-    type: bundle.ui-testing
+  SevenZipAppTests:
+    type: bundle.unit-test
     platform: macOS
     sources:
-      - path: Tests/UITests
+      - path: Tests/AppTests
         excludes:
           - "Info.plist"
+      # `TestPaths` is shared with the UI shards: the fixtures, the screenshot directory and the
+      # real home directory are found the same way in both.
+      - path: Tests/UIDriver/TestPaths.swift
       - path: Tests/Fixtures
         type: folder
         buildPhase: resources
     dependencies:
-      - target: 7-Zip
+      - target: 7-Zip-Host
     settings:
       base:
-        PRODUCT_NAME: 7-ZipUITests
-        PRODUCT_MODULE_NAME: SevenZipUITests
-        PRODUCT_BUNDLE_IDENTIFIER: com.yrambler2001.7zip.UITests
-        INFOPLIST_FILE: Tests/UITests/Info.plist
-        TEST_TARGET_NAME: 7-Zip
+        PRODUCT_NAME: SevenZipAppTests
+        PRODUCT_MODULE_NAME: SevenZipAppTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.yrambler2001.7zip.AppTests
+        INFOPLIST_FILE: Tests/AppTests/Info.plist
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/7-Zip-Host.app/Contents/MacOS/7-Zip-Host"
+        BUNDLE_LOADER: "$(TEST_HOST)"
         SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
-        # No entitlements file: Xcode signs the generated 7-ZipUITests-Runner.app with its own
-        # (app-sandboxed) entitlements and ignores CODE_SIGN_ENTITLEMENTS here -- verified, see
-        # Mac/docs/reports/harness.md section 1.
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks"]
+
+  # ---------------------------------------------------------------------------
+  # The three XCUITest shards (see the SevenZipUIShard template).
+  #   7-ZipUITests        the input shard: every case here clicks, double-clicks
+  #                       or types, so it runs alone -- macOS delivers a
+  #                       synthesized event to the frontmost application. It
+  #                       drives the real app, which keeps `--only` and the
+  #                       existing docs working unchanged.
+  #   7-ZipUITestsProbe1  read-only, URL-driven Finder commands.
+  #   7-ZipUITestsProbe2  read-only, launch state and the test-support contract.
+  # The probes run concurrently with each other and with the two unit-test
+  # targets; only the input shard needs the machine to itself.
+  # ---------------------------------------------------------------------------
+  7-ZipUITests:
+    templates: [SevenZipUIShard]
+    templateAttributes:
+      productName: 7-ZipUITests
+      moduleName: SevenZipUITests
+      bundleId: com.yrambler2001.7zip.UITests
+      casesPath: Tests/UITests
+      appTarget: 7-Zip
+      appBundleId: com.yrambler2001.7zip
+      shardName: input
+
+  7-ZipUITestsProbe1:
+    templates: [SevenZipUIShard]
+    templateAttributes:
+      productName: 7-ZipUITestsProbe1
+      moduleName: SevenZipUITestsProbe1
+      bundleId: com.yrambler2001.7zip.UITestsProbe1
+      casesPath: Tests/UIProbe1
+      appTarget: 7-Zip-Probe1
+      appBundleId: com.yrambler2001.7zip-p1
+      shardName: probe1
+
+  7-ZipUITestsProbe2:
+    templates: [SevenZipUIShard]
+    templateAttributes:
+      productName: 7-ZipUITestsProbe2
+      moduleName: SevenZipUITestsProbe2
+      bundleId: com.yrambler2001.7zip.UITestsProbe2
+      casesPath: Tests/UIProbe2
+      appTarget: 7-Zip-Probe2
+      appBundleId: com.yrambler2001.7zip-p2
+      shardName: probe2
 
 schemes:
   7-Zip:
@@ -720,3 +897,63 @@ schemes:
       config: Debug
       targets:
         - 7-ZipUITests
+  # fastui scope: the app-hosted unit tests, on their own copy of the app.
+  SevenZipAppTests:
+    build:
+      targets:
+        SevenZipAppTests: all
+        7-Zip-Host: [run, test]
+    test:
+      config: Debug
+      # The app-hosted tests run inside a real 7-Zip process, which reads and writes its settings
+      # domain -- so it is pointed at a throwaway plist, exactly as every UI test is. The test
+      # bundle also calls setenv() before its first case (`AppHostTestCase.isolatedFromRealSettings`)
+      # because `NMacPrefs::ApplicationID()` re-reads the variable on every access; this makes the
+      # isolation hold from the app's very first read instead of from the first test.
+      environmentVariables:
+        SEVENZIP_DEFAULTS_SUITE: $(SRCROOT)/build/hostapp-defaults.plist
+      targets:
+        - SevenZipAppTests
+  7-ZipUITestsProbe1:
+    build:
+      targets:
+        7-ZipUITestsProbe1: all
+        7-Zip-Probe1: [run, test]
+    test:
+      config: Debug
+      targets:
+        - 7-ZipUITestsProbe1
+  7-ZipUITestsProbe2:
+    build:
+      targets:
+        7-ZipUITestsProbe2: all
+        7-Zip-Probe2: [run, test]
+    test:
+      config: Debug
+      targets:
+        - 7-ZipUITestsProbe2
+  # fastui scope: every test target in one scheme, so `xcodebuild build-for-testing`
+  # produces a single .xctestrun that all the shards can then be run from with
+  # `test-without-building` -- no rebuild per shard (Mac/scripts/test.sh --shards).
+  7-Zip-AllTests:
+    build:
+      targets:
+        SevenZipKitTests: [test]
+        SevenZipAppTests: [test]
+        7-ZipUITests: [test]
+        7-ZipUITestsProbe1: [test]
+        7-ZipUITestsProbe2: [test]
+        7-Zip: [run, test]
+        7-Zip-Host: [run, test]
+        7-Zip-Probe1: [run, test]
+        7-Zip-Probe2: [run, test]
+    test:
+      config: Debug
+      environmentVariables:
+        SEVENZIP_DEFAULTS_SUITE: $(SRCROOT)/build/hostapp-defaults.plist
+      targets:
+        - SevenZipKitTests
+        - SevenZipAppTests
+        - 7-ZipUITests
+        - 7-ZipUITestsProbe1
+        - 7-ZipUITestsProbe2

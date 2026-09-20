@@ -1,10 +1,16 @@
-// FinderIntegrationTests.swift -- what the app does when it is handed a Finder command.
+// FinderIntegrationTests.swift -- what the app does when it is handed a Finder command, for the
+// cases where **the click is the specification**: Cancel is `E_ABORT`, so nothing is extracted, and
+// in command mode the process ends with it.
 //
 // The Finder Sync extension and the Quick Actions cannot be driven from a test (Finder itself would
 // have to be scripted, and this machine grants no Automation permission -- Mac/docs/reports/vmcheck.md
 // section 5), but the **hand-off** can: the extension's only action is
 // `NSWorkspace.open(sevenzip:///run?argv=...)`, so these tests send exactly the URLs the menu items
 // build and assert on the dialogs the app then shows.
+//
+// The six cases that only send a URL and read the tree moved to
+// `Mac/Tests/UIProbe1/FinderCommandInspectionTests.swift`, which runs concurrently with the other
+// read-only shards. What is left here needs to click, so it runs alone.
 //
 // The argument grammar itself, the menu tree and the naming rules are covered by
 // `SevenZipKitTests/FinderCommandTests` (63 cases); this file covers the app's reaction.
@@ -31,22 +37,25 @@ final class FinderIntegrationTests: SevenZipUITestCase {
         return URL(string: "sevenzip:///run?argv=" + blob)!
     }
 
+    /// Send the command to **this shard's** instance rather than to whichever registered copy
+    /// LaunchServices picks for the scheme (`SevenZipApp.open`).
     @discardableResult
     private func send(_ argv: [String]) -> Bool {
-        NSWorkspace.shared.open(commandURL(argv))
+        sevenZip.open(commandURL(argv))
     }
 
     private func makeOutputDirectory(_ name: String) throws -> String {
-        let path = (NSTemporaryDirectory() as NSString)
+        let path = (TestPaths.artifacts as NSString)
             .appendingPathComponent("finder-ui-\(name)-\(UUID().uuidString)")
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(atPath: path) }
         return path
     }
 
-    // MARK: - The three dialogs a command can open (03 section 2.4)
+    // MARK: - The dialogs a command opens, and what Cancel does (03 section 2.4)
 
-    /// B1 "Extract files..." -> `x -o"<dir><spec>/" -ad -an -ai…` -> the Extract dialog.
+    /// B1 "Extract files..." -> `x -o"<dir><spec>/" -ad -an -ai…` -> the Extract dialog, and Cancel
+    /// is E_ABORT: nothing is extracted and the app stays alive.
     func testExtractFilesCommandOpensTheExtractDialog() throws {
         launch()
         let out = try makeOutputDirectory("extract")
@@ -58,7 +67,6 @@ final class FinderIntegrationTests: SevenZipUITestCase {
         }
         screenshot("01-extract-dialog-from-finder-command")
         XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "Cancel"))
-        // Cancel is E_ABORT: nothing is extracted and the app stays alive.
         XCTAssertTrue(sevenZip.isRunning)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out), [])
     }
@@ -82,8 +90,8 @@ final class FinderIntegrationTests: SevenZipUITestCase {
         XCTAssertTrue(sevenZip.isRunning)
     }
 
-    /// C6 "SHA-256" -> `h -scrcSHA256 -i…` -> the checksum results list.
-    func testChecksumCommandShowsTheHashResults() throws {
+    /// C6 "SHA-256" -> `h -scrcSHA256 -i…` -> the checksum results list, closed with Close (lang 408).
+    func testChecksumCommandShowsTheHashResults() {
         launch()
         XCTAssertTrue(send(["h", "-scrcSHA256", "-iw-!" + TestPaths.fixture("test.7z")]))
 
@@ -101,101 +109,21 @@ final class FinderIntegrationTests: SevenZipUITestCase {
                       || sevenZip.dismissDialog(dialog, button: "OK"))
     }
 
-    // MARK: - The refusals (03 section 1.4 "Invoke-side error handling")
-
-    /// A folder in an extract selection is IDS_SELECT_FILES 3015, not an extraction.
-    func testExtractCommandRefusesADirectory() throws {
-        launch()
-        let out = try makeOutputDirectory("refuse")
-        XCTAssertTrue(send(["x", "-o" + out + "/", "-an", "-aiw-!" + TestPaths.fixtures]))
-
-        guard let dialog = sevenZip.waitForDialog(title: "You must select one or more files",
-                                                 timeout: 25) else {
-            return XCTFail("IDS_SELECT_FILES 3015 was not shown")
-        }
-        screenshot("04-select-files-refusal")
-        XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "OK"))
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out), [])
-    }
-
-    /// `l` and `i` are the two commands 7zG refuses (GUI.cpp:396-399).
-    func testUnsupportedCommandIsReported() {
-        launch()
-        XCTAssertTrue(send(["l", TestPaths.fixture("test.7z")]))
-
-        guard let dialog = sevenZip.waitForDialog(title: "Unsupported command", timeout: 25) else {
-            return XCTFail("the Unsupported command box did not appear")
-        }
-        screenshot("05-unsupported-command")
-        XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "OK"))
-    }
-
-    /// A switch-syntax error is a user error with the upstream message (CParser::ParseString).
-    func testUnknownSwitchIsReported() {
-        launch()
-        XCTAssertTrue(send(["x", "-zzz", "-an", "-aiw-!" + TestPaths.fixture("test.7z")]))
-
-        guard let dialog = sevenZip.waitForDialog(title: "Unknown switch:", timeout: 25) else {
-            return XCTFail("the Unknown switch box did not appear")
-        }
-        screenshot("06-unknown-switch")
-        XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "OK"))
-    }
-
-    // MARK: - Silent commands (no `-ad`)
-
-    /// B2 "Extract Here" runs without a dialog and the files simply appear.
-    func testExtractHereCommandRunsSilently() throws {
-        launch()
-        let out = try makeOutputDirectory("here")
-        XCTAssertTrue(send(["x", "-o" + out + "/", "-y", "-an",
-                            "-aiw-!" + TestPaths.fixture("test.7z")]))
-
-        let deadline = Date().addingTimeInterval(40)
-        var names: [String] = []
-        repeat {
-            names = (try? FileManager.default.contentsOfDirectory(atPath: out)) ?? []
-            if names.contains("readme.txt") { break }
-            usleep(300_000)
-        } while Date() < deadline
-        XCTAssertTrue(names.contains("readme.txt"), "extracted: \(names)")
-        XCTAssertTrue(names.contains("notes.md"))
-        XCTAssertTrue(names.contains("sub"))
-        screenshot("07-after-silent-extract-here")
-    }
-
-    // MARK: - A1 "Open archive" (the 7zFM argv, 03 section 1.4)
-
-    /// The open form carries a path instead of a command word and lands in the file manager.
-    func testOpenArchiveCommandListsTheArchiveInThePanel() {
-        launch()
-        XCTAssertTrue(send([TestPaths.fixture("test.7z")]))
-
-        let panel = sevenZip.panel(0)
-        XCTAssertTrue(panel.waitForRow(named: "readme.txt", timeout: 30),
-                      "the archive was not opened in panel 0")
-        XCTAssertTrue(panel.hasRow(named: "notes.md"))
-        screenshot("08-open-archive-from-finder-command")
-    }
-
-    /// `-t<type>` forces the handler, like `Open archive > 7z`.
-    func testOpenArchiveWithForcedTypeListsTheArchive() {
-        launch()
-        XCTAssertTrue(send([TestPaths.fixture("test.7z"), "-t7z"]))
-        XCTAssertTrue(sevenZip.panel(0).waitForRow(named: "readme.txt", timeout: 30))
-        screenshot("09-open-archive-as-7z")
-    }
-
     // MARK: - 7zG mode from a real argv (03 section 6.4)
 
     /// `argv[1]` is a command word: the file manager is ordered out and only the command's own
-    /// dialog is shown. `-ad` keeps the process alive long enough to assert that.
+    /// dialog is shown. `-ad` keeps the process alive long enough to assert that, and Cancel
+    /// (E_ABORT) ends it -- so this one needs a process of its own, not a reset.
     func testCommandModeArgvShowsOnlyTheCommandDialog() throws {
         let out = try makeOutputDirectory("argv")
+        // Launched by hand, not through `SevenZipApp.launch`: command mode orders every window out
+        // (03 section 6.4), so the driver's wait for a main window and a panel list would burn two
+        // 60 s timeouts before the Extract dialog is even looked for.
         let app = XCUIApplication()
         app.launchArguments = ["x", "-o" + out + "/", "-ad", "-an",
-                               "-aiw-!" + TestPaths.fixture("test.7z")]
+                              "-aiw-!" + TestPaths.fixture("test.7z")]
         app.launchEnvironment = ["SEVENZIP_UITEST": "1"]
+            .merging(TestShard.environment(for: "FinderIntegrationTests")) { mine, _ in mine }
         if app.state != .notRunning && app.state != .unknown { app.terminate() }
         app.launch()
 

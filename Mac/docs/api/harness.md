@@ -1,9 +1,36 @@
-# `harness` — UI test helpers and verification scripts
+# `harness` — test targets, helpers and verification scripts
 
-What a later wave needs to write a UI test for its scope, and the commands to run before
-reporting. Sources: `Mac/Tests/UITests/*` (target `7-ZipUITests`), `Mac/scripts/*`. Findings behind
-the design (sandboxed test runner, accessibility map, launch-argument limits) are in
-`Mac/docs/reports/harness.md`.
+What a later wave needs to write a test for its scope, and the commands to run before reporting.
+Sources: `Mac/Tests/*`, `Mac/scripts/*`. Findings behind the design (sandboxed test runner,
+accessibility map, launch-argument limits) are in `Mac/docs/reports/harness.md`; the split into
+targets and shards, and the measurements behind it, are in `Mac/docs/reports/fastui.md`.
+
+## 0. Which target does a test belong in?
+
+Five targets, in order of what a test costs. **Write the test in the cheapest one that can hold it.**
+
+| Target | Directory | Runs in | Use it for |
+|---|---|---|---|
+| `SevenZipKitTests` | `Mac/Tests/SevenZipKitTests` | its own process, no app | the bridge, and any app source that is Foundation-only |
+| `SevenZipAppTests` | `Mac/Tests/AppTests` | **inside the app's process** (`TEST_HOST`) | anything that needs real AppKit objects but no live window: dialog layout, menu and toolbar inventory, localization, view-model behaviour |
+| `7-ZipUITestsProbe1` | `Mac/Tests/UIProbe1` | XCUITest, app `7-Zip-Probe1` | a live app that is only **read** — URL-driven commands, launch state |
+| `7-ZipUITestsProbe2` | `Mac/Tests/UIProbe2` | XCUITest, app `7-Zip-Probe2` | the same, second shard |
+| `7-ZipUITests` | `Mac/Tests/UITests` | XCUITest, the real `7-Zip` | anything that **clicks, double-clicks, drags or types** |
+
+The `UIProbe*` and `UITests` targets share the driver in `Mac/Tests/UIDriver` (`SevenZipApp`,
+`SevenZipPanel`, `SevenZipUITestCase`, `SettingsDomain`, `TestPaths`, `TestSupport`).
+
+The rule behind the split: macOS delivers a synthesized keyboard or mouse event to the **frontmost
+application**, so two XCUITest bundles that click cannot run at the same time. One that only reads
+the accessibility tree can, which is why the probe shards each drive an app target with a bundle
+identifier of its own (`com.yrambler2001.7zip-p1`, `-p2`, `-host`) and only the input shard takes
+the repository app-launch lock. A test that needs a click belongs in `7-ZipUITests`; a test that
+does not, does not.
+
+A measurement is not a screenshot. The dialog sweep that found the clipped button rows of nineteen
+dialogs is a frame comparison (`WindowAudit`, §8), and it now runs in `SevenZipAppTests` in about a
+second per dialog instead of ~29 s per app launch. Put new geometry, string and menu assertions
+there.
 
 ## 1. Commands
 
@@ -13,17 +40,38 @@ Mac/scripts/build.sh                 # Debug, ad-hoc signed  (unchanged default)
 Mac/scripts/build.sh --release       # or: build.sh Release
 Mac/scripts/build.sh --clean         # xcodebuild clean first;  --clean-all wipes Mac/build
 Mac/scripts/build.sh -t SevenZipKit  # one target
+Mac/scripts/build.sh --for-testing   # build-for-testing every test target -> one .xctestrun
 Mac/scripts/run.sh                   # build + open the app     (unchanged)
 Mac/scripts/test.sh                  # unit tests               (unchanged default)
-Mac/scripts/test.sh --ui             # UI tests only
-Mac/scripts/test.sh --all            # unit + UI
-Mac/scripts/test.sh --only SmokeTests/testMenuBarStructure     # one class or one case
-Mac/scripts/verify.sh                # clean build + unit + UI + Mac/docs/reports/verify-latest.md
+Mac/scripts/test.sh --host           # the app-hosted tests (SevenZipAppTests)
+Mac/scripts/test.sh --ui             # the three XCUITest shards, one after another
+Mac/scripts/test.sh --all            # every target, one after another
+Mac/scripts/test.sh --shards         # build once, read-only targets concurrently, input shard alone
+Mac/scripts/test.sh --shards -j 2    # ... at most two at a time
+Mac/scripts/test.sh --target 7-ZipUITestsProbe1                # one target
+Mac/scripts/test.sh --only SmokeTests/testPasswordPromptOpensEncryptedArchive   # one class or case
+Mac/scripts/verify.sh                # clean build + unit + app-hosted + UI + verify-latest.md
 Mac/scripts/verify.sh --fast         # same without the clean build
-Mac/scripts/verify.sh --no-ui        # unit tests only
+Mac/scripts/verify.sh -S            # --shards: the fast plan for the test steps
+Mac/scripts/verify.sh --no-ui        # unit tests only (no display needed)
 Mac/scripts/parity-check.sh          # ticked/total per scope from Mac/docs/PROGRESS.md
 Mac/scripts/parity-check.sh --list panel      # the open items of one scope
 ```
+
+`--shards` is the fast path and the one to use by default:
+
+1. `xcodebuild build-for-testing` on the `7-Zip-AllTests` scheme, once, producing
+   `Mac/build/DerivedData/Build/Products/7-Zip-AllTests_*.xctestrun`;
+2. `xcodebuild test-without-building -xctestrun <plan> -only-testing:<target>` for
+   `SevenZipKitTests`, `SevenZipAppTests`, `7-ZipUITestsProbe1` and `7-ZipUITestsProbe2`
+   **concurrently** — nothing is rebuilt and nothing synthesizes input;
+3. then the same for `7-ZipUITests` **alone**, with the app-launch lock and the preferences backup
+   held only for that step;
+4. one merged summary; each target keeps its own `Mac/build/test-<target>.log` and
+   `results-<target>.xcresult`.
+
+Every run passes `-test-timeouts-enabled YES` with a 300 s default allowance, so a hung test fails
+instead of stalling the suite; `SevenZipUITestCase.timeAllowance` overrides it per class.
 
 Every script takes `--help`, works from any directory, exports `DEVELOPER_DIR` itself and exits
 non-zero on failure.
@@ -42,14 +90,22 @@ when the run ends** (`--keep-prefs` opts out). Since every test now seeds its ow
 (§3) this is only a safety net for a test that launches the app without a seed, but it is kept:
 it costs nothing and it is the difference between a stray launch and a wiped settings domain.
 Do not use the app by hand while UI tests run.
-Screenshot attachments are exported from the result bundle into `Mac/docs/reports/screenshots/`.
+Only the **input shard** does this: it is the one that drives `com.yrambler2001.7zip`. The probe
+shards and the app-hosted target each have a settings plist of their own and never touch the real
+domain.
+Screenshot attachments are exported from every result bundle into `Mac/docs/reports/screenshots/`;
+the app-hosted target also writes its PNGs there directly, because its process is not sandboxed.
 
 ## 1a. App-launch lock (read this before running UI tests)
 
-Every worktree builds the same bundle id, and `XCUIApplication.launch()` attaches to an instance
-that is already running instead of replacing it. Two agents driving the app at the same time fail
-each other's tests with "Lost connection to the application" and scramble the shared preferences
-domain. So there is **one lock for the whole repository**:
+Two agents driving the **same** bundle id at the same time fail each other's tests with "Lost
+connection to the application" and scramble the shared preferences domain, because
+`XCUIApplication.launch()` attaches to an instance that is already running instead of replacing it,
+and `terminate()` kills every process with that id. Within one run that is solved by giving each
+shard its own app target (§0); across agents it still needs **one lock for the whole repository**,
+and only the input shard takes it — the probe shards and the app-hosted target drive
+`com.yrambler2001.7zip-p1`, `-p2` and `-host`, which no other agent's run touches, and each has a
+settings plist and an `SZ_STATE_DIR` of its own:
 
 ```
 ~/things/a.noindex/7zip/.worktrees/.app-lock      # a directory; $SEVENZIP_APP_LOCK overrides
@@ -61,7 +117,11 @@ on every exit path, including a failure or Ctrl-C:
 * acquire: `mkdir` in a loop, 180 tries five seconds apart (15 minutes), then the scope name and
   pid go into `$LOCK/owner`;
 * a lock whose directory is **older than 30 minutes** is reported and broken, so a killed run never
-  blocks the repository;
+  blocks the repository — and a lock taken by hand keeps no pid worth checking, so **if you take it
+  yourself, take it with the recipe below and release it**: a run that breaks a lock whose owner is
+  still driving the app produces failures in both (measured: two agents on
+  `com.yrambler2001.7zip` at once, four false failures in the input shard, every one of them a
+  synthesized event that went to the wrong instance);
 * the scripts print `== app lock acquired`, `== waiting for the app lock … (owner: …)` and
   `== app lock released`; if the wait times out they exit 3 and name the owner;
 * `verify.sh` holds it for its whole run and exports `SEVENZIP_APP_LOCK_HELD=1`, so the `test.sh`
@@ -80,6 +140,31 @@ rm -rf "$LOCK"
 ```
 
 ## 2. Writing a UI test
+
+**One app per class, not one per test.** `SevenZipUITestCase` launches the app for the first test of
+a class and hands the same instance to the next one, returning it to a known state through
+`sevenzip://test/reset` (`Mac/docs/test-support-contract.md`) and waiting for the acknowledgement the
+contract specifies — never for a fixed delay. Nothing about how a test is written changes: it still
+calls `launch(seed:)` and still gets exactly the settings domain it asked for. What changes is that
+`launch` may be a reset rather than a process launch.
+
+`launch` relaunches instead of resetting when the test asks for something a reset cannot express,
+and `sevenZip.lastPreparation` says which happened (`.reset(generation:)` / `.relaunched`):
+
+* `seed: .keep` and `relaunch()` — their point is that the app quit and came back;
+* a `path:` / `formatHint:` argv (7zG command mode, an archive on the command line);
+* extra `arguments:` or `environment:` — a process's environment cannot be changed once it runs, so
+  a test that needs `SZ_OPSINFRA_DEMO` needs its own process. `launchFreshProcess(...)` forces one;
+* an app that does not implement the contract yet — `sevenZip.testSupportIsImplemented` is a pure
+  read (the main window's accessibility value is the reset generation), so nothing is sent to an app
+  that would answer with an "Unsupported URL command" box. Until `mac/resetcmd` merges this is every
+  app, and the suite behaves exactly as it did before.
+
+Every launch also gets `SZ_TEST_SUPPORT=1`, `SZ_DISABLE_ANIMATIONS=1` and an `SZ_STATE_DIR` of the
+test class's own (`TestShard.environment(for:)`), so animations cost nothing and two shards never
+write the same file.
+
+
 
 ```swift
 import XCTest
@@ -176,13 +261,29 @@ Consequences worth knowing:
 
 ```swift
 // lifecycle
-launch(seed:path:formatHint:arguments:environment:timeout:) -> XCUIElement   // the window
+prepare(seed:path:formatHint:arguments:environment:timeout:) -> XCUIElement  // reset or launch (§2)
+launch(seed:path:formatHint:arguments:environment:timeout:) -> XCUIElement   // always a new process
 relaunch()                       // graceful quit + launch(seed: .keep): asserts persistence
 quit() -> Bool                   // "7-Zip > Quit 7-Zip", waits for exit (state is saved)
 terminate()                      // SIGKILL, no state saved
 isRunning
+lastPreparation                  // .reset(generation:) / .relaunched / .failed(why)
 seedFile                         // this test's settings domain (§3); .values is what the app saved
 seedName                         // goes into its file name; the base class sets it to the test name
+owner                            // the test class; SZ_STATE_DIR is derived from it
+
+// the test-support contract (Mac/docs/test-support-contract.md, api/resetcmd.md)
+resetGeneration                  // the main window's AX value as an Int, nil when unimplemented
+testSupportIsImplemented         // a pure read: safe to ask of an app without the affordances
+reset(_ options: ResetOptions, seed:timeout:) -> ResetOutcome
+open(_ url: URL, aimedOnly:) -> Bool   // a sevenzip:// URL to *this shard's* instance (see below)
+writeRequest(_ url: URL) -> Bool       // channel 1 on its own, with its delivery receipt
+
+// which app this shard drives (TestShard, Mac/Tests/UIDriver/TestSupport.swift)
+TestShard.appBundleIdentifier    // com.yrambler2001.7zip / -p1 / -p2, from the bundle's Info.plist
+TestShard.appName, .appURL, .name
+TestShard.stateDirectory(for:)   // SZ_STATE_DIR, per shard and per test class
+TestShard.environment(for:)      // SZ_TEST_SUPPORT / SZ_DISABLE_ANIMATIONS / SZ_STATE_DIR
 
 // window and panels
 window, windowTitle              // title = focused panel path, "7-Zip" when empty
@@ -258,8 +359,13 @@ combo and selects its text exactly as 7zFM does, so `app.typeText(...)` replaces
 and read `combo.value` back afterwards, so a miss fails the test instead of leaving the default in
 place (that is how `testSelectionCommands` came to assert 2 of 4 and see 4 of 4).
 
-`names` costs one accessibility query per row, and every row of a folder is in the tree even when
-scrolled out of sight — use it for short listings and `row(named:)` / `waitForRow` for big ones.
+**Read from a snapshot; resolve an element only to act on it.** This is the single biggest lever on
+per-test cost, measured: `hasRow` and `waitForRow` used to go through `nameCell(named:)`, which
+resolved *every* matching static text of the list over the accessibility bus to pick the leftmost.
+Reading one `table.snapshot()` instead took the input shard from 547 s to 474 s over the same 25
+tests — four times what removing the relaunch will save. `names`, `columnTitles`, `cellText`,
+`hasRow`, `waitForRow`, `itemTitles`, `toolbarButtonTitles` and `menuItemTitles` are all one snapshot
+each; add new accessors the same way, and keep element queries for `click`, `typeText` and friends.
 
 ## 6. `TestPaths`
 
@@ -288,6 +394,11 @@ Fixtures (from `Mac/scripts/make-fixtures.sh`): `test.7z`, `test.zip`, `test.tar
 * Run `Mac/scripts/verify.sh` before reporting; it writes `Mac/docs/reports/verify-latest.md`.
 * Never drive the app outside the scripts without taking the app-launch lock (§1a), and never run
   two UI runs at once — expect to queue behind another agent.
+* **Put the assertion in the cheapest target that can hold it** (§0). A frame, a menu title, a
+  localized string or a view-model answer belongs in `SevenZipAppTests`; only genuinely interactive
+  behaviour belongs in an XCUITest shard, and only a test that clicks belongs in the input shard.
+* Never write a fixed sleep. `waitFor(_:timeout:_:)` on the base class polls a condition, and the
+  reset waits for the acknowledgement the contract defines.
 * Read values through the snapshot-based accessors (`names`, `columnTitles`, `itemTitles`,
   `toolbarButtonTitles`) or add new ones the same way; resolving many elements one at a time is slow
   and has crashed the test runner.
@@ -308,3 +419,83 @@ Fixtures (from `Mac/scripts/make-fixtures.sh`): `test.7z`, `test.zip`, `test.tar
   `testCopyBetweenPanels` gave its source and destination the same file names, so "the file is in
   the other panel" was true before the copy ran — and the copy then stopped on a Confirm File
   Replace prompt. Assert the starting state too, and check the file system, not only the listing.
+
+## 8. `WindowAudit` — the layout sweep, as a measurement
+
+`Mac/Tests/AppTests/WindowAudit.swift` walks the real `NSView` tree of a window in the app's own
+process and reports, one finding per line:
+
+| Finding | Meaning | Verdict |
+|---|---|---|
+| `CLIPPED` | a view's frame leaves the window's content rectangle | **failure** — this is the nineteen-dialog defect (`DialogKit.install` pinned the content with `+margin`, pushing the button row out of the window) |
+| `FIT` | the content view's `fittingSize` does not fit the window's content rectangle | **failure** |
+| `FIT-SOFT` | the same, in a window that holds a wrapping label, a text view or a scroll view | warning: a wrapping label's `fittingSize` is its width on *one* line, so the number says nothing (measured: the Options window reports "needs 941x452" in English while looking exactly as `polish` signed it off) |
+| `OVERSIZE` | the window is bigger than its screen | **failure** |
+| `OVERLAP` | two sibling controls cover each other | **failure**; separator boxes are excluded, because a separator's frame carries padding around its line and two adjacent ones legitimately share it |
+| `TIGHT` | a control's own text needs more width than its frame gives it | warning — measured with the control's real `NSCell`, so it is sharp, but a label that is *meant* to truncate (the Copy dialog's info lines) is legitimately tight |
+
+```swift
+final class MyDialogTests: AppHostTestCase {
+    func testMyDialogLayout() {
+        continueAfterFailure = true
+        // ModalProbe runs the dialog's own `run()` (which blocks in NSApp.runModal) and calls back
+        // from inside the modal run loop, with the window built and laid out.
+        let appeared = ModalProbe.present({ _ = MyDialog.run(parent: nil) }) { window in
+            self.audit(window, "My dialog (IDD_MY 1234)", shot: "50-my-dialog")
+        }
+        XCTAssertTrue(appeared, "the dialog never came up")
+        finishAudit("my dialog")        // fails once, with every hard defect
+    }
+}
+```
+
+`audit(_:_:shot:)` also writes `Mac/docs/reports/screenshots/<prefix>-<name>.png` directly — the
+app-hosted process is not sandboxed, so the PNG needs no export step — and attaches it to the
+result. The screenshot is evidence for a human; the assertion is the number.
+
+## 9. Conventions for the app-hosted target (`SevenZipAppTests`)
+
+* Subclass `AppHostTestCase`. It asserts the process is the app (`NSApp` exists) and that the case
+  runs on the main thread, loads built-in English before each test, and puts the language and the
+  `ActiveContext` provider back afterwards.
+* **Leave the app as you found it.** One process runs the whole bundle: a test that opens a window,
+  loads a language or registers a provider has written the next test's fixture unless it undoes it.
+* `@testable import SevenZipAppHost` — the host app's module name, not `SevenZipApp`: each app copy
+  needs a module name of its own or four targets write the same `SevenZipApp.swiftmodule` into the
+  shared products directory ("Multiple commands produce …").
+* Never synthesize input and never depend on being frontmost; that is what lets this target run
+  while a UI shard drives another instance.
+* The host app's settings are a throwaway plist (`Mac/build/hostapp-defaults.plist`, via the
+  scheme's `SEVENZIP_DEFAULTS_SUITE` and a `setenv` before the first case).
+  `HostTargetTests.testSettingsAreIsolatedFromTheRealDomain` asserts it, because this target writes
+  `FM.Position`, `FM.Columns.<type>` and the splitter ratio as a matter of course.
+* `wait(for:timeout:until:)` pumps the main run loop until a condition holds. No `usleep`, no
+  `DispatchQueue.main.async` without a wait: the panels read folders on their own queue.
+
+## 10. Sending a URL to the right instance
+
+`NSWorkspace.open(URL)` hands a `sevenzip://` URL to whichever bundle Launch Services considers the
+scheme's handler. That is **not** the instance a test is driving: several worktrees build the same
+app, and the test-only copies used to claim the scheme too — which is how a probe copy came to answer
+another scope's URLs and break eleven of their tests. So `SevenZipApp.open(_:aimedOnly:)` tries three
+channels in order:
+
+1. **`<SZ_STATE_DIR>/reset-request`** — the app watches that file and treats its contents as the URL
+   (`Mac/docs/api/resetcmd.md` §5). It belongs to one instance, so it is aimed by construction, and
+   the watcher is a `Timer` in `.common` mode so the URL also arrives while `NSApp.runModal` is on the
+   stack. **The app removes the file before acting on it, and that disappearance is the delivery
+   receipt** — a successful *write* is not: against an app without the watcher the file just sits
+   there and the command never runs (three tests failed exactly that way). `writeRequest` waits for
+   the receipt, cleans up and reports false when it does not come.
+2. `NSWorkspace.open(_:withApplicationAt:)` — aimed, but a sandboxed runner cannot always resolve a
+   bundle URL outside its container.
+3. `NSWorkspace.open(URL)` — the unaimed form, **available only when `aimedOnly` is false**. A
+   read-only shard must pass `aimedOnly: true`: its app copy claims no scheme, so an unaimed open
+   cannot reach its instance and would assert against somebody else's app.
+
+The three test-only app copies build from `Mac/Tests/AppVariants/Info.plist`, which is
+`Mac/App/Info.plist` without `CFBundleURLTypes`, `CFBundleDocumentTypes`,
+`UTImportedTypeDeclarations` and `NSServices` — a copy that claims nothing cannot be chosen, whether
+it is registered or not. `HostTargetTests.testTheVariantInfoPlistMatchesTheApps` fails if either half
+drifts, and `test.sh` also runs `lsregister -u` on the copies on every exit path so they do not
+linger in Finder's *Open With* list. **If you add an app target for a test, give it that plist.**

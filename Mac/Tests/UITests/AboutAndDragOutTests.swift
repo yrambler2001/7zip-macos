@@ -3,7 +3,8 @@
 //
 //   * the two IDM_ABOUT 961 menu items changed their accessibility identifier at launch, because
 //     `ToolsCommands.install()` retargeted them and an NSMenuItem reports its *current* action
-//     (Mac/docs/requests.md, `harness` -> `tools`/`panel`);
+//     (Mac/docs/requests.md, `harness` -> `tools`/`panel`) -- the identifier half of that is now
+//     asserted in process (`SevenZipAppTests/MenuAndToolbarTests`), the click half here;
 //   * dragging a member out of an archive the panel had already unlocked asked for the password a
 //     second time, because `ArchiveDragOut.extract` had no `password:` parameter
 //     (Mac/docs/requests.md, `cleanup` -> `extract`).
@@ -16,23 +17,14 @@ final class AboutAndDragOutTests: SevenZipUITestCase {
 
     // MARK: - IDM_ABOUT 961
 
-    /// Both About items are addressable by the selector they are declared with, whatever is
-    /// installed on them later, and they open the real IDD_ABOUT 2900 dialog.
-    func testAboutItemsHaveAStableAccessibilityIdentity() {
+    /// The About item opens the real IDD_ABOUT 2900 dialog. That it is *addressable by the selector
+    /// it is declared with* -- the defect this test was written for -- is now asserted without a
+    /// launch in `SevenZipAppTests/MenuAndToolbarTests.testMenuItemsAreAddressableBySelector`, over
+    /// the same `NSMenuItem` objects; what is left here is the click and the dialog, which need the
+    /// running app.
+    func testAboutItemOpensTheAboutDialog() {
         launch()
         XCTAssertTrue(sevenZip.window.waitForExistence(timeout: 30))
-
-        let declared = sevenZip.menuBar.descendants(matching: .menuItem)
-            .matching(identifier: "helpAbout:").allElementsBoundByAccessibilityElement
-        XCTAssertEqual(declared.count, 2,
-                       "IDM_ABOUT 961 sits in the 7-Zip menu and in Help; found \(declared.count)")
-        for item in declared {
-            XCTAssertEqual(item.title, "About 7-Zip...")
-        }
-        XCTAssertEqual(sevenZip.menuBar.descendants(matching: .menuItem)
-            .matching(identifier: "toolsShowAbout:").count, 0,
-                       "the runtime retarget is gone, so no item reports that selector")
-
         XCTAssertTrue(sevenZip.selectMenuItem("7-Zip", "About 7-Zip..."))
         guard let about = sevenZip.waitForDialog(title: "About 7-Zip") else {
             return XCTFail("the About item did not open IDD_ABOUT 2900")
@@ -90,11 +82,8 @@ final class AboutAndDragOutTests: SevenZipUITestCase {
     }
 
     private func waitForFile(_ path: String, timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if FileManager.default.fileExists(atPath: path) { return true }
-            usleep(200_000)
+        waitFor("the file \(path)", timeout: timeout) {
+            FileManager.default.fileExists(atPath: path)
         }
-        return false
     }
 }
