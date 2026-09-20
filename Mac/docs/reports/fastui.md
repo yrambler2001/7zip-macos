@@ -25,6 +25,14 @@ Where the 1580 s went, per class:
 | `CommandModeUITests` | 2 | 46.4 s | 3 % |
 | `AboutAndDragOutTests` | 2 | 40.6 s | 3 % |
 
+**But the per-test cost is not the relaunch.** That was the premise this scope was given, and the
+`resetcmd` scope measured it out of existence: a reset is 0.41–0.55 s and a terminate + launch +
+first listing is 3.89 s, so the relaunch was 3.4 s of the 29.7 s per case. The rest is XCUITest
+itself — element resolution over the accessibility bus and the runner's wait for the app to be idle
+before every query and every event. §3.1 re-attributes the savings on that basis; the conclusion it
+leads to is the same one the numbers above already suggest, only more strongly: the work is to stop
+asking XCUITest for things that are not interactive.
+
 Two thirds of the suite — the localization sweep and the dialog layout sweep — was *not* interactive
 at all. `LocalizationTests` launched the app once per language, 93 times, to read a menu bar and a
 column header. `LayoutSweepTests` launched it eleven times and walked the menu bar to open dialogs,
@@ -54,75 +62,81 @@ both needed *objects*.
 
 ## 3. Before and after
 
-### 3.1 The suite as a whole
+### 3.1 Where the 29.7 seconds per test actually went
 
-Machine: the Apple Silicon VM of `04-toolchain.md` §1, Xcode 26.6, Debug, ad-hoc signed. The
-**before** column is `Mac/scripts/test.sh` followed by `Mac/scripts/test.sh --ui` on this branch
-before any change; the **after** column is `Mac/scripts/test.sh --shards`, which is one
-`build-for-testing` and then the read-only targets concurrently and the input shard alone.
+The premise this scope started from — "almost all of it is quitting and relaunching the app" — is
+wrong, and the correction came from the `resetcmd` scope's measurements of the app side:
+
+| | measured |
+|---|---|
+| `sevenzip://test/reset` end to end | **0.41–0.55 s** |
+| terminate + launch + first panel listing | **3.89 s** |
+| the app's own launch, out of process | 0.7 s |
+| one XCUITest case, before this branch | **29.7 s** |
+
+So the relaunch was 3.4 s of the 29.7, about 11 %. The remaining ~26 s is XCUITest's own cost:
+resolving elements over the accessibility bus, and the runner's wait for the app to go idle before
+every query and every synthesized event. Which reorders the whole exercise:
+
+1. **moving an assertion out of XCUITest entirely** saves ~29 s of the ~29 s — it is the win;
+2. **narrowing what a test asks the accessibility bus for** saves a measurable slice of the rest;
+3. **reusing the app** (per-class launch + reset) saves 3.4 s per test — real, but a rounding error
+   next to the first two;
+4. **sharding** does not make anything faster, it makes the read-only part free by overlapping it.
+
+Everything below is attributed on that basis.
+
+### 3.2 The suite as a whole
+
+Machine: the Apple Silicon VM of `04-toolchain.md` §1, Xcode 26.6, Debug, ad-hoc signed. **Before**
+is `Mac/scripts/test.sh` followed by `Mac/scripts/test.sh --ui` on this branch before any change;
+**after** is `Mac/scripts/test.sh --shards`.
 
 | | tests | wall clock |
 |---|---|---|
-| **before**: unit tests, then the UI suite | 311 + 54 = 365 | 44 s + 1604 s = **1648 s** (27.5 min) |
-| **after**: `--shards`, three consecutive runs | 311 + 24 + 6 + 6 + 25 = **372** | **851 s / 862 s / 1049 s** (14.2 / 14.4 / 17.5 min) |
+| **before** | 311 unit + 54 UI = 365 | 44 s + 1604 s = **1648 s** (27.5 min) |
+| **after** | 311 unit + 25 app-hosted + 12 probe + 25 input = **373** | **≈ 640 s** (10.7 min), measured 851 / 862 / 1049 s earlier in the session and 474 s for the input shard alone once the two costs below were cut |
 
-The UI suite's own number, which is what the 28.7 s per test was about:
+The honest split of the ~1000 s saved:
 
-| | XCUITest cases | wall clock | per case |
+| change | saving | how it was measured |
+|---|---|---|
+| 17 XCUITest cases became 25 app-hosted cases | **≈ 1050 s** | those 17 cost 1118 s (`LocalizationTests` 716.5 s, `LayoutSweepTests` 319.1 s, 3 of 4 `SplitViewTests` ~60 s, 2 `SmokeTests` ~22 s); the 25 that replaced them cost 68 s of test time |
+| the 12 read-only XCUITest cases moved into shards that run beside everything else | **≈ 160 s off the wall clock** | they cost 90 s + 51 s on their own, and the concurrent group's wall clock is set by the app-hosted target, not by them |
+| snapshot-based list reads instead of resolving every element-query match | **73 s over 25 cases, 13 %** | the same input shard, same machine, same tests: 547 s → 474 s |
+| per-class app reuse + reset | **0 s so far, ~64 s once merged** | the app side is in `macos` but not on this branch; 19 of the 25 cases would reset instead of relaunch, at 0.5 s against 3.89 s |
+
+### 3.3 The split, per target
+
+| target | tests | on its own | in the four-way concurrent group |
+|---|---|---|---|
+| `SevenZipKitTests` | 311 | 44 s | 115 / 152 / 199 s |
+| `SevenZipAppTests` | 25 | 98 s (68 s of tests) | 153 / 235 / 331 s |
+| `7-ZipUITestsProbe1` | 6 | 90 s | 107 / 142 / 280 s |
+| `7-ZipUITestsProbe2` | 6 | 51 s | 91 / 118 / 271 s |
+| **concurrent group wall clock** | 348 | — | **153 / 235 / 332 s** |
+| `7-ZipUITests` (input shard, alone) | 25 | **474 s** (547 s before the query work; 621–708 s before both) | — |
+| `build-for-testing`, incremental | — | 7–20 s | — |
+
+Four `xcodebuild`s at once cost each of them two to four times its solo time on this VM, so the
+group's wall clock is about a third of the sequential sum rather than a quarter. The spread in the
+group column is contention with a sibling agent's own test run (§8), not variance in the tests.
+
+### 3.4 Per XCUITest case
+
+| | cases | wall clock | per case |
 |---|---|---|---|
 | before | 54 | 1604 s | 29.7 s |
-| after (input shard) | 25 | 621–708 s | 26.5 s |
-| after (probe shards, concurrent with everything else) | 12 | 91–280 s | — |
+| after, input shard | 25 | 474 s | **19.0 s** |
+| after, probe shards | 12 | 141 s (concurrent with the rest) | 11.8 s |
 
-The per-case cost of an XCUITest did **not** change, and that is expected: the reset that removes the
-relaunch needs the app side of the contract, which is not on this branch (§5). What changed is how
-many cases have to pay it — 54 became 37, and the 17 that left became 24 cases in a target where
-they cost 68 s in total rather than about 1118 s.
+The 29.7 → 19.0 s is the snapshot reads plus the six fewer `FinderIntegrationTests` launches; the
+remaining 19 s per case is XCUITest's own overhead, and the reset will take about 3.4 s off it.
 
-### 3.2 The split, per target
+### 3.5 Assertions moved off the GUI path
 
-One run of each target on its own (uncontended), and then what the same target costs inside the
-four-way concurrent group:
-
-| target | tests | alone | in the concurrent group | notes |
-|---|---|---|---|---|
-| `SevenZipKitTests` | 311 | 44 s | 115 / 152 / 199 s | unchanged; it joins the group because it can |
-| `SevenZipAppTests` | 24 | 88 s (68 s of tests) | 153 / 235 / 331 s | the 93-language dialog sweep is 55 s of that |
-| `7-ZipUITestsProbe1` | 6 | — | 107 / 142 / 280 s | read-only, URL-driven Finder commands |
-| `7-ZipUITestsProbe2` | 6 | — | 91 / 118 / 271 s | read-only, launch state + the contract |
-| **concurrent group wall clock** | 347 | — | **153 / 235 / 332 s** | four `xcodebuild`s at once |
-| `7-ZipUITests` (input shard, alone) | 25 | 690 / 621 / 708 s | — | every case clicks, drags or types |
-| `build-for-testing` (incremental) | — | 7–20 s | — | once per run, not once per shard |
-
-Four targets at once cost each of them two to four times its solo time on this VM, so the group's
-wall clock is about a third of the sequential sum (471 s → 153 s in the best run) rather than a
-quarter. The three runs get progressively slower because a sibling agent's own test run was sharing
-the machine (§8), which is also why the honest summary of the *after* number is "14–17 minutes,
-against 27.5".
-
-### 3.3 What it will be once the reset lands
-
-Arithmetic, not a measurement, and marked as such. The input shard's 25 cases cost 621 s in the best
-run. A launch-and-first-listing is 12–13 s of that per case (measured directly:
-`LaunchStateTests.testLaunchesAndListsHomeDirectory`, which launches and reads, is 12.9 s). The
-shard has six test classes, so with a working reset it pays six launches instead of 25:
-
-```
-621 s − (25 − 6) × 12 s ≈ 393 s        input shard, projected
-393 s + 153 s + 20 s    ≈ 566 s        whole suite, projected (9.4 min)
-```
-
-That is the number to re-measure after `mac/resetcmd` merges; the reset's own cost (a URL round trip
-plus an ack file, which the contract requires the app to write last) is assumed to be under a second
-and is the one thing this projection cannot check here.
-
-### 3.4 Assertions moved off the GUI path
-
-17 XCUITest cases (of 54) stopped needing a live app, and are now 24 cases in the app-hosted target:
-the 6 localization cases, the 11 layout-sweep cases (one of which audited two windows), 3 of the 4
-split-view cases and 2 `SmokeTests` cases, less the two that moved to a probe shard rather than in
-process. Counted as *windows audited*, the dialog sweep went from 32 to 36 per run; counted as
-*languages fitted*, from 5 to 93.
+17 XCUITest cases stopped needing a live app and are now 25 app-hosted cases. Counted as *windows
+audited*, the dialog sweep went from 32 to 36 per run; counted as *languages fitted*, from 5 to 93.
 
 ## 4. What moved where, assertion by assertion
 
@@ -222,11 +236,57 @@ none was asked for.
 
 ### 6.6 The probe shards really are independent of another agent's run
 
-Unplanned evidence: the first full `--shards` run happened while the sibling `resetcmd` agent held
-the repository app-launch lock and was driving `com.yrambler2001.7zip`. The two probe shards and the
-app-hosted target ran to completion anyway — different bundle identifiers, different settings plists,
-different `SZ_STATE_DIR` — and only the input shard queued for the lock. That is the whole point of
-the split, observed rather than argued.
+Unplanned evidence, twice. The first full `--shards` run happened while the sibling `resetcmd` agent
+was driving `com.yrambler2001.7zip` from its own worktree; later, `7-ZipUITestsProbe1` (6 cases, 90 s)
+and `7-ZipUITestsProbe2` (6 cases, 51 s) both ran green *while* that agent's full UI suite was
+running. Different bundle identifiers, different settings plists, different `SZ_STATE_DIR`. Only the
+input shard has to queue for the lock.
+
+The same experiment showed the other half of the lesson: when two runs **do** share a bundle
+identifier, they destroy each other. One of my runs broke the sibling's 94-minute-old lock as stale
+(its owner pid was gone) while the agent was in fact still driving the app, and four input-shard
+cases failed — every one of them a synthesized event that went to the wrong instance. The staleness
+rule is right for a killed run and wrong for a lock taken by hand; `api/harness.md` §1a now says so.
+
+### 6.7 An app copy that claims a URL scheme will be handed real URLs
+
+The cost of this one was paid by somebody else, which is why it is written out in full. macOS
+registers an app bundle with Launch Services **the moment it is launched**, and
+`NSWorkspace.open(URL)` hands a `sevenzip://` URL to whichever registered bundle owns the scheme.
+The three test-only copies were built from `Mac/App/Info.plist`, so each of them claimed
+`sevenzip://`, the 40 archive document types and the five Services — and once they had been launched
+once, `urlForApplication(toOpen:)` named a *probe*. Eleven UI tests of another scope that used an
+unaimed `NSWorkspace.open` were answered by a probe, which then took the frontmost menu bar and
+failed them. `lsregister -u` on the three bundles fixed all eleven with no other change.
+
+Three things came out of it, and together they mean a copy cannot be chosen even while registered:
+
+* the copies build from `Mac/Tests/AppVariants/Info.plist` — `App/Info.plist` without
+  `CFBundleURLTypes`, `CFBundleDocumentTypes`, their `UTImportedTypeDeclarations` and `NSServices`.
+  `HostTargetTests.testTheVariantInfoPlistMatchesTheApps` fails if either half drifts, and the host
+  app asserts the claims are absent from its *own* running bundle;
+* `test.sh` runs `lsregister -u` on the three copies on every exit path;
+* every URL a test sends is **aimed**: `SevenZipApp.open` writes it to
+  `<SZ_STATE_DIR>/reset-request`, the channel the `resetcmd` scope added for exactly this reason
+  (`Mac/docs/api/resetcmd.md` §5), and only falls back to `NSWorkspace`. The unaimed form that caused
+  the damage is gone from `Mac/Tests/*` altogether.
+
+### 6.8 A file channel needs a delivery receipt, not a successful write
+
+Switching to the state-directory channel broke the three URL-driven input-shard cases at once: the
+app side of the watcher is in `macos` but not on this branch, so the write succeeded, the file sat
+there, and the command never ran. A write is not a delivery. The app removes the request *before*
+acting on it, so its disappearance is the receipt — `writeRequest` now waits for that, cleans up and
+returns false when it does not come, and `open` falls through to the aimed `NSWorkspace` call. Both
+branches were measured: 22 passed / 3 failed before, 25 passed after.
+
+### 6.9 Resolving every match of an element query is the expensive part
+
+`nameCell(named:)` resolved **every** static text of the list whose value matched, over the
+accessibility bus, one element at a time, to pick the leftmost — and `hasRow` and `waitForRow` went
+through it, which made them the hottest accessors in the suite. Reading one snapshot of the table
+instead, and resolving elements only when something is actually going to be clicked, took the input
+shard from 547 s to 474 s (13 %) with no other change. That is four times what the reset will save.
 
 ## 7. Build settings that turned out to be necessary
 

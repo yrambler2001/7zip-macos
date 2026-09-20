@@ -242,10 +242,17 @@ public extension SevenZipApp {
     ///    Services hands the URL to whichever registered bundle owns the scheme, which with the
     ///    probe copies registered turned out to be a *probe*. That is why the copies no longer claim
     ///    the scheme at all (`Mac/Tests/AppVariants/Info.plist`) and why this is last.
+    /// `aimedOnly` drops channel 3. A **read-only shard must pass true**: it drives an app copy that
+    /// claims no URL scheme (`Mac/Tests/AppVariants/Info.plist`), so an unaimed open would not reach
+    /// its instance at all -- it would reach whichever bundle Launch Services considers the handler,
+    /// i.e. some other agent's app, and the test would then fail for a reason that has nothing to do
+    /// with what it asserts. Returning false instead makes the missing channel the failure.
     @discardableResult
-    func open(_ url: URL, timeout: TimeInterval = 10) -> Bool {
+    func open(_ url: URL, timeout: TimeInterval = 10, aimedOnly: Bool = false) -> Bool {
         if writeRequest(url) { return true }
-        guard let appURL = TestShard.appURL else { return NSWorkspace.shared.open(url) }
+        // else: the app did not take the file (an app without the watcher, i.e. before
+        // `mac/resetcmd` merges), so aim the URL instead.
+        guard let appURL = TestShard.appURL else { return aimedOnly ? false : NSWorkspace.shared.open(url) }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         configuration.addsToRecentItems = false
@@ -255,19 +262,33 @@ public extension SevenZipApp {
         }
         let deadline = Date().addingTimeInterval(timeout)
         while outcome == nil, Date() < deadline { usleep(20_000) }
-        return outcome ?? false
+        if outcome == true { return true }
+        return aimedOnly ? false : NSWorkspace.shared.open(url)
     }
 
-    /// Channel 1: the URL as the contents of `<SZ_STATE_DIR>/reset-request`. False when the file
-    /// cannot be written, so `open` can fall through.
-    func writeRequest(_ url: URL) -> Bool {
+    /// Channel 1: the URL as the contents of `<SZ_STATE_DIR>/reset-request`.
+    ///
+    /// Returns true only when the app **took** the request: it removes the file before acting on it
+    /// (`Mac/docs/api/resetcmd.md` section 5), so its disappearance is a delivery receipt. A
+    /// successful *write* is not — on an app without the watcher the file would simply sit there and
+    /// the command would silently never run, which is how three URL-driven tests failed the first
+    /// time this channel was tried on a branch whose app side was not merged yet. When the file is
+    /// still there, it is removed again and `open` falls through to the aimed `NSWorkspace` call.
+    func writeRequest(_ url: URL, timeout: TimeInterval = 5) -> Bool {
+        guard isRunning else { return false }
         let directory = TestShard.stateDirectory(for: owner)
         let request = URL(fileURLWithPath: directory).appendingPathComponent("reset-request")
         do {
             try Data(url.absoluteString.utf8).write(to: request, options: .atomic)
-            return true
         } catch {
             return false
         }
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if !FileManager.default.fileExists(atPath: request.path) { return true }
+            usleep(20_000)
+        }
+        try? FileManager.default.removeItem(at: request)
+        return false
     }
 }
