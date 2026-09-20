@@ -10,6 +10,17 @@
 #import "Internal/SZToolsEngine.h"
 #import "Internal/SZHashBundleBridge.h"
 
+/// `HResultToMessage` (FileManager/ProgressDialog2.cpp:1477-1483): E_OUTOFMEMORY has its own lang
+/// string, IDS_MEM_ERROR 3000, not `MyFormatMessage`'s errno text. Command mode maps that message
+/// to exit code 8 (03-shell-integration-inventory.md section 2.7).
+static NSError *SZHasherError(HRESULT hr, NSString *engineMessage)
+{
+  if (hr == E_OUTOFMEMORY && engineMessage.length == 0)
+    engineMessage = [SZLang.shared stringForID:3000
+                                      fallback:@"The system cannot allocate the required amount of memory"];
+  return [SZErrors errorWithHRESULT:(uint32_t)hr message:engineMessage];
+}
+
 // Lang IDs (FileManager/PropertyNameRes.h, resourceGui.h, OverwriteDialogRes.h)
 enum {
     kLangID_MessageNoErrors = 3001,      // IDS_MESSAGE_NO_ERRORS  "There are no errors"
@@ -916,8 +927,7 @@ static NSArray<SZHashMethod *> *SZEnumerateHashMethods(void)
     if (hr != S_OK || !results)
     {
         if (error)
-            *error = [SZErrors errorWithHRESULT:(uint32_t)hr == 0 ? (uint32_t)E_FAIL : (uint32_t)hr
-                                        message:message];
+            *error = SZHasherError(hr == S_OK ? E_FAIL : hr, message);
         return nil;
     }
     return results;
@@ -1007,7 +1017,7 @@ static NSArray<SZHashMethod *> *SZEnumerateHashMethods(void)
     if (hr != S_OK || !results)
     {
         if (error)
-            *error = [SZErrors errorWithHRESULT:(uint32_t)hr message:message];
+            *error = SZHasherError(hr, message);
         return nil;
     }
     return results;

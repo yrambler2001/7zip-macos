@@ -256,6 +256,66 @@ enum ZoneIDModeSpec: Int {
     case office = 2
 }
 
+/// `NRecursedType::EEnum` (Update.h:59-65), raw values matching `SZRecursedType`.
+enum SevenZipRecursedType: Int {
+    case recursed = 0                 // -r  / -ir!…
+    case wildcardOnlyRecursed = 1     // -r0 / -ir0!…
+    case nonRecursed = 2              // -r-, and the default
+
+    /// `GetRecursedTypeFromIndex` (:418-429) over `kRecursedPostCharSet` = "0-".
+    static func fromPostCharIndex(_ index: Int) -> SevenZipRecursedType {
+        switch index {
+        case 0: return .wildcardOnlyRecursed
+        case 1: return .nonRecursed
+        default: return .recursed
+        }
+    }
+}
+
+/// `NWildcard::kMark_*` (Common/Wildcard.h:56-58), raw values matching `SZWildcardMarkMode`.
+enum SevenZipMarkMode: Int {
+    case fileOrDir = 0                // kMark_FileOrDir, the default (`m-`)
+    case strictFile = 1               // kMark_StrictFile (`m`)
+    case strictFileIfWildcard = 2     // kMark_StrictFile_IfWildcard (`m2`)
+}
+
+/// One resolved include or exclude name **with the modifiers its switch carried** — `CNameOption`
+/// plus the name `AddNameToCensor` receives (:459-495, :707-850). Keeping the modifiers is what
+/// lets the bridge hand the name to the engine's censor unexpanded, so `EnumerateItems` does the
+/// wildcard matching (03 section 2.2 `-i`/`-x`).
+struct SevenZipPathSpec: Equatable {
+    var path: String
+    var include = true
+    var recursedType: SevenZipRecursedType = .nonRecursed
+    var wildcardMatching = true
+    var markMode: SevenZipMarkMode = .fileOrDir
+
+    /// `AddPreItem_NoWildcard`: an include entry that is a literal file-system path.
+    static func literal(_ path: String) -> SevenZipPathSpec {
+        SevenZipPathSpec(path: path, include: true, recursedType: .nonRecursed,
+                         wildcardMatching: false, markMode: .fileOrDir)
+    }
+
+    var containsWildcard: Bool {
+        wildcardMatching && path.contains(where: { $0 == "*" || $0 == "?" })
+    }
+}
+
+/// One `rn` old/new pair (`CRenamePair`, Update.h:67-78).
+struct SevenZipRenamePair: Equatable {
+    var oldName: String
+    var newName: String
+    /// `CRenamePair::WildcardParsing`; `-spd` and a `w-` postfix turn it off.
+    var wildcardParsing = true
+
+    /// `CRenamePair::Prepare()` (Update.cpp:288-295): with wildcard parsing on, the **old** name
+    /// must not contain a wildcard. `RecursedType` is always `kNonRecursed` here (:616).
+    var isSupported: Bool {
+        guard wildcardParsing else { return true }
+        return !oldName.contains(where: { $0 == "*" || $0 == "?" })
+    }
+}
+
 /// Everything 7zG takes from its argv. One field per switch the GUI honours; the rest are in
 /// `ignoredSwitches` (accepted for parity, no effect — 03 section 2.2).
 struct SevenZipCommandLine: Equatable {
@@ -277,6 +337,19 @@ struct SevenZipCommandLine: Equatable {
     var archiveExcludePaths: [String] = []
     /// List files consumed by `-i@` / `-ai@`; the receiver deletes them (03 section 6.4).
     var consumedListFiles: [String] = []
+
+    /// The same four lists as censor entries, with the `r`/`w`/`m` modifiers of the switch each
+    /// name came from. `includeSpecs`/`excludeSpecs` carry only the `-i`/`-x` names; the positional
+    /// paths join through `itemSpecs`, the archive name through `archiveSpecs`.
+    var includeSpecs: [SevenZipPathSpec] = []
+    var excludeSpecs: [SevenZipPathSpec] = []
+    var archiveIncludeSpecs: [SevenZipPathSpec] = []
+    var archiveExcludeSpecs: [SevenZipPathSpec] = []
+    /// `rn`: the old/new pairs the positional strings formed (:600-625).
+    var renamePairs: [SevenZipRenamePair] = []
+    /// The `CNameOption` the positional paths inherit: `-r`, `-spd`.
+    var defaultRecursedType: SevenZipRecursedType = .nonRecursed
+    var defaultWildcardMatching = true
 
     var showDialog = false                        // -ad
     var yesToAll = false                          // -y
@@ -331,6 +404,39 @@ struct SevenZipCommandLine: Equatable {
 
     /// The files a hash or update command works on: `-i` sources plus the positional paths.
     var resolvedItemPaths: [String] { includePaths + itemPaths }
+
+    /// The item censor as the engine wants it: the `-i` entries, the positional paths with the
+    /// global `CNameOption`, then the `-x` entries. When neither an `-i` switch nor a positional
+    /// path was given, `AddToCensorFromNonSwitchesStrings` adds the universal wildcard `*`
+    /// (:574-591) — the bridge does that itself when no include entry arrives.
+    var itemSpecs: [SevenZipPathSpec] {
+        var out = includeSpecs
+        for path in itemPaths {
+            out.append(SevenZipPathSpec(path: path, include: true,
+                                        recursedType: defaultRecursedType,
+                                        wildcardMatching: defaultWildcardMatching))
+        }
+        return out + excludeSpecs
+    }
+
+    /// The archive censor (`options.arcCensor`, :1670-1701): `-ai`, then the archive name with
+    /// `nopArc` (never recursed, :1671-1676), then `-ax`.
+    var archiveSpecs: [SevenZipPathSpec] {
+        var out = archiveIncludeSpecs
+        if let archiveName, !archiveName.isEmpty {
+            out.append(SevenZipPathSpec(path: archiveName, include: true,
+                                        recursedType: .nonRecursed,
+                                        wildcardMatching: defaultWildcardMatching))
+        }
+        return out + archiveExcludeSpecs
+    }
+
+    /// True when the engine's directory walk is needed for this censor: an include entry with a
+    /// wildcard to expand, or any exclude entry to apply. A Finder selection has neither (one
+    /// `-aiw-!<path>` per item), so the common case answers false and nothing on disk is touched.
+    static func needsCensorWalk(_ specs: [SevenZipPathSpec]) -> Bool {
+        specs.contains { !$0.include || $0.containsWildcard }
+    }
 }
 
 // MARK: - The parser
@@ -549,15 +655,31 @@ enum SevenZipArguments {
                 "I won't write data and program's messages to same stream")
         }
 
+        // ":1485-1491": the `CNameOption` every name starts from — `-r` and `-spd`.
+        if parser["r"].thereIs {
+            out.defaultRecursedType = .fromPostCharIndex(parser["r"].postCharIndex)
+        }
+        out.defaultWildcardMatching = !parser["spd"].thereIs
+
         // -i / -x / -ai / -ax (AddSwitchWildcardsToCensor).
-        var include = try resolve(parser["i"].postStrings, include: true, out: &out)
-        out.includePaths = include
-        include = try resolve(parser["x"].postStrings, include: false, out: &out)
-        out.excludePaths = include
-        include = try resolve(parser["ai"].postStrings, include: true, out: &out)
-        out.archivePaths = include
-        include = try resolve(parser["ax"].postStrings, include: false, out: &out)
-        out.archiveExcludePaths = include
+        let base = SevenZipPathSpec(path: "", include: true,
+                                    recursedType: out.defaultRecursedType,
+                                    wildcardMatching: out.defaultWildcardMatching)
+        var specs = try resolve(parser["i"].postStrings, base: base, include: true, out: &out)
+        out.includeSpecs = specs
+        out.includePaths = specs.map(\.path)
+        specs = try resolve(parser["x"].postStrings, base: base, include: false, out: &out)
+        out.excludeSpecs = specs
+        out.excludePaths = specs.map(\.path)
+        // ":1671-1676": nopArc keeps `nop`'s wildcard matching and mark mode but never recurses.
+        var archiveBase = base
+        archiveBase.recursedType = .nonRecursed
+        specs = try resolve(parser["ai"].postStrings, base: archiveBase, include: true, out: &out)
+        out.archiveIncludeSpecs = specs
+        out.archivePaths = specs.map(\.path)
+        specs = try resolve(parser["ax"].postStrings, base: archiveBase, include: false, out: &out)
+        out.archiveExcludeSpecs = specs
+        out.archiveExcludePaths = specs.map(\.path)
 
         // ":1527-1553": the archive name is the first non-switch string after the command,
         // unless -an or a command that has no archive.
@@ -575,17 +697,60 @@ enum SevenZipArguments {
             }
             out.archiveName = name
         }
-        out.itemPaths = nonSwitch
+
+        if command == .rename {
+            // ":600-625" `AddToCensorFromNonSwitchesStrings` with `renamePairs`: the positional
+            // strings are old/new pairs; a `@listfile` among them contributes pairs of its own and
+            // must hold an even number of names.
+            var names: [String] = []
+            for token in nonSwitch {
+                guard !token.isEmpty else { throw SevenZipArgumentError("Empty file path") }
+                if token.hasPrefix("@") {
+                    let file = String(token.dropFirst())
+                    let listed = try Self.readListFile(file)
+                    guard listed.count % 2 == 0 else {
+                        throw SevenZipArgumentError(
+                            "Incorrect item in listfile.\nCheck charset encoding and -scs switch.",
+                            file)
+                    }
+                    out.consumedListFiles.append(file)
+                    names += listed
+                } else {
+                    names.append(token)
+                }
+            }
+            var index = 0
+            while index + 1 < names.count {
+                out.renamePairs.append(SevenZipRenamePair(
+                    oldName: names[index], newName: names[index + 1],
+                    wildcardParsing: out.defaultWildcardMatching))
+                index += 2
+            }
+            if index < names.count {
+                // ":624": an odd number of names is a user error, not a silent drop.
+                throw SevenZipArgumentError("There is no second file name for rename pair:",
+                                           names[index])
+            }
+            for pair in out.renamePairs where !pair.isSupported {
+                // `AddRenamePair` (:511-522): "Unsupported rename command:" + old, new, recursion.
+                throw SevenZipArgumentError("Unsupported rename command:",
+                                           pair.oldName + "\n" + pair.newName)
+            }
+        } else {
+            out.itemPaths = nonSwitch
+        }
 
         return out
     }
 
     /// `AddSwitchWildcardsToCensor` (:707-850): the `r`/`w`/`m` modifiers, then one of the three
     /// source markers `!` (immediate name), `@` (list file), `#` (Win32 shared-memory map).
-    private static func resolve(_ strings: [String], include: Bool,
-                                out: inout SevenZipCommandLine) throws -> [String] {
-        var names: [String] = []
+    private static func resolve(_ strings: [String], base: SevenZipPathSpec, include: Bool,
+                                out: inout SevenZipCommandLine) throws -> [SevenZipPathSpec] {
+        var names: [SevenZipPathSpec] = []
         for spec in strings {
+            var nop = base
+            nop.include = include
             let chars = Array(spec)
             guard chars.count >= 2 else {
                 throw SevenZipArgumentError("Too short switch", spec)
@@ -603,7 +768,11 @@ enum SevenZipArguments {
                     if recursedUsed { throw SevenZipArgumentError("inorrect switch", spec) }
                     recursedUsed = true
                     pos += 1
+                    // ":757-771": the character after `r` is looked up in "0-"; a hit sets the
+                    // type and is consumed, a miss means bare `-ir` = kRecursed.
+                    nop.recursedType = .recursed
                     if pos < chars.count, chars[pos] == "0" || chars[pos] == "-" {
+                        nop.recursedType = chars[pos] == "0" ? .wildcardOnlyRecursed : .nonRecursed
                         pos += 1
                         continue
                     }
@@ -615,13 +784,21 @@ enum SevenZipArguments {
                 if c == "w" {
                     if matchingUsed { throw SevenZipArgumentError("inorrect switch", spec) }
                     matchingUsed = true
+                    nop.wildcardMatching = true
                     pos += 1
-                    if pos < chars.count, chars[pos] == "-" { pos += 1 }
+                    if pos < chars.count, chars[pos] == "-" {
+                        nop.wildcardMatching = false
+                        pos += 1
+                    }
                 } else if c == "m" {
                     if typeUsed { throw SevenZipArgumentError("inorrect switch", spec) }
                     typeUsed = true
+                    nop.markMode = .strictFile
                     pos += 1
-                    if pos < chars.count, chars[pos] == "-" || chars[pos] == "2" { pos += 1 }
+                    if pos < chars.count, chars[pos] == "-" || chars[pos] == "2" {
+                        nop.markMode = chars[pos] == "2" ? .strictFileIfWildcard : .fileOrDir
+                        pos += 1
+                    }
                 } else {
                     break
                 }
@@ -633,9 +810,15 @@ enum SevenZipArguments {
             let tail = String(chars[(pos + 1)...])
             switch marker {
             case "!":
-                names.append(tail)
+                var entry = nop
+                entry.path = tail
+                names.append(entry)
             case "@":
-                names += try readListFile(tail)
+                for name in try readListFile(tail) {
+                    var entry = nop
+                    entry.path = name
+                    names.append(entry)
+                }
                 out.consumedListFiles.append(tail)
             case "#":
                 // Win32 named shared memory. There is none on macOS, so the shape is validated
@@ -700,5 +883,123 @@ enum SevenZipArguments {
         }
         addName()
         return names
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MARK: - The exception ladder
+
+/// One arm of `WinMain`'s `catch` chain (CPP/7zip/UI/GUI/GUI.cpp:437-494): the process exit code,
+/// and the text for the "7-Zip" box — nil where upstream shows nothing, which is only `E_ABORT`.
+struct SevenZipFailure: Equatable {
+    var exitCode: SevenZipExitCode
+    var message: String?
+}
+
+/// `WinMain`'s exception ladder as a pure classifier, so every way a command can fail lands on the
+/// exit code and the message the Windows launcher would produce (03 section 2.7):
+///
+///     CNewException                    -> IDS_MEM_ERROR box          -> 8   kMemoryError
+///     CMessagePathException            -> box with message + path    -> 7   kUserError
+///     CSystemException(E_ABORT)        -> no box                     -> 255 kUserBreak
+///     CSystemException(E_OUTOFMEMORY)  -> IDS_MEM_ERROR box (:132)   -> 8   kMemoryError
+///     CSystemException(other)          -> HResultToMessage box       -> 2   kFatalError
+///     UString/AString/wchar_t*/char*   -> box with the text          -> 2   kFatalError
+///     int v                            -> "Error: <v>" box           -> 2   kFatalError
+///     ...                              -> "Unknown error" box        -> 2   kFatalError
+///
+/// Swift cannot catch a C++ exception, so the bridge does it: `SZHandleCurrentException`
+/// (Mac/Core/SZBridgeUtils.mm:107-153) turns every arm into an HRESULT plus a message and
+/// `SZErrors.errorWithHRESULT:message:` wraps that in an `NSError`. `CNewException` **is**
+/// `std::bad_alloc` on this platform (Common/NewHandler.h:99-102), so an allocation failure arrives
+/// as `E_OUTOFMEMORY` -> `SZError.Code.outOfMemory` — which is what makes exit code 8 reachable.
+///
+/// Foundation only, because this file is compiled into the two sandboxed appex targets as well and
+/// they must not link `SevenZipKit`; the three bridge constants are therefore spelled out here and
+/// `CommandModeTests.testFailureLadderConstantsMatchTheBridge` asserts they still agree, exactly
+/// as `ContextMenuItemFlags` mirrors `Settings.ContextMenuFlags`.
+enum SevenZipFailureLadder {
+
+    /// `SZErrorDomain` (Mac/Core/SZError.mm:6).
+    static let errorDomain = "com.yrambler2001.7zip.SevenZipKit"
+    /// `SZErrorHRESULTKey` (Mac/Core/SZError.mm:7).
+    static let hresultUserInfoKey = "SZErrorHRESULT"
+    /// `SZPathExceptionUserInfoKey` (Mac/Core/SZUpdater.mm): the bridge saw a
+    /// `CMessagePathException` — a censor path that named nothing, a duplicate archive path — which
+    /// `WinMain` maps to exit code **7**, not the generic 2 (GUI.cpp:452-456). It cannot be told from
+    /// any other `UString` exception once it is an HRESULT, so the bridge flags it.
+    static let pathExceptionUserInfoKey = "SZPathException"
+    /// `SZErrorCodeCancelled` = 3, `SZErrorCodeOutOfMemory` = 4 (Mac/Core/include/SZError.h:23-24).
+    static let cancelledErrorCode = 3
+    static let outOfMemoryErrorCode = 4
+
+    /// `E_OUTOFMEMORY` / `E_ABORT` as the bridge reports them in `SZErrorHRESULTKey`.
+    static let outOfMemoryHRESULT: UInt32 = 0x8007_000E
+    static let abortHRESULT: UInt32 = 0x8000_4004
+
+    /// The built-in English of IDS_MEM_ERROR 3000 (GUI/Extract.rc:7). The app passes the localized
+    /// text; a Foundation-only caller gets this.
+    static let englishMemoryErrorMessage = "The system cannot allocate the required amount of memory"
+
+    /// Classifies any error a command path can produce, in `WinMain`'s own order.
+    /// `memoryMessage` is IDS_MEM_ERROR resolved through the active language file.
+    static func classify(_ error: Error,
+                         memoryMessage: String = englishMemoryErrorMessage) -> SevenZipFailure {
+        // CMessagePathException: the two-line "message\npath" box, exit 7 (:452-456).
+        if let argumentError = error as? SevenZipArgumentError {
+            return SevenZipFailure(exitCode: .userError, message: argumentError.description)
+        }
+
+        let nsError = error as NSError
+        let hresult = (nsError.userInfo[hresultUserInfoKey] as? NSNumber)?.uint32Value
+
+        if nsError.domain == errorDomain {
+            // CSystemException(E_ABORT) -> 255 and no box at all (:457-462).
+            if nsError.code == cancelledErrorCode || hresult == abortHRESULT {
+                return SevenZipFailure(exitCode: .userBreak, message: nil)
+            }
+            // CNewException / CSystemException(E_OUTOFMEMORY) -> IDS_MEM_ERROR, 8 (:447-451).
+            if nsError.code == outOfMemoryErrorCode || hresult == outOfMemoryHRESULT {
+                return SevenZipFailure(exitCode: .memoryError, message: memoryMessage)
+            }
+            // CMessagePathException -> the same arm as a command-line syntax error, exit 7.
+            if nsError.userInfo[pathExceptionUserInfoKey] != nil {
+                return SevenZipFailure(exitCode: .userError, message: text(of: nsError))
+            }
+            return SevenZipFailure(exitCode: .fatalError, message: text(of: nsError))
+        }
+
+        // A Foundation/POSIX allocation failure is the same class as CNewException.
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == Int(ENOMEM) {
+            return SevenZipFailure(exitCode: .memoryError, message: memoryMessage)
+        }
+        if hresult == outOfMemoryHRESULT {
+            return SevenZipFailure(exitCode: .memoryError, message: memoryMessage)
+        }
+
+        return SevenZipFailure(exitCode: .fatalError, message: text(of: nsError))
+    }
+
+    /// Just the exit code, for a failure whose box has already been shown — the Progress dialog puts
+    /// the error in its own final message, exactly as `CProgressThreadVirt` does (01b section 4.17).
+    static func exitCode(for error: Error) -> SevenZipExitCode { classify(error).exitCode }
+
+    /// The message an error contributes, with the two arms the bridge spells differently from
+    /// `WinMain` normalised back:
+    ///  * `catch (int n)` becomes "Internal Error #N" in `SZHandleCurrentException`; upstream's box
+    ///    says "Error: N" (:479-486);
+    ///  * no text at all is upstream's `catch (...)` arm, "Unknown error" (:490-493).
+    private static func text(of error: NSError) -> String {
+        let description = error.localizedDescription
+        if let number = internalErrorNumber(in: description) { return "Error: \(number)" }
+        return description.isEmpty ? "Unknown error" : description
+    }
+
+    private static func internalErrorNumber(in text: String) -> String? {
+        let prefix = "Internal Error #"
+        guard text.hasPrefix(prefix) else { return nil }
+        let digits = text.dropFirst(prefix.count)
+        guard !digits.isEmpty, digits.allSatisfy(\.isNumber) else { return nil }
+        return String(digits)
     }
 }

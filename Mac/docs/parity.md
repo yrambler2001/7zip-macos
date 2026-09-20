@@ -23,6 +23,10 @@ hands-on review of every feature by a person, and **Finder's own context menu ha
 exercised in Finder** on this machine, because Automation permission was never granted
 (`Mac/docs/reports/finder.md` lists 15 manual checks a human still owes).
 
+**Update, 2026-09-20 (`mac/cmdmode`).** Four of the unfinished items below are closed and are
+annotated in place; nothing was renumbered and no evidence was deleted. Section F lists them with
+what was measured before the fix and what is left. The checklist therefore reads **390 of 496**.
+
 ---
 
 ## A. Complete — at parity
@@ -123,16 +127,27 @@ transport, `-thash`, `-seml`, and command dispatch.
    open the system help viewer; the Compress and Extract dialogs open 7-zip.org; the Options Help
    button only beeps. Nothing points at a local `FM/index.htm` because there is none.
    (`01 §2.6, §9 #17`)
-7. **`-scrc` while extracting or testing** is not wired, and the panel's Test button does not pass
+7. ~~**`-scrc` while extracting or testing** is not wired, and the panel's Test button does not pass
    `-thash`. The bridge support exists (`SZExtractOptions.hashMethods` →
-   `SZExtractResult.hashResults`); no caller sets it. (`03 §2.6`, `01 §8.6`)
+   `SZExtractResult.hashResults`); no caller sets it.~~ (`03 §2.6`, `01 §8.6`)
+   **Half closed 2026-09-20 (`mac/cmdmode`), see F.2.** `x -scrc<M>` and `t -scrc<M>` now report the
+   checksums of the extracted data in the hash list, cross-checked against `7zz t -scrcSHA256`. The
+   panel's own Test button still does not pass `-thash`: that file belongs to another scope and the
+   recipe is filed in `requests.md`.
 8. **Quarantine is not propagated** to files extracted normally — only to files you open from
    inside an archive. (`01 §9 #23`)
-9. **Command mode** never returns exit code 8 (out of memory) and has no exception→message ladder;
+9. ~~**Command mode** never returns exit code 8 (out of memory) and has no exception→message ladder;
    `rn` is refused; wildcards inside `-i!` are not expanded. Exit codes 0, 1, 2, 7 and 255 are
-   correct. (`03 §2.2, §2.7`)
-10. **`-sfx<module>` is ignored**: a self-extracting archive is always built from the bundled
-    `7z.sfx`, and `a -sfx` without `-ad` writes a plain archive. (`01b §4.23`)
+   correct.~~ (`03 §2.2, §2.7`)
+   **Closed 2026-09-20 (`mac/cmdmode`), see F.1.** All four halves were confirmed true by measurement
+   first. `SevenZipFailureLadder` is `WinMain`'s whole catch chain, exit 8 included; `rn` is
+   implemented; include and exclude wildcards are expanded by the engine's own
+   `EnumerateDirItemsAndSort` / `EnumerateItems`.
+10. ~~**`-sfx<module>` is ignored**: a self-extracting archive is always built from the bundled
+    `7z.sfx`, and `a -sfx` without `-ad` writes a plain archive.~~ (`01b §4.23`)
+    **Closed 2026-09-20 (`mac/cmdmode`), see F.3.** The named module is honoured and validated, and a
+    missing module, a bogus module or a non-7z `-t` is an error with nothing written. The Compress
+    dialog's own per-format Browse filter is a separate item and is still open.
 11. **Properties has no raw-property block** and no NT security summary: `IArchiveGetRawProps` is
     not bridged. (`01 §3.11`)
 12. **Progress has no Dock-tile percentage**, and the messages list uses fixed column widths.
@@ -216,21 +231,28 @@ memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb
 2. Bundled HTML help, and the Options Help button (`01 §9 #17`).
 3. Quarantine on ordinary extraction, and zone propagation from the outermost archive
    (`01 §9 #23`).
-4. `-scrc` on `x` / `t`, and `t -thash` from the panel (`03 §2.6`, `01 §8.6`).
+4. ~~`-scrc` on `x` / `t`~~ (**done 2026-09-20, F.2**), and `t -thash` from the panel
+   (`03 §2.6`, `01 §8.6`) — the panel half is filed for its owning scope in `requests.md`.
 5. Open Outside for items inside an archive; Diff across two panels (`01 §3.8, §3.11`).
 6. Drag and drop in the three icon view modes; the dropped-file list for background drops
    (`01 §3.15`).
 7. Raw properties (`IArchiveGetRawProps`) in the columns and in Properties (`01 §3.2, §3.11`).
 8. Dock-tile progress, and the exception→message mapping for a failed operation
-   (`01b §4.17`, `01 §8.7`).
+   (`01b §4.17`, `01 §8.7`) — **the command-mode half is done 2026-09-20 (F.1)**: every failure a
+   command can hit is classified by `SevenZipFailureLadder`, and `SZUpdater` / `SZHasher` now give
+   `E_OUTOFMEMORY` the IDS_MEM_ERROR text `HResultToMessage` gives it, so the Progress dialog's own
+   final message matches Windows for those two. `SZExtractor` and `OperationRunner`'s generic alert
+   are filed in `requests.md`.
 9. File-menu enable and hide rules (`01 §2.1`).
-10. Exit code 8 and the 7zG exception ladder; `EnumerateDirItemsAndSort` for `-i!` wildcards
-    (`03 §2.2, §2.7`).
-11. `-sfx<module>`; the Compress dialog's per-format Browse filter (`01b §4.23`).
+10. ~~Exit code 8 and the 7zG exception ladder; `EnumerateDirItemsAndSort` for `-i!` wildcards~~
+    (`03 §2.2, §2.7`) — **done 2026-09-20 (F.1)**.
+11. ~~`-sfx<module>`~~ (**done 2026-09-20, F.3**); the Compress dialog's per-format Browse filter
+    (`01b §4.23`) — still open, and owned by the dialog's scope.
 12. Options ▸ System format icons, single-click and Return, and the Launch Services refresh;
     Options ▸ Language's id lists and load-error report (`01b §4.21, §4.9`).
 13. Write-back of a nested archive into its parent archive (`01 §3.8`).
-14. Dropping onto the Dock icon as "Add to archive…" (`03 §6.2`).
+14. ~~Dropping onto the Dock icon as "Add to archive…"~~ (`03 §6.2`) — **done 2026-09-20 (F.4)**,
+    with one verification debt: no test on this machine can perform a real Dock drop.
 
 ---
 
@@ -260,3 +282,92 @@ Honest about what nobody has checked rather than what nobody has built.
   including the six new localization tests. What the UI suite covers is breadth, not depth: it
   asserts that things are present and populated, not that every operation produces the right bytes
   — that is what the unit tests do.
+
+---
+
+## F. Closed after the audit — 2026-09-20, `mac/cmdmode`
+
+Four items of section D, each measured against the source before it was touched. **All four
+diagnoses held up exactly as written**; nothing in this batch turned out to be already working or
+misdiagnosed. What the measurement added was detail, not correction.
+
+### F.1 — D item 10, command mode (`03 §2.2, §2.7`)
+
+Measured: `SevenZipExitCode.memoryError` had no reference outside one assertion in
+`FinderCommandTests`; `CommandExecutor` had five hand-written `case .failure: return .fatalError`
+arms and no message mapping; `runUpdateGroup` answered `rn` with "Unsupported command" + exit 2; and
+`SevenZipArguments.resolve` returned `-i!` / `-x!` names verbatim, so a pattern reached
+`AddPreItem_NoWildcard` and matched nothing.
+
+Done:
+
+* **`SevenZipFailureLadder`** — `WinMain`'s catch chain (`GUI.cpp:437-494`) as a pure classifier, and
+  every failure site in `CommandExecutor` now routes through it. Exit 8 is reachable because
+  `CNewException` **is** `std::bad_alloc` here (`Common/NewHandler.h:99-102`) and the bridge maps it to
+  `E_OUTOFMEMORY` → `SZError.Code.outOfMemory`. The bridge's two divergent spellings are normalised
+  back: `"Internal Error #N"` → `"Error: N"`, empty → `"Unknown error"`. A `CMessagePathException`,
+  which derives from `UString` and would otherwise flatten into exit 2, is flagged by the bridge with
+  `SZPathExceptionUserInfoKey` and lands on the exit 7 arm as upstream.
+* **`rn`** — old/new pairs from the positional strings and from a `@listfile` among them, with
+  upstream's three refusals (odd count, wildcard in an old name, no pair at all), and
+  `SZUpdater.renameItems` filling `CUpdateOptions::RenamePairs`.
+* **Include and exclude wildcards** — `SZPathSpec` carries one censor entry per resolved name with
+  its `r`/`w`/`m` modifiers; `SZUpdater.expandPathSpecs` is the engine's own
+  `EnumerateDirItemsAndSort` (archive list) or `EnumerateItems` (item censor); the update, delete and
+  rename paths hand the specs straight to `UpdateArchive`, which is what keeps `-ir!src/*.c` storing
+  `sub/x.c`. A censor with no wildcard and no exclude entry — every Finder selection, which uses
+  `-aiw-!` — takes the literal path and touches no disk, so nothing that worked before changed.
+
+### F.2 — D item 4, checksums while extracting and testing, command half (`03 §2.6`)
+
+Measured: exactly as filed. `command.hashMethods` was read in one place only, `runHash`;
+`SZExtractOptions.hashMethods` and `SZExtractResult.hashResults` existed and no caller set them.
+
+Done: `x -scrc<M>` and `t -scrc<M>` set the methods (bare `-scrc` = CRC32, an unsupported method is
+exit 2) and show the digests in `HashResultsDialog` instead of the test summary, which is
+`ExtractGUI.cpp:129-152`. Cross-checked against `7zz t -scrcSHA256`. **The panel's Test button still
+does not pass `-thash`** — that file is another scope's, and the recipe is filed in `requests.md`.
+
+### F.3 — D item 11, the self-extracting module switch, bridge half (`01b §4.23`)
+
+Measured: exactly as filed. `-sfx<module>` reached `SevenZipCommandLine.sfxModule` and was then used
+only as a Bool (`input.sfxMode = command.sfxModule != nil`) for the dialog; in the no-dialog branch
+`result.sfxMode` was never set at all, so `a -sfx x.exe f` wrote a plain 7z with an `.exe` name.
+
+Done: `SZUpdater.resolvedSFXModulePath` is `Update.cpp:1167-1191` plus a stub sanity check (regular
+file, ≥ 1 KiB, `MZ` or a Mach-O / universal magic); `formatSupportsSFX` is `kFF_SFX`, i.e. 7z only;
+`CommandExecutor` resolves and validates before any dialog and sets `sfxMode` with or without `-ad`.
+A missing module, a bogus module and a non-7z `-t` are all errors with **nothing written** — verified
+by running the built app and checking that no output file exists. A named module is honoured byte for
+byte (`7zCon.sfx` is the prefix of the produced `.exe`, and `7zz l` reads the payload). The Compress
+dialog's per-format Browse filter is a different item and is still open.
+
+### F.4 — D item 14, dropping onto the Dock icon (`03 §6.2`, `03 §1.7`)
+
+Measured: exactly as filed. `application(_:open:)` sent every file URL to
+`URLCommands.openDocuments` → `CommandExecutor.openInFileManager`.
+
+Done: the request's **source** is classified first. macOS gives no callback for "dropped on the Dock
+icon", so `DockDropDetector` resolves the current Apple event's address attribute to a pid and then a
+bundle identifier; `com.apple.dock` means a Dock drop, and anything else — a missing attribute
+included — stays an ordinary open. `DockDropRouter` then opens a single recognised archive (Block A's
+own condition plus `SZCodecs.format(forArchiveName:)`, so a dropped `notes.txt` is not opened into an
+empty panel) and runs `FinderMenuModel`'s `SevenZipCompress` verb for everything else, which is
+literally the argv Finder's own menu builds. `Mac/App/Info.plist` claims `public.item` +
+`public.folder` with `CFBundleTypeRole: Viewer` and `LSHandlerRank: None`, because the Dock accepts a
+drop only for types the app claims and rank `None` keeps the claim out of "Open With".
+
+**Verification debt.** No test on this machine can perform a real Dock drop: Automation permission is
+not granted, XCUITest cannot drag to the Dock, and `LSHandlerRank: None` granting the drop is
+documented behaviour that has not been observed here. The routing, the argv, the sender detection and
+the plist are unit-tested; a human still owes one check — drag two files onto the Dock icon and
+confirm the Compress dialog opens, then drag one `.7z` and confirm it opens in a panel.
+
+**And a second one, measured this time: command mode is not reachable from XCUITest at all.**
+`XCUIApplication.launch()` with a command word fails after ~69 s either with "has not loaded
+accessibility" (the command finished and the process exited before the runner could attach) or the
+same way because the app is inside `NSApp.runModal` while still handling
+`applicationDidFinishLaunching` and therefore never becomes idle. Both were observed in a real run.
+Exit codes are verified by running the built binary from a shell instead — 25 cases in
+`Mac/docs/reports/cmdmode.md` section 4.2 — and the two dialogs command mode may show are
+screenshotted through the file manager, where the same code builds them.

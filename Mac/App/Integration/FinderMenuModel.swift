@@ -413,3 +413,55 @@ enum FinderMenuModel {
         return .submenu(title: "CRC SHA", verb: checksumCascadedVerb, children: children)
     }
 }
+
+// ---------------------------------------------------------------------------
+// MARK: - Dropping on the Dock icon (03 section 1.7, section 6.2)
+
+/// Where an "open these documents" request came from, because macOS delivers a Dock drop, a
+/// double-click and "Open With" through the same `kAEOpenDocuments` event.
+enum DocumentOpenSource: Equatable {
+    /// Finder double-click, "Open With", `open -a`, a `sevenzip://` open — open the items.
+    case document
+    /// A drop on the Dock icon: Windows' `DragDropHandlers` gesture (`03 section 1.7`).
+    case dockDrop
+}
+
+/// What a Dock drop should do. Windows registers 7-Zip as an Explorer **drop handler**, so dragging
+/// a selection onto it offers the compress items rather than opening anything
+/// (`03 section 1.7`, `ContextMenu.cpp:_dropMode`). macOS has no such handler for folders, but the
+/// Dock icon is the same gesture, so the port maps it onto "Add to archive…".
+enum DockDropAction: Equatable {
+    case nothing
+    /// Hand these paths to the file manager, exactly as a double-click does.
+    case open([String])
+    /// Run the `SevenZipCompress` verb ("Add to archive…", `a … -ad -saa -- <dir><name>`).
+    case addToArchive
+}
+
+enum DockDropRouter {
+
+    /// The rule, and why it is this rule:
+    ///
+    ///  * **one single archive stays an open.** The Dock is a legitimate way to open an archive
+    ///    without Finder, and the item is indistinguishable from a double-click, which must open.
+    ///    The test is Block A's own condition (`ContextMenu.cpp:740-786`): one item, not a
+    ///    directory, `needsExtract` (its extension is not in `kExtractExcludeExtensions`), plus the
+    ///    engine actually recognising the extension — otherwise a dropped `notes` or `image.png`
+    ///    would open an empty panel instead of being compressed.
+    ///  * **everything else is "Add to archive…".** Several items, a folder, or one file that is
+    ///    not an archive: that is the drop-handler gesture, and Windows answers it with the
+    ///    compress items.
+    ///
+    /// `isRecognisedArchive` is `CCodecs::FindFormatForArchiveName` at the call site; it is a
+    /// parameter so this stays Foundation-only and testable without the engine.
+    static func action(paths: [String], directoryFlags: [Bool],
+                       isRecognisedArchive: (String) -> Bool) -> DockDropAction {
+        guard !paths.isEmpty else { return .nothing }
+        if paths.count == 1, !(directoryFlags.first ?? false),
+           ArchiveNaming.needsExtract(name: ArchiveNaming.lastComponent(paths[0])),
+           isRecognisedArchive(paths[0]) {
+            return .open(paths)
+        }
+        return .addToArchive
+    }
+}
