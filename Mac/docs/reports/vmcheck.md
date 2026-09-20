@@ -239,3 +239,14 @@ Nothing in the build or test path. Item by item:
   affects anything, because every script sets `DEVELOPER_DIR` itself.
 * `Mac/scripts/verify.sh` will still exit non-zero, for the pre-existing reason: it runs the UI
   suite, and those five failures are still open. Use `Mac/scripts/test.sh` for a green signal.
+
+> **Orchestrator note on priority.** Nothing in the committed scripts or tests uses AppleScript:
+> `grep -r 'tell application' Mac/scripts Mac/Tests` finds nothing, and the UI suite drives the app
+> through XCUITest, which needs no Automation grant. So of the actions below, only **Screen &
+> System Audio Recording** is worth granting now, because `screencapture` is denied and an agent
+> otherwise cannot photograph the running app. The Automation grants are per client-and-target pair
+> and each is triggered by a command aimed at that particular app, so one System Events command does
+> not cover Finder or 7-Zip; grant them when a scope actually needs them, which for Finder will be
+> the unstarted `finder` scope testing the context menu. Accessibility is only for synthesized input
+> outside XCUITest.
+
