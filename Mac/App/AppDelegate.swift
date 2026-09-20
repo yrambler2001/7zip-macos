@@ -54,6 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.openStartupPath(first, formatHint: hint)
         }
         NSApp.activate(ignoringOtherApps: true)
+
+        // Test support: the aimable delivery channel for `sevenzip://test/reset`
+        // (Mac/docs/api/resetcmd.md section 5). A no-op unless SZ_TEST_SUPPORT=1 and SZ_STATE_DIR
+        // are both set, and it is started last so the window already exists when the first reset
+        // arrives.
+        TestResetWatcher.startIfNeeded()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

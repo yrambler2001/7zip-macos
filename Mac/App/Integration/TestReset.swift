@@ -274,3 +274,74 @@ enum TestResetCoordinator {
     /// The value the main window publishes before the first reset.
     static var initialAccessibilityValue: String { String(generation) }
 }
+
+// ---------------------------------------------------------------------------
+
+/// A second delivery channel for exactly the same `sevenzip://test/reset` URL, because the first one
+/// cannot be aimed at one instance and cannot get through a modal session.
+///
+/// **Measured, and the reason this exists.** `NSWorkspace.open(URL)` hands a `sevenzip://` URL to
+/// whichever bundle Launch Services currently considers the scheme's handler. As soon as a second
+/// copy of the app is built -- which is the case this contract exists to support -- that is a
+/// different bundle than the one the test launched: with two extra probe bundles registered on this
+/// machine, `urlForApplication(toOpen:)` named a probe, and every reset a UI test sent went to it
+/// instead of the app under test. `open(_:withApplicationAt:)` *can* aim, and does (the
+/// out-of-process driver in `Mac/docs/reports/resetcmd.md` uses it), but a **sandboxed** XCUITest
+/// runner cannot reliably resolve a bundle URL outside its container to aim with.
+///
+/// So when a state directory is set, the app also watches `<SZ_STATE_DIR>/reset-request` and treats
+/// its contents as the URL. The state directory belongs to exactly one instance, so a request left
+/// there can only reach that instance. And the watcher is a `Timer` in `.common` mode rather than an
+/// Apple event, so a reset is delivered even while `NSApp.runModal` is on the stack -- which is
+/// precisely the case the contract's "cancel or finish any running operation" has to cover.
+///
+/// The shape of the command is unchanged: the file holds the same URL, parsed by the same
+/// `CommandURL.parse`, and the `sevenzip://` route is untouched.
+enum TestResetWatcher {
+
+    /// `<SZ_STATE_DIR>/reset-request`.
+    static let requestFileName = "reset-request"
+    /// 20 ms: fast enough to be invisible next to a panel rebuild, cheap enough to ignore -- and it
+    /// only ever runs under `SZ_TEST_SUPPORT` with a state directory.
+    static let pollInterval: TimeInterval = 0.02
+
+    private static var timer: Timer?
+
+    static var requestPath: String? {
+        guard let state = TestSupport.stateDirectory else { return nil }
+        return (state as NSString).appendingPathComponent(requestFileName)
+    }
+
+    static func startIfNeeded() {
+        guard TestSupport.isEnabled, timer == nil, requestPath != nil else { return }
+        let ticker = Timer(timeInterval: pollInterval, repeats: true) { _ in poll() }
+        RunLoop.main.add(ticker, forMode: .common)
+        timer = ticker
+    }
+
+    private static func poll() {
+        guard let path = requestPath,
+              let data = FileManager.default.contents(atPath: path) else { return }
+        // Removed before it is acted on, so a slow command cannot be started twice.
+        try? FileManager.default.removeItem(atPath: path)
+        let text = (String(data: data, encoding: .utf8) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: text) else {
+            NSLog("7-Zip test reset: %@ is not a URL: %@", requestFileName, text)
+            return
+        }
+        // A reset is handled inline because it never blocks: `TestResetCoordinator.handle` arms its
+        // own timer and returns. Anything else -- a `sevenzip:///run` command, say -- *does* block,
+        // for as long as its progress dialog is up, and **a CFRunLoopTimer is not re-entrant**: while
+        // its callback is on the stack the run loop will not fire that timer again, however long the
+        // callback takes and whatever mode the nested loop spins in. Running a blocking command
+        // straight from here would therefore wedge this watcher for the duration and make the reset
+        // that was supposed to cancel that very command undeliverable. Measured: a
+        // `sevenzip:///run?argv=["h",…]` handled inline stopped every later reset dead.
+        if url.host?.lowercased() == CommandURL.testHost {
+            URLCommands.handle(url)
+        } else {
+            DispatchQueue.main.async { URLCommands.handle(url) }
+        }
+    }
+}
