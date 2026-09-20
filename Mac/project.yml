@@ -429,7 +429,6 @@ targets:
         CLANG_ENABLE_OBJC_ARC: YES
         CLANG_ENABLE_MODULES: YES
         CLANG_CXX_LANGUAGE_STANDARD: c++17
-        GCC_OPTIMIZATION_LEVEL: 0
         GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "NDEBUG=1", "_REENTRANT=1", "_FILE_OFFSET_BITS=64", "_LARGEFILE_SOURCE=1"]
         GCC_TREAT_WARNINGS_AS_ERRORS: YES
         CLANG_WARN_DOCUMENTATION_COMMENTS: NO
@@ -441,6 +440,14 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks", "@loader_path/Frameworks"]
         DYLIB_INSTALL_NAME_BASE: "@rpath"
         SKIP_INSTALL: YES
+      # packaging scope: the bridge used to be pinned at -O0 in *every* configuration, so a Release
+      # build shipped an unoptimized ObjC++ layer while Swift got -O and the engine -O2. Debug keeps
+      # -O0 for debuggability; Release matches SevenZipCore at -O2.
+      configs:
+        Debug:
+          GCC_OPTIMIZATION_LEVEL: 0
+        Release:
+          GCC_OPTIMIZATION_LEVEL: 2
 
   # ---------------------------------------------------------------------------
   # 7-Zip: the AppKit app (Swift). Non-sandboxed file manager.

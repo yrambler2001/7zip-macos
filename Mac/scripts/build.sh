@@ -11,7 +11,9 @@
 #   -t, --target <NAME>    build one target instead of the 7-Zip scheme
 #   -q, --quiet            print only the verdict line
 #   -h, --help             this text
-# Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA (extra args).
+# Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA (extra args),
+#      SIGN_IDENTITY (default "-" = ad-hoc; a Developer ID name also turns the hardened runtime on),
+#      DEVELOPMENT_TEAM (team identifier, only meaningful with a real SIGN_IDENTITY).
 # Exit: 0 on success, xcodebuild's code on failure (2 on bad usage).
 set -euo pipefail
 
@@ -71,21 +73,47 @@ say "== xcodegen"
 # macOS has no timeout(1); XcodeGen can hang on bad source paths (04-toolchain.md 5.4).
 perl -e 'alarm 120; exec @ARGV' xcodegen generate -s "$MAC/project.yml" -q
 
-SCHEME_ARGS=(-scheme 7-Zip)
-[ -n "$TARGET" ] && SCHEME_ARGS=(-target "$TARGET")
+# One target instead of the scheme. Xcode 26's xcodebuild refuses -target together with
+# -derivedDataPath ("The flag -scheme, -testProductsPath, or -xctestrun is required when
+# specifying -derivedDataPath"), which made `build.sh -t <NAME>` fail for every target, so a
+# single-target build points SYMROOT/OBJROOT at the same DerivedData tree by hand instead.
+DD="$MAC/build/DerivedData"
+SCHEME_ARGS=(-scheme 7-Zip -derivedDataPath "$DD")
+if [ -n "$TARGET" ]; then
+  SCHEME_ARGS=(-target "$TARGET"
+    "SYMROOT=$DD/Build/Products"
+    "OBJROOT=$DD/Build/Intermediates.noindex"
+    "SHARED_PRECOMPS_DIR=$DD/Build/Intermediates.noindex/PrecompiledHeaders")
+fi
 
 if [ "$CLEAN" = 1 ]; then
   say "== xcodebuild clean ($CONFIG)"
   xcodebuild -project "$MAC/7-Zip.xcodeproj" "${SCHEME_ARGS[@]}" -configuration "$CONFIG" \
-    -derivedDataPath "$MAC/build/DerivedData" clean >"$MAC/build/clean-$CONFIG.log" 2>&1 \
+    clean >"$MAC/build/clean-$CONFIG.log" 2>&1 \
     || { echo "CLEAN FAILED; log: $MAC/build/clean-$CONFIG.log"; exit 1; }
+fi
+
+# Signing (packaging scope). Ad-hoc by default, which is all a machine with no identity can do
+# ("0 valid identities found" here). For a distributable build pass a Developer ID:
+#   SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" DEVELOPMENT_TEAM=TEAMID build.sh -r
+# A real identity also switches the hardened runtime on and asks for a secure timestamp, both of
+# which notarization requires; ad-hoc keeps it off because an ad-hoc signature cannot be notarized.
+SIGN_IDENTITY="${SIGN_IDENTITY:-${CODESIGN_IDENTITY:--}}"
+SIGN_ARGS=(CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual "CODE_SIGN_IDENTITY=$SIGN_IDENTITY")
+if [ "$SIGN_IDENTITY" = "-" ]; then
+  SIGN_ARGS+=(ENABLE_HARDENED_RUNTIME=NO "DEVELOPMENT_TEAM=")
+  say "== signing: ad-hoc"
+else
+  SIGN_ARGS+=(ENABLE_HARDENED_RUNTIME=YES "OTHER_CODE_SIGN_FLAGS=--timestamp --options=runtime")
+  [ -n "${DEVELOPMENT_TEAM:-}" ] && SIGN_ARGS+=("DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM")
+  say "== signing: $SIGN_IDENTITY (hardened runtime on)"
 fi
 
 say "== xcodebuild ($CONFIG) -> $LOG"
 set +e
 xcodebuild -project "$MAC/7-Zip.xcodeproj" "${SCHEME_ARGS[@]}" -configuration "$CONFIG" \
-  -derivedDataPath "$MAC/build/DerivedData" -destination 'platform=macOS,arch=arm64' \
-  CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${XCODEBUILD_EXTRA:-} build >"$LOG" 2>&1
+  -destination 'platform=macOS,arch=arm64' \
+  "${SIGN_ARGS[@]}" ${XCODEBUILD_EXTRA:-} build >"$LOG" 2>&1
 RC=$?
 set -e
 # Show our own diagnostics (anything under Mac/) and the verdict.
