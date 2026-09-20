@@ -328,6 +328,9 @@ enum DialogKit {
         return window
     }
 
+    /// The margin between the window edge and the dialog's content (GuiCommon.rc m = 8 du).
+    static let margin: CGFloat = 20
+
     /// Fills the window with `content` inset by the standard margin and sizes the window
     /// to fit, then centres it over `parent` (or on screen).
     static func install(_ content: NSView, in window: NSWindow, parent: NSWindow?, minimumWidth: CGFloat) {
@@ -336,23 +339,33 @@ enum DialogKit {
         content.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(content)
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 20),
-            content.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -20),
-            content.topAnchor.constraint(equalTo: host.topAnchor, constant: 20),
-            content.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: 20),
-            host.widthAnchor.constraint(greaterThanOrEqualTo: host.widthAnchor, multiplier: 1),
+            content.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: margin),
+            content.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -margin),
+            content.topAnchor.constraint(equalTo: host.topAnchor, constant: margin),
+            // -margin, not +margin: Auto Layout's `bottom` grows downwards even in AppKit's
+            // flipped-free coordinate space, so a positive constant pushed the whole content
+            // `margin` points *below* the window and clipped the button row off the bottom edge
+            // (the "Copy dialog is 30 pt too short" report; it hit all 21 DialogKit dialogs).
+            content.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -margin),
         ])
         window.contentView = host
         host.layoutSubtreeIfNeeded()          // so fittingSize sees the final stack layout
-        // Size from the content itself: the host only adds the 20 pt margins, and its own
-        // fitting size can lag behind a stack view that was just populated.
+        // Size from the content itself: the host only adds the margins, and its own fitting size
+        // can lag behind a stack view that was just populated.
         let fitting = content.fittingSize
-        window.setContentSize(NSSize(width: max(minimumWidth, fitting.width + 40), height: fitting.height + 40))
+        let size = NSSize(width: max(minimumWidth, fitting.width + 2 * margin),
+                          height: fitting.height + 2 * margin)
+        window.setContentSize(size)
+        // A resizable dialog must not be shrinkable into its own controls: the content's fitting
+        // size is the floor (01b -- every dialog is fixed-size on Windows, so nothing smaller is
+        // a shape the spec asks for).
+        window.contentMinSize = size
         host.layoutSubtreeIfNeeded()
         if let parent {
             let frame = parent.frame
-            let size = window.frame.size
-            window.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2))
+            let windowSize = window.frame.size
+            window.setFrameOrigin(NSPoint(x: frame.midX - windowSize.width / 2,
+                                          y: frame.midY - windowSize.height / 2))
         } else {
             window.center()
         }

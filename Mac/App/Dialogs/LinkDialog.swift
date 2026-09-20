@@ -107,14 +107,20 @@ final class LinkDialog: NSObject {
         typeStack.spacing = 4
         let typeBox = NSBox()
         typeBox.title = Lang.text(7710, "Link Type")
-        typeBox.contentView = typeStack
+        // The stack goes into a *wrapper* that becomes the box's content view. Constraining it
+        // against `typeBox.contentView` after assigning the stack as that content view made every
+        // constraint self-referential ("leading == own leading + 8"), Auto Layout broke them and
+        // the box collapsed onto its own title, over the third radio button.
+        let typeContent = NSView()
         typeStack.translatesAutoresizingMaskIntoConstraints = false
+        typeContent.addSubview(typeStack)
         NSLayoutConstraint.activate([
-            typeStack.leadingAnchor.constraint(equalTo: typeBox.contentView!.leadingAnchor, constant: 8),
-            typeStack.topAnchor.constraint(equalTo: typeBox.contentView!.topAnchor, constant: 6),
-            typeStack.bottomAnchor.constraint(equalTo: typeBox.contentView!.bottomAnchor, constant: -6),
-            typeStack.trailingAnchor.constraint(lessThanOrEqualTo: typeBox.contentView!.trailingAnchor, constant: -8),
+            typeStack.leadingAnchor.constraint(equalTo: typeContent.leadingAnchor, constant: 8),
+            typeStack.topAnchor.constraint(equalTo: typeContent.topAnchor, constant: 6),
+            typeStack.bottomAnchor.constraint(equalTo: typeContent.bottomAnchor, constant: -6),
+            typeStack.trailingAnchor.constraint(lessThanOrEqualTo: typeContent.trailingAnchor, constant: -8),
         ])
+        typeBox.contentView = typeContent
 
         // IDR_LINK_TYPE_JUNCTION 7714 and IDR_LINK_TYPE_WSL 7715 are NTFS-only.
         let footnote = DialogKit.label("Directory Junction and WSL links are NTFS reparse points; macOS has no equivalent.")
