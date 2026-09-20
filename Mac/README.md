@@ -197,8 +197,8 @@ every open dialog re-label themselves; Cancel puts it back.
 
 The files are the official 7-Zip `Lang/*.txt`, bundled unmodified. A string a translation does
 not define falls back to English, so a partly translated language is usable rather than blank.
-28 of the 92 are complete; a third of them are missing a quarter or more of the strings the app
-asks for, and those show more English than their own language. The full per-language table is in
+28 of the 92 are complete; 24 of them are missing more than a quarter of the strings the app asks
+for, and those show a good deal of English alongside their own language. The full per-language table is in
 `Mac/docs/reports/packaging.md`.
 
 ---

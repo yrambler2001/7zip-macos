@@ -166,7 +166,9 @@ because failing on a known product bug would turn the suite red.
 `-24-options-language-ar`, `-3x-options-<page>-de` (all seven Options pages in German),
 `-4x-copy/properties/benchmark-*`. They are cropped to the app region and scaled to 1600 px wide.
 
-**The headline: no clipped or truncated label was found that is caused by a translation.**
+**The headline: no clipped or truncated label was found that is caused by a translation.** Two
+table columns *are* too narrow for their content (finding 4 below), but what they cut is English
+text in an English-labelled column, in every language including built-in English.
 German — the worst case, with strings up to 120 characters — fits everywhere: the seven Options
 pages, the toolbar (`Hinzufügen / Entpacken / Überprüfen / Kopieren / Verschieben / Löschen /
 Eigenschaften`), the column headers, the Benchmark grid and the status line all lay out cleanly.
@@ -181,7 +183,7 @@ broken" problem):
 | 1 | Copy/Move, Benchmark and Properties draw their bottom button row clipped by the window edge | **No** — identical in built-in English (`tools-benchmark.png`), so `DialogKit.install` under-measures for every dialog built that way | `packaging-41-copy-de`, `-44-benchmark-de`, `-42-properties-de`, `-43-properties-ja` |
 | 2 | The **Apply** button is never localized (German shows `Hilfe / Apply / Abbrechen / OK`) | No — it has no 7-Zip lang id at all | `packaging-21-options-settings-de` |
 | 3 | Options ▸ 7-Zip forces the window past the screen edge (the unwrapped `pluginkit` status line), pushing the tab row out of view | No — the string is fixed English | `packaging-31-options-menu-de` |
-| 4 | Options ▸ Language: the "Strings" column is too narrow, every row reads `444 /...` | No | `packaging-24-options-language-ar` |
+| 4 | Two table columns are narrower than their content: Options ▸ Language's "Strings" (every row reads `444 /...`) and Options ▸ System's `Default app...` header with its `Archive U...` / `DiskImag...` cells | No — the cut strings are English in both cases, in an English-labelled column | `packaging-24-options-language-ar`, `packaging-30-options-system-de` |
 | 5 | `ar.txt` has the wrong row at lang id 2102: a 78-character translator credit where `Language:` belongs | **Yes**, one language, and it is an upstream data defect, not a port bug | `packaging-24-options-language-ar` |
 | 6 | RTL: composite one-field strings reverse their segment order (status line, Copy dialog's info block) | **Yes**, the 6 RTL languages. Nothing missing or clipped, only mirrored | `packaging-10-main-ar`, `-40-copy-ar` |
 | 7 | Options ▸ Menu tab caption always English — `IDD_MENU 2300` is an id **no** bundled file defines | Affects all 92 | `packaging-24-options-language-ar` (tab reads `7-Zip`) |
