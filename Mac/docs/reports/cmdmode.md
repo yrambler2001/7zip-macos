@@ -235,7 +235,7 @@ touched.
 
 ### 4.1 Unit tests
 
-`Mac/scripts/test.sh` after `rm -rf Mac/build`: **311 of 311 pass** (the 286 of the audit's baseline
+`rm -rf Mac/build && Mac/scripts/build.sh && Mac/scripts/test.sh`: **311 of 311 pass** (the 286 of the audit's baseline
 plus the 25 new ones in `CommandModeTests`), with the app-launch lock held for the whole run. The
 clean build produces **no warning from `Mac/` source**; the one line the log carries,
 `SevenZipKit: ld: warning: ignoring duplicate libraries: '-lc++'`, is pre-existing — it is in the
@@ -390,7 +390,7 @@ show are screenshotted through the **file manager**, where the same code builds 
 | `Mac/docs/reports/screenshots/cmdmode-01-add-to-archive-dialog.png` | IDD_COMPRESS 4000 "Add to archive" — the dialog `-ad` opens, and `-ad` is exactly what a Dock drop passes (`a <selection> -ad -saa -- <dir><name>`) |
 | `Mac/docs/reports/screenshots/cmdmode-02-checksum-information.png` | IDS_CHECKSUM_INFORMATION 7501 "Checksum information" with its `CRC32 checksum for data` / `... for data and names` rows — what `h` shows and what `x -scrc` / `t -scrc` now show **instead of** the test summary box |
 
-`Mac/scripts/test.sh --ui`: <!--UICOUNT-->.
+`Mac/scripts/test.sh --ui` on the same clean tree: **37 of 37 pass** (the audit's 35 plus these two), 1143 s, and 51 screenshot attachments exported.
 
 Two things the screenshots incidentally show, both another scope's and both already filed:
 the Compress dialog is wider than the screen with its bottom button row clipped (`parity.md` B17),
