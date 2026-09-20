@@ -10,9 +10,13 @@ State of branch `macos` at the time of writing. Update the status lines as work 
 | Xcode 26.x installed at `/Applications/Xcode.app` | Every build runs with `DEVELOPER_DIR=/Applications/Xcode.app`. If Xcode lives elsewhere, change that one variable in `Mac/scripts/*.sh`. Do not rely on `xcode-select`. |
 | `xcodegen` (Homebrew) | `Mac/project.yml` generates `Mac/7-Zip.xcodeproj`, which is git-ignored. |
 | Python 3, `sips`, `iconutil` | The icon generator. Part of macOS plus Xcode. |
+| Developer mode enabled (`sudo DevToolsSecurity -enable`) | Found off on the fresh VM. Without it every `xcodebuild test` run can raise an authorization panel before the XCUITest runner may drive the app. Check with `DevToolsSecurity -status`; the account also has to be in the `_developer` group, which an admin account already is. |
+| Automation + Screen Recording granted to the **terminal application** that runs the agent (here `/System/Applications/Utilities/Terminal.app`) | Only for AppleScript-driven workflows and `screencapture`; the build, the unit tests and `test.sh --ui` need neither. Both were missing on the fresh VM. An unapproved AppleScript **hangs on the consent dialog** instead of failing, so probe first with `AEDeterminePermissionToAutomateTarget(…, askUserIfNeeded=false)` — `-1744` means "would prompt". Only a human can grant these; `TCC.db` is SIP-protected and `tccutil` can only reset. Exact click paths in `Mac/docs/reports/vmcheck.md` §7. |
 | Nothing else | No third-party libraries or package managers are used by the app itself. |
 
 No code signing identity is required: everything builds ad-hoc signed. A Developer ID only matters for distribution, via the `DEVELOPMENT_TEAM` and `CODE_SIGN_IDENTITY` build settings.
+
+A fresh VM was verified end to end on 2026-09-20 (Xcode 26.6 / SDK 26.5 / Swift 6.3.3 / macOS 26.6.2): clean build 34 s, 209 unit tests green, UI suite 14 of 19 with exactly the five known failures. Full findings in `Mac/docs/reports/vmcheck.md`.
 
 ## First commands on the new machine
 
