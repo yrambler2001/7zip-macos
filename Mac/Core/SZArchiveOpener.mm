@@ -10,14 +10,20 @@
 #import "Internal/SZFolder+Internal.h"
 
 // ---------------------------------------------------------------------------
-class COpenCallbackBridge Z7_final:
-  public IArchiveOpenCallback,
-  public ICryptoGetTextPassword,
-  public CMyUnknownImp
+// The open callback handed to CAgent::Open is the engine's own COpenCallbackImp, exactly as 7zFM
+// builds it (FileFolderPluginOpen.cpp:317-330, 02-engine-api.md 2.5.1). It implements
+// IArchiveOpenVolumeCallback, which is what the Split / RAR / zip handlers query to find the
+// `.002`, `.003`, `.r00`, `.z01` ... siblings of a multi-volume set
+// (COpenCallbackImp::GetStream, ArchiveOpenCallback.cpp:284-367) — so opening the first volume
+// lists the whole archive. Without it the Split handler sees one truncated volume and CAgent::Open
+// answers S_FALSE, i.e. SZErrorCodeNotArchive.
+//
+// COpenCallbackImp is `final` and does the volume bookkeeping itself; the app-side half it
+// delegates to is the non-COM IOpenCallbackUI below, which answers the password. Upstream keeps
+// that as a *raw* pointer (`Callback`) and uses it only during the open stage, so SZArchive owns
+// the object and clears the pointer before releasing it.
+class CSZOpenCallbackUI Z7_final: public IOpenCallbackUI
 {
-  Z7_COM_UNKNOWN_IMP_2(IArchiveOpenCallback, ICryptoGetTextPassword)
-  Z7_IFACE_COM7_IMP(IArchiveOpenCallback)
-  Z7_IFACE_COM7_IMP(ICryptoGetTextPassword)
 public:
   id<SZPasswordDelegate> Delegate;
   NSString *Path;
@@ -26,20 +32,27 @@ public:
   bool PasswordWasAsked;
   bool Cancelled;
 
-  COpenCallbackBridge(): Delegate(nil), Path(nil), PasswordIsDefined(false), PasswordWasAsked(false), Cancelled(false) {}
+  CSZOpenCallbackUI(): Delegate(nil), Path(nil), PasswordIsDefined(false),
+      PasswordWasAsked(false), Cancelled(false) {}
+
+  Z7_IFACE_IMP(IOpenCallbackUI)
 };
 
-Z7_COM7F_IMF(COpenCallbackBridge::SetTotal(const UInt64 * /* files */, const UInt64 * /* bytes */))
+HRESULT CSZOpenCallbackUI::Open_CheckBreak() { return S_OK; }
+
+HRESULT CSZOpenCallbackUI::Open_SetTotal(const UInt64 * /* files */, const UInt64 * /* bytes */)
 {
   return S_OK;
 }
 
-Z7_COM7F_IMF(COpenCallbackBridge::SetCompleted(const UInt64 * /* files */, const UInt64 * /* bytes */))
+HRESULT CSZOpenCallbackUI::Open_SetCompleted(const UInt64 * /* files */, const UInt64 * /* bytes */)
 {
   return S_OK;
 }
 
-Z7_COM7F_IMF(COpenCallbackBridge::CryptoGetTextPassword(BSTR *password))
+HRESULT CSZOpenCallbackUI::Open_Finished() { return S_OK; }
+
+HRESULT CSZOpenCallbackUI::Open_CryptoGetTextPassword(BSTR *password)
 {
   *password = NULL;
   PasswordWasAsked = true;
@@ -145,11 +158,23 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
 }
 
 // ---------------------------------------------------------------------------
+/// The open-callback pair is private to this file, so it is declared here rather than in the
+/// shared Internal/SZFolder+Internal.h (which the other bridge files include).
+@interface SZArchive ()
+- (void)adoptOpenCallbackImp:(COpenCallbackImp *)spec ui:(CSZOpenCallbackUI *)ui;
+@end
+
 @implementation SZArchive
 {
   CMyComPtr<IInFolderArchive> _agent;
   CAgent *_agentSpec;
   CMyComPtr<IArchiveOpenCallback> _openCallback;
+  /// The same object as _openCallback; kept typed so `Callback` can be cleared before the
+  /// IOpenCallbackUI it points at is destroyed (the pointer is not reference counted).
+  COpenCallbackImp *_openCallbackSpec;
+  /// Owned by this archive: the app-side half of the open callback. For a multi-volume set
+  /// COpenCallbackImp outlives the open stage, so this must outlive it too.
+  CSZOpenCallbackUI *_openCallbackUI;
   CMyComPtr<IInStream> _inStream;
   BOOL _closed;
 }
@@ -179,6 +204,12 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
   return self;
 }
 
+- (void)adoptOpenCallbackImp:(COpenCallbackImp *)spec ui:(CSZOpenCallbackUI *)ui
+{
+  _openCallbackSpec = spec;
+  _openCallbackUI = ui;
+}
+
 - (void)removeTempDirectory
 {
   if (_tempDirectory)
@@ -191,8 +222,20 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
 - (void)dealloc
 {
   if (_agent && !_closed)
-    _agent->Close();
+    _agent->Close();                    // releases the volume streams that hold _openCallback
+  [self releaseOpenCallbackUI];
   [self removeTempDirectory];
+}
+
+/// The IOpenCallbackUI is reachable from COpenCallbackImp through a raw pointer, so the pointer
+/// goes first. Called only when the archive is gone for good, never from -close, because
+/// -reopen still needs the password answer.
+- (void)releaseOpenCallbackUI
+{
+  if (_openCallbackSpec)
+    _openCallbackSpec->Callback = NULL;
+  delete _openCallbackUI;
+  _openCallbackUI = NULL;
 }
 
 - (NSString *)errorMessage
@@ -350,10 +393,17 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
 
   CAgent *agentSpec = new CAgent;
   CMyComPtr<IInFolderArchive> agent = agentSpec;
-  COpenCallbackBridge *cbSpec = new COpenCallbackBridge;
+
+  // FileFolderPluginOpen.cpp:317-330: a COpenCallbackImp whose Callback is the app-side
+  // IOpenCallbackUI, then Init2(dirPrefix, fileName) for a real file (this is what gives
+  // multi-volume support: _folderPrefix is where GetStream looks for the sibling volumes) or
+  // SetSubArchiveName for an archive opened from a stream inside another archive.
+  CSZOpenCallbackUI *uiSpec = new CSZOpenCallbackUI;
+  uiSpec->Delegate = passwordDelegate;
+  uiSpec->Path = displayPath;
+  COpenCallbackImp *cbSpec = new COpenCallbackImp;
   CMyComPtr<IArchiveOpenCallback> callback = cbSpec;
-  cbSpec->Delegate = passwordDelegate;
-  cbSpec->Path = displayPath;
+  cbSpec->Callback = uiSpec;
 
   // For a file open the engine needs the file-system spelling of the path (UTF-8 bytes as
   // the kernel has them); for a stream open the path only feeds extension detection.
@@ -361,6 +411,29 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
       ? SZUStringFromNSString(openPath)
       : MultiByteToUnicodeString(SZFStringFromNSString(openPath), CP_UTF8);
   const UString uHint = SZUStringFromNSString(formatHint ?: @"");   // must not be NULL (Appendix A)
+
+  if (inStream)
+  {
+    cbSpec->SetSubArchiveName(SZUStringFromNSString([openPath lastPathComponent]).Ptr());
+  }
+  else
+  {
+    FString dirPrefix, fileName;
+    if (NWindows::NFile::NDir::GetFullPathAndSplit(us2fs(uPath), dirPrefix, fileName))
+    {
+      NWindows::NFile::NName::NormalizeDirPathPrefix(dirPrefix);
+      const HRESULT initRes = cbSpec->Init2(dirPrefix, fileName);
+      if (initRes != S_OK)
+      {
+        cbSpec->Callback = NULL;
+        delete uiSpec;
+        if (error)
+          *error = [SZErrors errorWithHRESULT:(uint32_t)initRes
+                                      message:[NSString stringWithFormat:@"Cannot stat %@", displayPath]];
+        return nil;
+      }
+    }
+  }
 
   CMyComBSTR type;
   NSString *msg = nil;
@@ -376,12 +449,16 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
     const UString em = agentSpec->GetErrorMessage();
     if (!em.IsEmpty())
       engineMsg = SZStringFromUString(em);
+    const bool passwordWasAsked = uiSpec->PasswordWasAsked;
+    const bool cancelled = uiSpec->Cancelled;
+    cbSpec->Callback = NULL;
+    delete uiSpec;
     if (error)
     {
-      if (cbSpec->PasswordWasAsked && !passwordDelegate)
+      if (passwordWasAsked && !passwordDelegate)
         *error = [SZErrors errorWithCode:SZErrorCodePasswordRequired
                                 message:[NSString stringWithFormat:@"A password is required to open %@", displayPath]];
-      else if (cbSpec->Cancelled)
+      else if (cancelled)
         *error = [SZErrors errorWithCode:SZErrorCodeCancelled message:@"Cancelled"];
       else if (hr == S_FALSE)
         *error = [SZErrors errorWithCode:SZErrorCodeNotArchive
@@ -395,9 +472,14 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
   NSString *typeString = @"";
   if ((LPCOLESTR)type)
     typeString = SZStringFromWChars((LPCOLESTR)type, SysStringLen((BSTR)(LPCOLESTR)type));
-  return [[SZArchive alloc] initWithAgent:agent agentSpec:agentSpec openCallback:callback inStream:inStream
-                                     path:displayPath type:typeString outerFolder:outerFolder outerItemIndex:outerItemIndex
-                            tempDirectory:tempDirectory];
+  SZArchive *archive = [[SZArchive alloc] initWithAgent:agent agentSpec:agentSpec openCallback:callback
+                                              inStream:inStream path:displayPath type:typeString
+                                           outerFolder:outerFolder outerItemIndex:outerItemIndex
+                                         tempDirectory:tempDirectory];
+  // The open callback survives the open stage for a multi-volume set, and it holds a raw pointer
+  // to the IOpenCallbackUI, so the archive takes ownership of both.
+  [archive adoptOpenCallbackImp:cbSpec ui:uiSpec];
+  return archive;
 }
 
 + (SZArchive *)openArchiveAtPath:(NSString *)path
