@@ -257,9 +257,9 @@ Nothing under `C/`, `CPP/`, `Asm/`, `DOC/` and nothing in `Mac/App` or `Mac/Core
 1. `tools` / `panel` — the About items' accessibility identifier is `toolsShowAbout:` because of
    the runtime retarget; dropping the Wave 1 placeholder removes the need for it.
 2. `panel` (`MainWindowController`) — **View > 2 Panels intermittently collapses panel 0 to the
-   `kPanelSizeMin` 120 pt minimum** instead of the stored ratio. Measured both ways on the same
-   seed (`FM.Panels.splitterPos = 0.5`, 1200 pt window): once the divider came up at 600 as it
-   should, twice at 120 with panel 0's address combo 59 pt wide. `showSecondPanel` sets the
+   `kPanelSizeMin` 120 pt minimum** instead of the stored ratio. Measured three times on the same
+   seed (`FM.Panels.splitterPos = 0.5`, 1200 pt window): twice the divider came up at 120 with
+   panel 0's address combo 59 pt wide, once correctly at 600. `showSecondPanel` sets the
    position in a `DispatchQueue.main.async` while `splitView(_:resizeSubviewsWithOldSize:)`
    recomputes the ratio from `views[0].frame.width` during the layout pass the insertion triggers.
    Nothing is unusable, but the restored splitter position is wrong (01 §1.2, 01b §5.7).
