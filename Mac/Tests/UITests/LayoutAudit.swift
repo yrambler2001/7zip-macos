@@ -7,6 +7,8 @@
 //   CLIPPED  an element's frame leaves its window's frame -- the Copy dialog's cut-off buttons
 //            (Mac/docs/requests.md) are exactly this.
 //   OVERLAP  two sibling controls cover each other, which no dialog of 7zFM does.
+//   OVERSIZE a window is bigger than the screen it is on, so part of it cannot be reached. One
+//            label that resists compression is enough to do this to a whole window.
 //   TIGHT    a label or button title needs more width than its frame gives it, so AppKit
 //            truncates it with an ellipsis. This one is a heuristic (the text is measured with
 //            the system font, which is not always the control's font), so it is reported as a
@@ -41,7 +43,13 @@ public enum LayoutAudit {
 
     /// Hard defects only: what a test should fail on.
     public static func defects(_ window: XCUIElement, name: String) -> [String] {
-        report(window, name: name).filter { $0.hasPrefix("CLIPPED") || $0.hasPrefix("OVERLAP") }
+        report(window, name: name).filter(isHardDefect)
+    }
+
+    /// A finding a test must fail on, as opposed to a TIGHT warning to look at on a screenshot.
+    public static func isHardDefect(_ finding: String) -> Bool {
+        finding.hasPrefix("CLIPPED") || finding.hasPrefix("OVERLAP")
+            || finding.hasPrefix("OVERSIZE") || finding.hasPrefix("ERROR")
     }
 
     /// Every finding, warnings included, one per line.
@@ -50,6 +58,13 @@ public enum LayoutAudit {
         let bounds = snapshot.frame
         guard bounds.width > 1, bounds.height > 1 else { return ["ERROR \(name): empty window frame"] }
         var findings: [String] = []
+        if let screen = NSScreen.main {
+            let visible = screen.visibleFrame.size
+            if bounds.width > visible.width + 1 || bounds.height > visible.height + 1 {
+                findings.append(String(format: "OVERSIZE %@: %@ does not fit the screen (%.0fx%.0f)",
+                                       name, rect(bounds), visible.width, visible.height))
+            }
+        }
         walk(snapshot, path: name, bounds: bounds, findings: &findings)
         return findings
     }
@@ -158,6 +173,7 @@ public enum LayoutAudit {
         case .table: return "table"
         case .outline: return "outline"
         case .tabGroup: return "tabs"
+        case .tab: return "tab"
         case .splitGroup: return "splitGroup"
         case .splitter: return "splitter"
         case .progressIndicator: return "progress"

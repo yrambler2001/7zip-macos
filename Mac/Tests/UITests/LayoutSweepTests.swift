@@ -30,7 +30,7 @@ final class LayoutSweepTests: SevenZipUITestCase {
               + " | frame=\(window.frame) main=\(sevenZip.window.frame)")
         for line in report { print("SWEEP   \(line)") }
         if let shot { capture(window, shot) }
-        defects += report.filter { $0.hasPrefix("CLIPPED") || $0.hasPrefix("OVERLAP") }
+        defects += report.filter(LayoutAudit.isHardDefect)
     }
 
     /// A screenshot of *this* window, not of the app's first window: a dialog is centred over the
@@ -85,11 +85,10 @@ final class LayoutSweepTests: SevenZipUITestCase {
 
     func testMainWindowLayout() {
         continueAfterFailure = true
-        let panel = fixturePanel()
+        _ = fixturePanel()
         sweep(sevenZip.window, "Main window, 1 panel", shot: "20-main-one-panel")
         XCTAssertTrue(sevenZip.ensurePanelCount(2))
         sweep(sevenZip.window, "Main window, 2 panels", shot: "21-main-two-panels")
-        _ = panel
         finish("main window")
     }
 
@@ -122,7 +121,7 @@ final class LayoutSweepTests: SevenZipUITestCase {
         continueAfterFailure = true
         let panel = fixturePanel()
         guard panel.hasRow(named: "multi.7z.001") else {
-            return XCTSkip2("no multi-volume fixture")
+            return skip("no multi-volume fixture")
         }
         panel.select("multi.7z.001")
         sweepMenuDialog(["File", "Combine files..."], title: "Combine Files multi.7z.001",
@@ -324,7 +323,7 @@ final class LayoutSweepTests: SevenZipUITestCase {
         }
         guard let group = tabGroup(snapshot) else { return [] }
         return group.children
-            .filter { $0.elementType == .radioButton || $0.elementType == .button }
+            .filter { $0.elementType == .tab || $0.elementType == .radioButton }
             .map { ($0.title.isEmpty ? $0.label : $0.title, $0.frame) }
     }
 
@@ -353,7 +352,8 @@ final class LayoutSweepTests: SevenZipUITestCase {
         return String(String(cleaned).prefix(20))
     }
 
-    private func XCTSkip2(_ message: String) {
+    /// Not `XCTSkip`: the sweep keeps going and says so in the log.
+    private func skip(_ message: String) {
         print("SWEEP skipped: \(message)")
     }
 }
