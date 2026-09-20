@@ -102,7 +102,7 @@ is `Mac/scripts/test.sh` followed by `Mac/scripts/test.sh --ui` on this branch b
 | | tests | wall clock |
 |---|---|---|
 | **before** | 311 unit + 54 UI = 365 | 44 s + 1604 s = **1648 s** (27.5 min) |
-| **after** | 311 unit + 25 app-hosted + 12 probe + 25 input = **373** | **680 s / 701 s** (11.3 / 11.7 min), two consecutive runs, all green |
+| **after** | 311 unit + 25 app-hosted + 12 probe + 25 input = **373** | **674 s / 680 s / 701 s** (11.2–11.7 min), three consecutive runs, all green |
 
 **2.4 times faster with eight more tests**, and the UI part of it is 37 XCUITest cases where there
 were 54.
@@ -366,7 +366,7 @@ Two of those rows are not test flakiness and are worth separating out:
   delivery receipt, and `aimedOnly`).
 
 The three runs of the whole plan that shared the machine with a sibling agent's test run took 851 s,
-862 s and 1049 s; the two that did not took 701 s and 680 s. The per-target spread in §3.3
+862 s and 1049 s; the three that did not took 701 s, 680 s and 674 s — a 4 % spread. The per-target spread in §3.3
 is that contention, not variance in the tests.
 
 
