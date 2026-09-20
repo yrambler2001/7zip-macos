@@ -24,6 +24,45 @@ enum CommandExecutor {
     /// `7zFM.exe "%1"` (03 section 6.2, 01 section 9 #32).
     private static var extraWindowControllers: [MainWindowController] = []
 
+    // MARK: - Failures (GUI.cpp:437-494)
+
+    /// `WinMain`'s exception ladder with IDS_MEM_ERROR resolved through the active language file
+    /// (03 section 2.7). Every failure site in this file goes through it, so no code path can
+    /// invent an exit code of its own any more.
+    static func failure(for error: Error) -> SevenZipFailure {
+        SevenZipFailureLadder.classify(
+            error,
+            memoryMessage: Lang.text(3000, SevenZipFailureLadder.englishMemoryErrorMessage))
+    }
+
+    /// Classifies, shows the box the ladder asks for, and returns the exit code. For a failure the
+    /// Progress dialog already reported, use `failure(for:).exitCode` instead of this.
+    private static func report(_ error: Error, parent: NSWindow?) -> SevenZipExitCode {
+        let classified = failure(for: error)
+        if let message = classified.message { showError(message, parent: parent) }
+        return classified.exitCode
+    }
+
+    /// `SevenZipPathSpec` -> the bridge's `SZPathSpec`, so the censor entry reaches
+    /// `NWildcard::CCensor` with its `r`/`w`/`m` modifiers intact.
+    private static func bridgeSpec(_ spec: SevenZipPathSpec) -> SZPathSpec {
+        SZPathSpec.spec(path: spec.path,
+                        include: spec.include,
+                        recursedType: SZRecursedType(rawValue: spec.recursedType.rawValue)
+                            ?? .nonRecursed,
+                        wildcardMatching: spec.wildcardMatching,
+                        markMode: SZWildcardMarkMode(rawValue: spec.markMode.rawValue) ?? .fileOrDir)
+    }
+
+    /// `EnumerateDirItemsAndSort(options.arcCensor)` (GUI.cpp:285-304) / `EnumerateItems`: the
+    /// engine's own directory walk expands the wildcards, sorts the result and applies the excludes.
+    /// Only called when the censor actually needs it, so a Finder selection (`-aiw-!` per item)
+    /// still never touches the disk.
+    private static func expand(_ specs: [SevenZipPathSpec], fallback: [String]) throws -> [String] {
+        guard SevenZipCommandLine.needsCensorWalk(specs) else { return fallback }
+        return try SZUpdater.expandPathSpecs(specs.map(bridgeSpec))
+    }
+
     // MARK: - Entry point
 
     /// Runs one command line and returns the 7zG exit code. `argv` excludes argv[0].
@@ -66,8 +105,7 @@ enum CommandExecutor {
             showError(error.description, parent: parentWindow)
             return .userError
         } catch {
-            showError(error.localizedDescription, parent: parentWindow)
-            return .fatalError
+            return report(error, parent: parentWindow)
         }
 
         suppressMessages = command.yesToAll
@@ -140,7 +178,12 @@ enum CommandExecutor {
 
     private static func runExtractGroup(_ command: SevenZipCommandLine,
                                         parentWindow: NSWindow?) -> SevenZipExitCode {
-        let archives = command.resolvedArchivePaths
+        let archives: [String]
+        do {
+            archives = try expand(command.archiveSpecs, fallback: command.resolvedArchivePaths)
+        } catch {
+            return report(error, parent: parentWindow)
+        }
         guard !archives.isEmpty else {
             showError(Lang.text(3015, "You must select one or more files"), parent: parentWindow)
             return .userError
@@ -180,6 +223,20 @@ enum CommandExecutor {
         }
         if let password = command.password { options.password = password }
         if let hint = command.formatHint, !hint.isEmpty { options.formatHint = hint }
+        // `-scrc[method]` on `x`/`t`: the engine hashes the *extracted* data and the digests are
+        // shown in the hash list dialog instead of the test summary (03 section 2.6,
+        // GUI.cpp:275-283 `hb.SetMethods`, ExtractGUI.cpp:81-98, :129-136). A bare `-scrc`
+        // contributes an empty name, which `CHashBundle::SetMethods` reads as CRC32.
+        if !command.hashMethods.isEmpty {
+            var methods = command.hashMethods.filter { !$0.isEmpty }
+            if methods.isEmpty { methods = ["CRC32"] }
+            for method in methods where !SZHasher.isMethodSupported(method) {
+                // ThrowException_if_Error(hb.SetMethods(...)) -> CSystemException -> exit 2.
+                showError("Unsupported hash method: " + method, parent: parentWindow)
+                return .fatalError
+            }
+            options.hashMethods = methods
+        }
         options.excludeDirectoryItems = command.excludeDirectoryItems
         options.excludeFileItems = command.excludeFileItems
         if let symlinks = command.storeSymLinks { options.extractSymbolicLinks = NSNumber(value: symlinks) }
@@ -243,15 +300,19 @@ enum CommandExecutor {
 
         switch result {
         case .success(let extractResult):
-            if testMode, let summary = extractResult.testSummary {
+            if let hashes = extractResult.hashResults {
+                // ExtractGUI.cpp:129-136: with `-scrc` the hash list replaces the test summary,
+                // for `x` as much as for `t`.
+                HashResultsDialog.show(results: hashes, parent: parentWindow)
+            } else if testMode, let summary = extractResult.testSummary {
                 showInfo(summary, parent: parentWindow)
             }
             // ":324-325": `!ecs->IsOK()` is exit code 2.
             return extractResult.isOK ? .success : .fatalError
-        case .failure(let error as NSError) where error.code == SZError.Code.cancelled.rawValue:
-            return .userBreak
-        case .failure:
-            return .fatalError          // the runner already showed the alert
+        case .failure(let error):
+            // The Progress dialog already showed the message (01b section 4.17); only the exit
+            // code is ours, through the same ladder as everything else.
+            return failure(for: error).exitCode
         }
     }
 
@@ -280,10 +341,8 @@ enum CommandExecutor {
             }
             MessagesDialog.show(messages: lines, parent: parentWindow)
             return .fatalError
-        case .failure(let error as NSError) where error.code == SZError.Code.cancelled.rawValue:
-            return .userBreak
-        case .failure:
-            return .fatalError
+        case .failure(let error):
+            return failure(for: error).exitCode
         }
     }
 
@@ -295,21 +354,31 @@ enum CommandExecutor {
             showError("Cannot find archive name", parent: parentWindow)
             return .userError
         }
-        let sources = command.resolvedItemPaths
+        let itemSpecs = command.itemSpecs
+
+        // `rn`: the positional strings were old/new pairs, so there is no source list at all.
+        if command.command == .rename {
+            return renameItems(command, archivePath: archivePath, parentWindow: parentWindow)
+        }
+
+        if command.command == .delete {
+            return deleteItems(specs: itemSpecs, fromArchiveAt: archivePath,
+                               parentWindow: parentWindow)
+        }
+
+        // Everything below wants a real file list: for the Compress dialog's info block, for the
+        // hash writer and for `-thash`. `expand` is a no-op unless a censor entry needs the walk.
+        let sources: [String]
+        do {
+            sources = try expand(itemSpecs, fallback: command.resolvedItemPaths)
+        } catch {
+            return report(error, parent: parentWindow)
+        }
 
         // `a -thash`: write a checksum file, not an archive (03 section 2.6).
         if command.command == .add,
            command.formatHint?.caseInsensitiveCompare("hash") == .orderedSame {
             return writeChecksumFile(at: archivePath, sources: sources, parentWindow: parentWindow)
-        }
-
-        if command.command == .delete {
-            return deleteItems(named: sources, fromArchiveAt: archivePath, parentWindow: parentWindow)
-        }
-        if command.command == .rename {
-            // `rn` needs old/new name pairs; the shell integration never generates it.
-            showError("Unsupported command", parent: parentWindow)
-            return .fatalError
         }
 
         guard !sources.isEmpty else {
@@ -326,6 +395,24 @@ enum CommandExecutor {
             showError(Lang.text(3004, "Update operations are not supported for this archive."),
                       parent: parentWindow)
             return .fatalError
+        }
+
+        // `-sfx[module]` (01b section 4.23 "SFX"): resolve and validate the stub **before** any
+        // dialog, so a missing or bogus module is an error instead of a plain archive nobody asked
+        // for. Update.cpp:1167-1191 does the same check, but only after the dialog and only for a
+        // run that already decided it is in SFX mode.
+        var sfxModulePath: String?
+        if let module = command.sfxModule {
+            guard SZUpdater.formatSupportsSFX(formatName) else {
+                showError("Self-extracting archives are not supported for this format\n"
+                          + formatName, parent: parentWindow)
+                return .fatalError
+            }
+            do {
+                sfxModulePath = try SZUpdater.resolvedSFXModulePath(module.isEmpty ? nil : module)
+            } catch {
+                return report(error, parent: parentWindow)
+            }
         }
 
         let email = command.emailMode
@@ -382,6 +469,10 @@ enum CommandExecutor {
                 .map { "-m" + $0 }
                 .joined(separator: " ")
             result.updateMode = command.command == .update ? .update : .add
+            // The bug this replaces: `sfxMode` was only ever set from the Compress dialog, so
+            // `a -sfx …` without `-ad` silently wrote a plain archive. `UpdateGUI.cpp:561-565`
+            // fills the default module whether the dialog ran or not.
+            result.sfxMode = sfxModulePath != nil
             result.deleteAfterCompressing = command.deleteAfterCompressing
             result.openShareForWrite = command.openShareForWrite
             result.setArcMTime = command.setArchiveMTime ? true : nil
@@ -392,6 +483,12 @@ enum CommandExecutor {
         }
 
         let updateOptions = result.updateOptions()
+        if let sfxModulePath {
+            // UpdateGUI.cpp:517 is `if (di.SFXMode) options.SfxMode = true;` — the dialog can turn
+            // SFX **on**, never off, because `-sfx` already set it on `options`.
+            updateOptions.sfxMode = true
+            updateOptions.sfxModulePath = sfxModulePath
+        }
         updateOptions.emailMode = email
         updateOptions.emailRemoveAfter = command.emailRemoveAfter
         updateOptions.emailAddress = command.emailAddress
@@ -410,8 +507,12 @@ enum CommandExecutor {
         runnerOptions.password = result.password
         runnerOptions.waitMode = false
 
+        // The censor entries go to the engine unexpanded, so `a arc.7z -ir!src/*.c` stores
+        // `sub/x.c` rather than `x.c`: `UpdateArchive` calls `AddPathsToCensor` + `EnumerateItems`
+        // itself (Update.cpp:1159-1161).
+        let bridgeSpecs = itemSpecs.map(bridgeSpec)
         let outcome = OperationRunner.run(runnerOptions) { runner -> SZUpdateResult in
-            try SZUpdater.update(with: updateOptions, sourcePaths: sources, progress: runner)
+            try SZUpdater.update(with: updateOptions, pathSpecs: bridgeSpecs, progress: runner)
         }
         switch outcome {
         case .success(let updateResult):
@@ -419,10 +520,52 @@ enum CommandExecutor {
                                                 address: command.emailAddress) }
             // ":369-374": failed files are exit code 1 (kWarning).
             return updateResult.failedPaths.isEmpty ? .success : .warning
-        case .failure(let error as NSError) where error.code == SZError.Code.cancelled.rawValue:
-            return .userBreak
-        case .failure:
-            return .fatalError
+        case .failure(let error):
+            return failure(for: error).exitCode
+        }
+    }
+
+    /// `rn` — the console rename command (GUI.cpp:328-375 update group, Update.cpp:477-520).
+    /// Windows dispatches it through `UpdateGUI`, so the progress window is the Compressing one and
+    /// a failed file is still exit code 1.
+    private static func renameItems(_ command: SevenZipCommandLine, archivePath: String,
+                                   parentWindow: NSWindow?) -> SevenZipExitCode {
+        guard !command.renamePairs.isEmpty else {
+            // The parser already refuses an odd count; this is `rn arc` with no pair at all.
+            showError(Lang.text(3015, "You must select one or more files"), parent: parentWindow)
+            return .userError
+        }
+        let pairs = command.renamePairs.map {
+            SZRenamePair.pair(oldName: $0.oldName, newName: $0.newName,
+                              wildcardParsing: $0.wildcardParsing)
+        }
+        let options = SZUpdateOptions.options(archivePath: archivePath)
+        options.openShareForWrite = command.openShareForWrite
+        options.stopAfterOpenError = command.stopAfterOpenError
+        if let password = command.password { options.password = password }
+        if let workingDirectory = command.workingDirectory, !workingDirectory.isEmpty {
+            options.workingDirectory = workingDirectory
+        }
+
+        var runnerOptions = OperationRunner.Options(title: Lang.text(3301, "Compressing"))
+        runnerOptions.initialStatus = .compressing
+        runnerOptions.titleFileName = archivePath
+        runnerOptions.parentWindow = parentWindow
+        runnerOptions.password = command.password
+        runnerOptions.waitMode = false
+
+        // The `-i`/`-x` masks decide which archive items are considered
+        // (ArchiveCommandLine.cpp:574-591); an empty list is the universal wildcard `*`.
+        let specs = command.itemSpecs.map(bridgeSpec)
+        let outcome = OperationRunner.run(runnerOptions) { runner -> SZUpdateResult in
+            try SZUpdater.renameItems(pairs: pairs, inArchiveAt: archivePath, itemSpecs: specs,
+                                      options: options, progress: runner)
+        }
+        switch outcome {
+        case .success(let updateResult):
+            return updateResult.failedPaths.isEmpty ? .success : .warning
+        case .failure(let error):
+            return failure(for: error).exitCode
         }
     }
 
@@ -451,17 +594,16 @@ enum CommandExecutor {
         switch outcome {
         case .success:
             return .success
-        case .failure(let error as NSError) where error.code == SZError.Code.cancelled.rawValue:
-            return .userBreak
-        case .failure:
-            return .fatalError
+        case .failure(let error):
+            return failure(for: error).exitCode
         }
     }
 
-    /// The console `d` command.
-    private static func deleteItems(named names: [String], fromArchiveAt path: String,
+    /// The console `d` command. The censor entries reach the engine unexpanded, so `d arc -x!*.log`
+    /// and a wildcard in a positional name both work.
+    private static func deleteItems(specs: [SevenZipPathSpec], fromArchiveAt path: String,
                                     parentWindow: NSWindow?) -> SevenZipExitCode {
-        guard !names.isEmpty else {
+        guard specs.contains(where: { $0.include }) else {
             showError(Lang.text(3015, "You must select one or more files"), parent: parentWindow)
             return .userError
         }
@@ -471,17 +613,16 @@ enum CommandExecutor {
         runnerOptions.parentWindow = parentWindow
         runnerOptions.waitMode = false
 
+        let bridgeSpecs = specs.map(bridgeSpec)
         let outcome = OperationRunner.run(runnerOptions) { runner -> SZUpdateResult in
-            try SZUpdater.deleteItems(named: names, fromArchiveAt: path, options: nil,
+            try SZUpdater.deleteItems(specs: bridgeSpecs, fromArchiveAt: path, options: nil,
                                       progress: runner)
         }
         switch outcome {
         case .success:
             return .success
-        case .failure(let error as NSError) where error.code == SZError.Code.cancelled.rawValue:
-            return .userBreak
-        case .failure:
-            return .fatalError
+        case .failure(let error):
+            return failure(for: error).exitCode
         }
     }
 
@@ -489,7 +630,12 @@ enum CommandExecutor {
 
     private static func runHash(_ command: SevenZipCommandLine,
                                 parentWindow: NSWindow?) -> SevenZipExitCode {
-        let paths = command.resolvedItemPaths
+        let paths: [String]
+        do {
+            paths = try expand(command.itemSpecs, fallback: command.resolvedItemPaths)
+        } catch {
+            return report(error, parent: parentWindow)
+        }
         guard !paths.isEmpty else {
             showError(Lang.text(3015, "You must select one or more files"), parent: parentWindow)
             return .userError
@@ -519,10 +665,8 @@ enum CommandExecutor {
             // HashGUI.cpp:283-327: ShowHashResults unless E_ABORT.
             HashResultsDialog.show(results: results, parent: parentWindow)
             return results.numErrors == 0 ? .success : .warning
-        case .failure(let error as NSError) where error.code == SZError.Code.cancelled.rawValue:
-            return .userBreak
-        case .failure:
-            return .fatalError
+        case .failure(let error):
+            return failure(for: error).exitCode
         }
     }
 

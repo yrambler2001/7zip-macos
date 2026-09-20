@@ -11,6 +11,7 @@
 #import "Internal/SZCallbackAdapters.h"
 #import "SZCodecs.h"
 #import "SZError.h"
+#import "SZLang.h"
 
 // Engine headers this file needs beyond Internal/SZEngine.h, with the same BOOL rename
 // discipline (MyWindows.h `typedef int BOOL` clashes with Objective-C's BOOL).
@@ -20,12 +21,111 @@
 #include "../../CPP/Common/Wildcard.h"
 #include "../../CPP/7zip/UI/Common/ArchiveName.h"
 #include "../../CPP/7zip/UI/Common/DirItem.h"
+#include "../../CPP/7zip/UI/Common/EnumDirItems.h"
 #include "../../CPP/7zip/UI/Common/Update.h"
 #include "../../CPP/7zip/UI/Common/UpdateAction.h"
 #include "../../CPP/7zip/UI/Common/WorkDir.h"
 #pragma pop_macro("BOOL")
 
 using namespace NWindows;
+
+// ---------------------------------------------------------------------------
+#pragma mark - SZPathSpec
+
+@implementation SZPathSpec
+
++ (instancetype)specWithPath:(NSString *)path
+                     include:(BOOL)include
+                recursedType:(SZRecursedType)recursedType
+            wildcardMatching:(BOOL)wildcardMatching
+                    markMode:(SZWildcardMarkMode)markMode
+{
+  SZPathSpec *spec = [[SZPathSpec alloc] init];
+  if (spec)
+  {
+    spec->_path = [(path ?: @"") copy];
+    spec->_include = include;
+    spec->_recursedType = recursedType;
+    spec->_wildcardMatching = wildcardMatching;
+    spec->_markMode = markMode;
+  }
+  return spec;
+}
+
++ (instancetype)literalSpecWithPath:(NSString *)path
+{
+  // AddPreItem_NoWildcard (Wildcard.h:211-218): include, no wildcard matching, kMark_FileOrDir.
+  return [self specWithPath:path
+                    include:YES
+               recursedType:SZRecursedTypeNonRecursed
+           wildcardMatching:NO
+                   markMode:SZWildcardMarkModeFileOrDir];
+}
+
+- (id)copyWithZone:(NSZone *)zone
+{
+  (void)zone;
+  return [SZPathSpec specWithPath:_path include:_include recursedType:_recursedType
+                wildcardMatching:_wildcardMatching markMode:_markMode];
+}
+
+- (NSString *)description
+{
+  return [NSString stringWithFormat:@"<SZPathSpec %@%@%@>", _include ? @"" : @"!",
+          _path, _wildcardMatching ? @"" : @" (literal)"];
+}
+
+@end
+
+// ---------------------------------------------------------------------------
+#pragma mark - SZRenamePair
+
+@implementation SZRenamePair
+
++ (instancetype)pairWithOldName:(NSString *)oldName
+                        newName:(NSString *)newName
+                wildcardParsing:(BOOL)wildcardParsing
+{
+  SZRenamePair *pair = [[SZRenamePair alloc] init];
+  if (pair)
+  {
+    pair->_oldName = [(oldName ?: @"") copy];
+    pair->_newName = [(newName ?: @"") copy];
+    pair->_wildcardParsing = wildcardParsing;
+  }
+  return pair;
+}
+
+- (id)copyWithZone:(NSZone *)zone
+{
+  (void)zone;
+  return [SZRenamePair pairWithOldName:_oldName newName:_newName wildcardParsing:_wildcardParsing];
+}
+
+- (BOOL)isSupported
+{
+  // CRenamePair::Prepare (Update.cpp:288-295). RecursedType is always kNonRecursed here, so only
+  // the wildcard test is left; DoesNameContainWildcard is the engine's own predicate.
+  if (!_wildcardParsing)
+    return YES;
+  return DoesNameContainWildcard(SZUStringFromNSString(_oldName)) ? NO : YES;
+}
+
+- (nullable NSString *)unsupportedDetail
+{
+  if (self.isSupported)
+    return nil;
+  // AddRenamePair (ArchiveCommandLine.cpp:511-522): old name, new name, then the recursion switch.
+  // RecursedType is kNonRecursed, which contributes no third line.
+  return [NSString stringWithFormat:@"%@\n%@\n", _oldName, _newName];
+}
+
+- (NSString *)description
+{
+  return [NSString stringWithFormat:@"<SZRenamePair %@ -> %@>", _oldName, _newName];
+}
+
+@end
 
 // ---------------------------------------------------------------------------
 #pragma mark - SZUpdateProperty
@@ -557,6 +657,36 @@ static void SZSetBoolPair(CBoolPair &pair, NSNumber *value)
 
 /// The format index to compress with: explicit index, then the name, then the path
 /// (`CCodecs::FindFormatForArchiveName`, what `7z a x.zip` does). -1 when nothing matches.
+/// `AddNameToCensor` (ArchiveCommandLine.cpp:474-495): the `r` modifier decides `Recursive`, and
+/// for `-r0` it does so per name, from whether that name contains a wildcard.
+static void SZAddSpecToCensor(NWildcard::CCensor &censor, SZPathSpec *spec)
+{
+  const UString name = SZUStringFromNSString(spec.path);
+  bool recursed = false;
+  switch (spec.recursedType)
+  {
+    case SZRecursedTypeWildcardOnlyRecursed: recursed = DoesNameContainWildcard(name); break;
+    case SZRecursedTypeRecursed:             recursed = true; break;
+    default: break;
+  }
+  NWildcard::CCensorPathProps props;
+  props.Recursive = recursed;
+  props.WildcardMatching = spec.wildcardMatching ? true : false;
+  props.MarkMode = (Byte)spec.markMode;
+  censor.AddPreItem(spec.include ? true : false, name, props);
+}
+
+/// `HResultToMessage` (FileManager/ProgressDialog2.cpp:1477-1483): E_OUTOFMEMORY has its own lang
+/// string, IDS_MEM_ERROR 3000, rather than `MyFormatMessage`'s errno text. Applied here so the
+/// Progress dialog's final message and the command-mode box both say what Windows says.
+static NSError *SZUpdaterError(HRESULT hr, NSString *engineMessage)
+{
+  if (hr == E_OUTOFMEMORY && engineMessage.length == 0)
+    engineMessage = [SZLang.shared stringForID:3000
+                                      fallback:@"The system cannot allocate the required amount of memory"];
+  return [SZErrors errorWithHRESULT:(uint32_t)hr message:engineMessage];
+}
+
 static int SZResolveFormatIndex(CCodecs *codecs, SZUpdateOptions *options)
 {
   if (options.formatIndex >= 0 && options.formatIndex < (NSInteger)codecs->Formats.Size())
@@ -612,6 +742,134 @@ static int SZResolveFormatIndex(CCodecs *codecs, SZUpdateOptions *options)
   return info ? info.updateEnabled : NO;
 }
 
++ (BOOL)formatSupportsSFX:(NSString *)formatName
+{
+  // g_Formats (CompressDialog.cpp:364): 7z is the only row with kFF_SFX.
+  return [formatName caseInsensitiveCompare:@"7z"] == NSOrderedSame;
+}
+
+/// A stub has to be an executable image, or `Compress()` would happily prefix an archive with
+/// arbitrary bytes and produce something that cannot run. The Windows stubs 7-Zip ships are PE
+/// files (`MZ`); a native stub would be Mach-O or a universal binary.
+static BOOL SZLooksLikeSFXStub(NSString *path)
+{
+  NSFileManager *fm = [NSFileManager defaultManager];
+  NSDictionary<NSFileAttributeKey, id> *attrs = [fm attributesOfItemAtPath:path error:NULL];
+  if (!attrs || ![attrs[NSFileType] isEqual:NSFileTypeRegular])
+    return NO;
+  if ([attrs[NSFileSize] unsignedLongLongValue] < 1024)
+    return NO;
+  NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+  if (!handle)
+    return NO;
+  NSData *head = [handle readDataOfLength:4];
+  [handle closeFile];
+  if (head.length < 4)
+    return NO;
+  const uint8_t *b = (const uint8_t *)head.bytes;
+  if (b[0] == 'M' && b[1] == 'Z')                       // PE / MS-DOS image: the shipped stubs
+    return YES;
+  uint32_t magic = 0;
+  memcpy(&magic, b, 4);
+  switch (magic)
+  {
+    case 0xFEEDFACEu: case 0xCEFAEDFEu:                 // Mach-O 32, both byte orders
+    case 0xFEEDFACFu: case 0xCFFAEDFEu:                 // Mach-O 64
+    case 0xCAFEBABEu: case 0xBEBAFECAu:                 // universal binary
+      return YES;
+    default:
+      return NO;
+  }
+}
+
++ (nullable NSString *)resolvedSFXModulePath:(nullable NSString *)nameOrPath
+                                       error:(NSError **)error
+{
+  NSFileManager *fm = [NSFileManager defaultManager];
+  NSString *candidate = nil;
+
+  if (nameOrPath.length == 0)
+  {
+    // UpdateGUI.cpp:561-565: a bare -sfx (and the dialog checkbox) mean kDefaultSfxModule.
+    candidate = [self defaultSFXModulePath];
+    if (candidate.length == 0)
+    {
+      if (error)
+        *error = [SZErrors errorWithCode:SZErrorCodeFileNotFound
+                                message:@"SFX file is not specified"];
+      return nil;
+    }
+  }
+  else if ([nameOrPath rangeOfString:@"/"].location == NSNotFound)
+  {
+    // Update.cpp:1178-1184: no separator -> next to the program first. Here that is the bundle's
+    // Resources/SFX, which is where `sfxModulePathNamed:` looks.
+    candidate = [self sfxModulePathNamed:nameOrPath];
+    if (candidate.length == 0)
+      candidate = [[fm currentDirectoryPath] stringByAppendingPathComponent:nameOrPath];
+  }
+  else
+  {
+    candidate = nameOrPath.stringByExpandingTildeInPath;
+  }
+
+  if (![fm fileExistsAtPath:candidate])
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeFileNotFound
+                              message:[NSString stringWithFormat:@"cannot find specified SFX module\n%@",
+                                       nameOrPath.length ? nameOrPath : candidate]];
+    return nil;
+  }
+  if (!SZLooksLikeSFXStub(candidate))
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeInvalidArgument
+                              message:[NSString stringWithFormat:@"cannot open SFX module\n%@",
+                                       candidate]];
+    return nil;
+  }
+  return candidate;
+}
+
++ (nullable NSArray<NSString *> *)expandPathSpecs:(NSArray<SZPathSpec *> *)specs
+                                            error:(NSError **)error
+{
+  BOOL thereIsInclude = NO;
+  for (SZPathSpec *spec in specs)
+    if (spec.include)
+      thereIsInclude = YES;
+  if (!thereIsInclude)
+    return @[];
+
+  NSMutableArray<NSString *> *out = [NSMutableArray array];
+  NSString *engineMessage = nil;
+  const HRESULT hr = SZRunCatching(&engineMessage, [&]() -> HRESULT {
+    NWildcard::CCensor censor;
+    for (SZPathSpec *spec in specs)
+      SZAddSpecToCensor(censor, spec);
+    // ArchiveCommandLine.cpp:1695-1701, then GUI.cpp:285-304.
+    censor.AddPathsToCensor(NWildcard::k_RelatPath);
+    censor.ExtendExclude();
+    UStringVector sortedPaths, sortedFullPaths;
+    CDirItemsStat stat;
+    const HRESULT res = EnumerateDirItemsAndSort(censor, NWildcard::k_RelatPath, UString(),
+                                                 sortedPaths, sortedFullPaths, stat, NULL);
+    if (res != S_OK)
+      return res;
+    for (unsigned i = 0; i < sortedFullPaths.Size(); i++)
+      [out addObject:SZStringFromUString(sortedFullPaths[i])];
+    return S_OK;
+  });
+  if (hr != S_OK)
+  {
+    if (error)
+      *error = SZUpdaterError(hr, engineMessage);
+    return nil;
+  }
+  return out;
+}
+
 + (NSString *)archiveBaseNameForItemPaths:(NSArray<NSString *> *)itemPaths
                                    isHash:(BOOL)isHash
                                  baseName:(NSString **)baseNameOut
@@ -631,10 +889,14 @@ static int SZResolveFormatIndex(CCodecs *codecs, SZUpdateOptions *options)
   return result;
 }
 
-+ (nullable SZUpdateResult *)updateWithOptions:(SZUpdateOptions *)options
-                                   sourcePaths:(NSArray<NSString *> *)sourcePaths
-                                      progress:(nullable id<SZProgressDelegate>)progress
-                                         error:(NSError **)error
+/// The one implementation behind `updateWithOptions:sourcePaths:`,
+/// `updateWithOptions:pathSpecs:` and `renameItemsWithPairs:...`. `renamePairs` non-empty puts
+/// `UpdateArchive` into rename mode (Update.cpp:1140-1145, :477-520).
++ (nullable SZUpdateResult *)runUpdateWithOptions:(SZUpdateOptions *)options
+                                        pathSpecs:(NSArray<SZPathSpec *> *)pathSpecs
+                                      renamePairs:(NSArray<SZRenamePair *> *)renamePairs
+                                         progress:(nullable id<SZProgressDelegate>)progress
+                                            error:(NSError **)error
 {
   if (![SZCodecs loadCodecs:error])
     return nil;
@@ -667,14 +929,20 @@ static int SZResolveFormatIndex(CCodecs *codecs, SZUpdateOptions *options)
   NSString *sfxModule = nil;
   if (options.sfxMode)
   {
-    sfxModule = options.sfxModulePath ?: [SZUpdater defaultSFXModulePath];
-    if (sfxModule.length == 0)
+    // Update.cpp:1167-1191, but up front: a missing or non-executable module is an error before
+    // any byte is written, never a quietly plain archive.
+    if (![SZUpdater formatSupportsSFX:SZStringFromUString(arcInfo.Name)])
     {
       if (error)
-        *error = [SZErrors errorWithCode:SZErrorCodeFileNotFound
-                                message:@"SFX file is not specified"];
+        *error = [SZErrors errorWithCode:SZErrorCodeNotImplemented
+                                message:[NSString stringWithFormat:
+                                         @"Self-extracting archives are not supported for this format\n%@",
+                                         SZStringFromUString(arcInfo.Name)]];
       return nil;
     }
+    sfxModule = [SZUpdater resolvedSFXModulePath:options.sfxModulePath error:error];
+    if (sfxModule.length == 0)
+      return nil;
   }
 
   SZUpdateResult *result = [[SZUpdateResult alloc] init];
@@ -752,11 +1020,30 @@ static int SZResolveFormatIndex(CCodecs *codecs, SZUpdateOptions *options)
       }
     }
 
-    // ---- the item list: 7zG's `-i#<map>` list, no wildcard expansion ----
+    // ---- rename pairs (Update.cpp:477-520): rename mode rewrites archive item names ----
+    uo.RenameMode = renamePairs.count != 0;
+    for (SZRenamePair *pair in renamePairs)
+    {
+      CRenamePair rp;
+      rp.OldName = SZUStringFromNSString(pair.oldName);
+      rp.NewName = SZUStringFromNSString(pair.newName);
+      rp.WildcardParsing = pair.wildcardParsing ? true : false;
+      rp.RecursedType = NRecursedType::kNonRecursed;
+      uo.RenamePairs.Add(rp);
+    }
+
+    // ---- the item list: one censor pre-item per spec, wildcards and all. `UpdateArchive` then
+    // calls AddPathsToCensor + ExtendExclude itself (Update.cpp:1159-1161) and the engine's
+    // EnumerateItems walk is what expands a wildcard (03 section 2.2, `-i`/`-x`). ----
     NWildcard::CCensor censor;
-    for (NSString *path in sourcePaths)
-      censor.AddPreItem_NoWildcard(SZUStringFromNSString(path));
-    if (sourcePaths.count == 0)
+    BOOL thereIsInclude = NO;
+    for (SZPathSpec *spec in pathSpecs)
+    {
+      SZAddSpecToCensor(censor, spec);
+      if (spec.include)
+        thereIsInclude = YES;
+    }
+    if (!thereIsInclude)
       censor.AddPreItem_Wildcard();
 
     // ---- the callback ----
@@ -810,11 +1097,71 @@ static int SZResolveFormatIndex(CCodecs *codecs, SZUpdateOptions *options)
   if (hr != S_OK)
   {
     if (error)
-      *error = [SZErrors errorWithHRESULT:(uint32_t)hr message:engineMessage];
+      *error = SZUpdaterError(hr, engineMessage);
     return nil;
   }
   result.archivePath = finalPath;
   return result;
+}
+
++ (nullable SZUpdateResult *)updateWithOptions:(SZUpdateOptions *)options
+                                   sourcePaths:(NSArray<NSString *> *)sourcePaths
+                                      progress:(nullable id<SZProgressDelegate>)progress
+                                         error:(NSError **)error
+{
+  NSMutableArray<SZPathSpec *> *specs = [NSMutableArray arrayWithCapacity:sourcePaths.count];
+  for (NSString *path in sourcePaths)
+    [specs addObject:[SZPathSpec literalSpecWithPath:path]];
+  return [self runUpdateWithOptions:options pathSpecs:specs renamePairs:@[]
+                           progress:progress error:error];
+}
+
++ (nullable SZUpdateResult *)updateWithOptions:(SZUpdateOptions *)options
+                                     pathSpecs:(NSArray<SZPathSpec *> *)pathSpecs
+                                      progress:(nullable id<SZProgressDelegate>)progress
+                                         error:(NSError **)error
+{
+  return [self runUpdateWithOptions:options pathSpecs:pathSpecs renamePairs:@[]
+                           progress:progress error:error];
+}
+
++ (nullable SZUpdateResult *)renameItemsWithPairs:(NSArray<SZRenamePair *> *)pairs
+                                  inArchiveAtPath:(NSString *)archivePath
+                                        itemSpecs:(NSArray<SZPathSpec *> *)itemSpecs
+                                          options:(nullable SZUpdateOptions *)options
+                                         progress:(nullable id<SZProgressDelegate>)progress
+                                            error:(NSError **)error
+{
+  if (pairs.count == 0)
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeInvalidArgument
+                              message:@"There is no second file name for rename pair:"];
+    return nil;
+  }
+  for (SZRenamePair *pair in pairs)
+    if (!pair.isSupported)
+    {
+      if (error)
+        *error = [SZErrors errorWithCode:SZErrorCodeInvalidArgument
+                                message:[NSString stringWithFormat:@"Unsupported rename command:\n%@",
+                                         pair.unsupportedDetail ?: @""]];
+      return nil;
+    }
+
+  SZUpdateOptions *o = [(options ?: [SZUpdateOptions optionsWithArchivePath:archivePath]) copy];
+  o.archivePath = archivePath;
+  o.formatIndex = -1;
+  o.formatName = nil;                    // taken from the existing archive's name
+  o.nameMode = SZArchiveNameModeExact;   // never rewrite the extension of an existing archive
+  // ParseArchiveCommand: `rn` falls into SetAddCommandOptions' default branch, which is
+  // k_ActionSet_Update (ArchiveCommandLine.cpp:956-966).
+  o.updateMode = SZUpdateModeUpdate;
+  o.deleteAfterCompressing = NO;
+  o.sfxMode = NO;
+  o.volumeSizes = @[];
+  return [self runUpdateWithOptions:o pathSpecs:itemSpecs renamePairs:pairs
+                           progress:progress error:error];
 }
 
 + (nullable SZUpdateResult *)addPaths:(NSArray<NSString *> *)sourcePaths
@@ -831,6 +1178,25 @@ static int SZResolveFormatIndex(CCodecs *codecs, SZUpdateOptions *options)
   o.updateMode = SZUpdateModeAdd;
   o.volumeSizes = @[];                   // "Splitting to volumes is not supported" when updating
   return [self updateWithOptions:o sourcePaths:sourcePaths progress:progress error:error];
+}
+
++ (nullable SZUpdateResult *)deleteItemsWithSpecs:(NSArray<SZPathSpec *> *)itemSpecs
+                                fromArchiveAtPath:(NSString *)archivePath
+                                          options:(nullable SZUpdateOptions *)options
+                                         progress:(nullable id<SZProgressDelegate>)progress
+                                            error:(NSError **)error
+{
+  SZUpdateOptions *o = [(options ?: [SZUpdateOptions optionsWithArchivePath:archivePath]) copy];
+  o.archivePath = archivePath;
+  o.formatIndex = -1;
+  o.formatName = nil;
+  o.nameMode = SZArchiveNameModeExact;
+  o.updateMode = SZUpdateModeDelete;
+  o.deleteAfterCompressing = NO;
+  o.sfxMode = NO;
+  o.volumeSizes = @[];
+  return [self runUpdateWithOptions:o pathSpecs:itemSpecs renamePairs:@[]
+                           progress:progress error:error];
 }
 
 + (nullable SZUpdateResult *)deleteItemsNamed:(NSArray<NSString *> *)itemNames

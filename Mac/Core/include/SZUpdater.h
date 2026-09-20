@@ -51,6 +51,86 @@ typedef NS_ENUM(NSInteger, SZArchiveNameMode) {
 
 // ---------------------------------------------------------------------------
 
+/// `NRecursedType::EEnum` (Update.h:59-65) — the `r` modifier of an `-i`/`-x` switch, or the
+/// global `-r`.
+typedef NS_ENUM(NSInteger, SZRecursedType) {
+    SZRecursedTypeRecursed = 0,               ///< `-r`  / `-ir!…`
+    SZRecursedTypeWildcardOnlyRecursed = 1,   ///< `-r0` / `-ir0!…`: recurse only a wildcard name
+    SZRecursedTypeNonRecursed = 2             ///< `-r-`, and the default
+};
+
+/// `NWildcard::kMark_*` (Common/Wildcard.h:56-58) — the `m` modifier of an `-i`/`-x` switch, or
+/// the global `-spm`.
+typedef NS_ENUM(NSInteger, SZWildcardMarkMode) {
+    SZWildcardMarkModeFileOrDir = 0,             ///< kMark_FileOrDir, the default (`m-`)
+    SZWildcardMarkModeStrictFile = 1,            ///< kMark_StrictFile (`m`)
+    SZWildcardMarkModeStrictFileIfWildcard = 2   ///< kMark_StrictFile_IfWildcard (`m2`)
+};
+
+/// One include or exclude entry of a censor, i.e. one resolved `-i…` / `-x…` name with the
+/// modifiers that switch carried — `CNameOption` + the name `AddNameToCensor` receives
+/// (ArchiveCommandLine.cpp:459-495, :707-850).
+///
+/// The point of passing these to the bridge instead of a plain path list is that the **engine**
+/// then expands the wildcards, in `EnumerateItems` / `EnumerateDirItemsAndSort`, with its own
+/// directory walk and its own matcher. Nothing in the port matches a pattern itself.
+@interface SZPathSpec : NSObject <NSCopying>
+
+/// The name as it was written, wildcards and all (`-i!*.txt` -> `*.txt`).
+@property (nonatomic, readonly, copy) NSString *path;
+/// NO for an `-x` / `-ax` entry (`CNameOption::Include`).
+@property (nonatomic, readonly) BOOL include;
+@property (nonatomic, readonly) SZRecursedType recursedType;
+/// NO for the `w-` postfix, which is what a Finder selection uses (`-aiw-!<path>`) so a real file
+/// name containing `*`, `?` or `[` is not read as a pattern.
+@property (nonatomic, readonly) BOOL wildcardMatching;
+@property (nonatomic, readonly) SZWildcardMarkMode markMode;
+
++ (instancetype)specWithPath:(NSString *)path
+                     include:(BOOL)include
+                recursedType:(SZRecursedType)recursedType
+            wildcardMatching:(BOOL)wildcardMatching
+                    markMode:(SZWildcardMarkMode)markMode
+    NS_SWIFT_NAME(spec(path:include:recursedType:wildcardMatching:markMode:));
+
+/// An include entry with wildcard matching **off** — exactly `AddPreItem_NoWildcard`, which is
+/// what every selection-transport path (`-aiw-!`, `-iw-@`) and every caller that hands over real
+/// file-system paths wants.
++ (instancetype)literalSpecWithPath:(NSString *)path NS_SWIFT_NAME(literal(_:));
+
+@end
+
+// ---------------------------------------------------------------------------
+
+/// One `rn` old/new pair (`CRenamePair`, Update.h:67-78). `RecursedType` is always
+/// `kNonRecursed`, the only value `CRenamePair::Prepare` accepts for a rename
+/// (ArchiveCommandLine.cpp:616, Update.cpp:288-295).
+@interface SZRenamePair : NSObject <NSCopying>
+
+@property (nonatomic, readonly, copy) NSString *oldName;
+@property (nonatomic, readonly, copy) NSString *newName;
+/// Explicit getter: a `new…` selector would otherwise be read as a Cocoa "returns owned" family.
+- (NSString *)newName __attribute__((objc_method_family(none)));
+/// `CRenamePair::WildcardParsing` — off with `-spd` or a `w-` postfix.
+@property (nonatomic, readonly) BOOL wildcardParsing;
+
++ (instancetype)pairWithOldName:(NSString *)oldName
+                       newName:(NSString *)newName
+               wildcardParsing:(BOOL)wildcardParsing
+    NS_SWIFT_NAME(pair(oldName:newName:wildcardParsing:));
+
+/// `CRenamePair::Prepare()` (Update.cpp:288-295): with wildcard parsing on, the **old** name must
+/// not contain a wildcard. A pair that fails this is 7-Zip's "Unsupported rename command:".
+@property (nonatomic, readonly) BOOL isSupported;
+
+/// The text `AddRenamePair` throws with (ArchiveCommandLine.cpp:511-522): old name, new name and
+/// the recursion switch, one per line. nil when `isSupported`.
+@property (nonatomic, readonly, copy, nullable) NSString *unsupportedDetail;
+
+@end
+
+// ---------------------------------------------------------------------------
+
 /// One `-m` name/value pair (`CProperty`, UI/Common/Property.h). `value` may be empty for a
 /// bare switch name.
 @interface SZUpdateProperty : NSObject <NSCopying>
@@ -187,8 +267,19 @@ typedef NS_ENUM(NSInteger, SZArchiveNameMode) {
                             error:(NSError **)error
     NS_SWIFT_NAME(addPaths(_:toArchiveAt:options:progress:));
 
-/// Deletes `itemNames` (archive-relative paths, wildcards allowed) from the archive at
-/// `archivePath` — the console `d` command, `k_ActionSet_Delete`.
+/// `deleteItemsNamed:` with the censor entries spelled out, so `d -x!…` and a wildcard in a
+/// positional name reach the engine unexpanded. An empty `itemSpecs` list deletes nothing, because
+/// the caller must say `*` explicitly.
++ (nullable SZUpdateResult *)deleteItemsWithSpecs:(NSArray<SZPathSpec *> *)itemSpecs
+                                fromArchiveAtPath:(NSString *)archivePath
+                                          options:(nullable SZUpdateOptions *)options
+                                         progress:(nullable id<SZProgressDelegate>)progress
+                                            error:(NSError **)error
+    NS_SWIFT_NAME(deleteItems(specs:fromArchiveAt:options:progress:));
+
+/// Deletes `itemNames` (archive-relative paths, taken literally — use
+/// `deleteItemsWithSpecs:` for wildcards) from the archive at `archivePath` — the console `d`
+/// command, `k_ActionSet_Delete`.
 + (nullable SZUpdateResult *)deleteItemsNamed:(NSArray<NSString *> *)itemNames
                           fromArchiveAtPath:(NSString *)archivePath
                                     options:(nullable SZUpdateOptions *)options
@@ -215,6 +306,63 @@ typedef NS_ENUM(NSInteger, SZArchiveNameMode) {
 
 /// YES when this format can be used to create archives at all (`CArcInfoEx::UpdateEnabled`).
 + (BOOL)formatSupportsUpdate:(NSString *)formatName NS_SWIFT_NAME(formatSupportsUpdate(_:));
+
+/// `kFF_SFX` of the Compress dialog's format table (01b section 4.23, `CompressDialog.cpp:236-248`
+/// and the per-format rows at `:364`): only **7z** can carry a stub. `-sfx` with any other `-t` is
+/// refused rather than quietly producing a plain archive.
++ (BOOL)formatSupportsSFX:(NSString *)formatName NS_SWIFT_NAME(formatSupportsSFX(_:));
+
+/// `-sfx<module>` resolved the way `UpdateArchive` resolves it (Update.cpp:1167-1191):
+///
+///  * nil or `""` -> the bundled GUI stub (`kDefaultSfxModule` = `7z.sfx`, UpdateGUI.cpp:31,
+///    `:561-565`), which is what a bare `-sfx` and the Compress dialog's checkbox mean;
+///  * a bare name with **no** path separator -> looked up next to the program first, i.e. in the
+///    bundle's `Resources/SFX` (`NDLL::GetModuleDirPrefix()` on Windows), then as a relative path;
+///  * anything else -> used as given.
+///
+/// The file must exist and must look like a stub: a regular file of at least 1 KiB whose first
+/// bytes are an executable magic — `MZ` for the Windows stubs 7-Zip ships, or one of the Mach-O /
+/// universal-binary magics for a native one. Failures come back as
+/// `SZErrorCodeFileNotFound` with 7-Zip's own "cannot find specified SFX module", or
+/// `SZErrorCodeInvalidArgument` when the file is there but is not an executable.
++ (nullable NSString *)resolvedSFXModulePath:(nullable NSString *)nameOrPath
+                                       error:(NSError **)error
+    NS_SWIFT_NAME(resolvedSFXModulePath(_:));
+
+/// `EnumerateDirItemsAndSort` (UI/Common/EnumDirItems.cpp) driven by a censor built from `specs`
+/// exactly as `AddNameToCensor` builds it — the call `GUI.cpp:285-304` makes to turn `-ai`/`-ax`
+/// plus the archive name into its sorted archive list. **This is how a wildcard in an `-i!` or
+/// `-x!` switch gets expanded**: by the engine's own directory walk, not by a matcher of our own.
+///
+/// Returns absolute paths in the engine's sort order. `specs` with no include entry returns an
+/// empty array without touching the disk. A path that matches nothing is not an error (upstream
+/// reports "no files" through the callback, which 7zG passes as NULL).
++ (nullable NSArray<NSString *> *)expandPathSpecs:(NSArray<SZPathSpec *> *)specs
+                                            error:(NSError **)error
+    NS_SWIFT_NAME(expandPathSpecs(_:));
+
+/// `updateWithOptions:sourcePaths:` with the censor entries spelled out, so include and exclude
+/// wildcards reach `UpdateArchive` unexpanded and the engine walks the directories itself — which
+/// is what keeps `a arc.7z -ir!src/*.c` storing `sub/x.c` rather than `x.c`.
+/// `sourcePaths:` is this method with one `SZPathSpec.literal` per path.
++ (nullable SZUpdateResult *)updateWithOptions:(SZUpdateOptions *)options
+                                     pathSpecs:(NSArray<SZPathSpec *> *)pathSpecs
+                                      progress:(nullable id<SZProgressDelegate>)progress
+                                         error:(NSError **)error
+    NS_SWIFT_NAME(update(with:pathSpecs:progress:));
+
+/// The console `rn` command (`GUI.cpp:328-375` update group, `Update.cpp:477-520`): renames the
+/// archive's own items according to `pairs`, rewriting the archive in place. `itemSpecs` is the
+/// `-i` mask that decides which archive items are considered at all; an empty list means `*`
+/// (`AddToCensorFromNonSwitchesStrings`'s universal wildcard, ArchiveCommandLine.cpp:574-591).
+/// A pair whose `isSupported` is NO is rejected with "Unsupported rename command:".
++ (nullable SZUpdateResult *)renameItemsWithPairs:(NSArray<SZRenamePair *> *)pairs
+                                  inArchiveAtPath:(NSString *)archivePath
+                                        itemSpecs:(NSArray<SZPathSpec *> *)itemSpecs
+                                          options:(nullable SZUpdateOptions *)options
+                                         progress:(nullable id<SZProgressDelegate>)progress
+                                            error:(NSError **)error
+    NS_SWIFT_NAME(renameItems(pairs:inArchiveAt:itemSpecs:options:progress:));
 
 @end
 
