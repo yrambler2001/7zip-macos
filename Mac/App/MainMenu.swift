@@ -46,6 +46,7 @@ enum MainMenu {
         ToolsCommands.install()             // tools scope: real About dialog on the IDM_ABOUT items
         ExtractVerificationContext.installIfRequested()   // SZ_EXTRACT_CONTEXT: extract scope verification hook
         CompressDemo.installIfRequested()   // SZ_COMPRESS_DEMO: compress scope verification hook
+        FinderIntegration.install()         // finder scope: Services provider, sevenzip:// URLs, 7zG argv
         let bar = NSMenu(title: "MainMenu")
         bar.addItem(appMenu())
         bar.addItem(fileMenu())
