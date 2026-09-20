@@ -439,14 +439,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         window?.performClose(sender)
     }
 
-    @objc func helpAbout(_ sender: Any?) {                                                  // IDM_ABOUT 961 (CAboutDialog; full dialog is a later wave)
-        let engine = "7-Zip \(SZEngineVersionString())"
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "7-Zip",
-            .applicationVersion: SZEngineVersionString(),
-            .version: "",
-            .credits: NSAttributedString(string: "\(engine)\n\(SZEngineCopyrightString())\n\nmacOS port. Engine: LGPL with unRAR restriction (see License.txt)."),
-        ])
+    /// IDM_ABOUT 961 -> CAboutDialog (IDD_ABOUT 2900). The Wave 1 placeholder here was the
+    /// standard macOS About panel, and `ToolsCommands.install()` retargeted both menu items at
+    /// the real dialog once the app had launched -- which renamed them in the accessibility tree
+    /// (Mac/docs/requests.md, `tools` -> `panel`). The item now points straight at the dialog.
+    @objc func helpAbout(_ sender: Any?) {
+        AboutDialog.show(parent: window)
     }
 
     func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
