@@ -59,6 +59,11 @@ enum ModalProbe {
             window.contentView?.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
             body(window)
+            // Drop the window's backing store here rather than leaving it to `run()`'s `orderOut`:
+            // the 93-language sweep probes 465 dialogs in one process, and holding all of them
+            // costs enough memory to have the host app killed under load (measured once, as an
+            // "unexpected exit" with no crash report, during a four-way concurrent run).
+            window.close()
             if NSApp.modalWindow != nil { NSApp.stopModal() }
         }
         RunLoop.main.add(timer, forMode: .modalPanel)

@@ -126,17 +126,21 @@ final class LocalizationFittingTests: AppHostTestCase {
         continueAfterFailure = true
         var failures: [String] = []
         for code in Self.codes {
-            useLanguage(code)
-            var findings: [String] = []
-            for probe in DialogProbes.fittingSet {
-                let name = "\(probe.name) [\(code)]"
-                let appeared = ModalProbe.present(probe.present) { window in
-                    findings += WindowAudit.defects(window, name: name)
+            // One pool per language: 93 x 5 dialogs in a single autorelease pool is a lot of live
+            // AppKit, and this test shares the machine with the other shards.
+            autoreleasepool {
+                useLanguage(code)
+                var findings: [String] = []
+                for probe in DialogProbes.fittingSet {
+                    let name = "\(probe.name) [\(code)]"
+                    let appeared = ModalProbe.present(probe.present) { window in
+                        findings += WindowAudit.defects(window, name: name)
+                    }
+                    if !appeared { findings.append("MISSING \(name): the dialog never came up") }
                 }
-                if !appeared { findings.append("MISSING \(name): the dialog never came up") }
+                print("LANGFIT|\(code)|dialogs=\(DialogProbes.fittingSet.count)|defects=\(findings.count)")
+                failures += findings
             }
-            print("LANGFIT|\(code)|dialogs=\(DialogProbes.fittingSet.count)|defects=\(findings.count)")
-            failures += findings
         }
         XCTAssertTrue(failures.isEmpty,
                       "dialogs that do not fit in some language:\n" + failures.joined(separator: "\n"))

@@ -86,8 +86,15 @@ open class SevenZipUITestCase: XCTestCase {
             _ = sevenZip?.screenshot("failure-" + Self.slug(name), prefix: screenshotPrefix, test: self)
         }
         // A failing test may have left a modal sheet up or the panels in a state a reset cannot
-        // untangle, so its process is thrown away; a passing one hands its app to the next test.
-        if failed || !Self.reusesTheApp {
+        // untangle, so its process is thrown away; a passing one hands its app to the next test --
+        // but only when a reset is what the next test will do. With the app side of the contract
+        // missing, `prepare` relaunches anyway, and keeping the old instance alive until then is not
+        // free: measured, leaving a process to be terminated by the *next* test's launch cost two
+        // failures per run, a menu item clicked at an undefined point ("Invalid parameter not
+        // satisfying: point.x != INFINITY") and a column-header click that landed nowhere. So while
+        // there is no reset, the lifecycle is exactly the one the suite had before this change.
+        let willReuse = Self.reusesTheApp && (sevenZip?.testSupportIsImplemented ?? false)
+        if failed || !willReuse {
             sevenZip?.terminate()
             Self.instances[Self.key] = nil
         }
