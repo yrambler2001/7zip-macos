@@ -161,7 +161,14 @@ Mac/scripts/test.sh --ui                      -> 65 passed, 0 failed    (54 befo
                                                  baseline shape: every test still relaunches.
 ```
 
-The app-launch lock (`harness` api §1a) was held for every launch, every driver run and every UI run.
+The app-launch lock (`harness` api §1a) was taken before the first launch and held across every driver
+run and every UI run, with `SEVENZIP_APP_LOCK_HELD=1` for the nested `test.sh` calls. One caveat the
+orchestrator should know: this scope's work took longer than the lock's **30-minute staleness rule**,
+so `fastui`'s script broke the lock and took ownership part-way through, and from then on the two
+scopes were only kept apart by the ordering of the runs. The green 65-test run finished before
+`fastui` acquired it (23:02 against 23:04), so nothing overlapped, but a scope that holds the lock for
+hours is outside what §1a was designed for and the rule should probably distinguish "stale" from
+"still working".
 
 One housekeeping note for whoever runs the suite next: `test.sh` exports every screenshot attachment
 into `Mac/docs/reports/screenshots/`, so a UI run **rewrites 96 PNGs belonging to other scopes**
