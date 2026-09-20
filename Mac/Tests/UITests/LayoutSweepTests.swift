@@ -165,19 +165,15 @@ final class LayoutSweepTests: SevenZipUITestCase {
             return finish("Options")
         }
         usleep(1_000_000)
-        // NSTabView's tabs are the direct children of the AXTabGroup, and only those: the pages
-        // themselves are full of radio buttons, so `options.radioButtons` is not the tab strip.
-        var tabs = tabStrip(of: options)
-        if tabs.count != 7 {
-            print("SWEEP options tree:\n\(options.debugDescription)")
-            tabs = []
-        }
-        XCTAssertEqual(tabs.count, 7, "expected seven Options pages")
+        let tabs = tabStrip(of: options)
+        if tabs.count != 7 { print("SWEEP options tree:\n\(options.debugDescription)") }
+        XCTAssertEqual(tabs.count, 7,
+                       "expected seven Options pages, found \(tabs.map(\.label))")
         for (index, tab) in tabs.enumerated() {
-            click(in: options, at: tab.1)
+            click(in: options, at: tab.frame)
             usleep(800_000)
-            sweep(options, "Options > \(tab.0)", shot: String(format: "34-options-%d-%@", index + 1,
-                                                             slug(tab.0)))
+            sweep(options, "Options > \(tab.label)",
+                  shot: String(format: "34-options-%d-%@", index + 1, slug(tab.label)))
         }
         options.typeKey(.escape, modifierFlags: [])
         _ = sevenZip.waitForNoDialog(timeout: 5)
@@ -311,8 +307,9 @@ final class LayoutSweepTests: SevenZipUITestCase {
 
     // MARK: - small helpers
 
-    /// The tab strip of an NSTabView: (label, frame) for each direct child of the AXTabGroup.
-    private func tabStrip(of window: XCUIElement) -> [(String, CGRect)] {
+    /// The tab strip of an NSTabView: the direct children of the AXTabGroup, and only those --
+    /// the pages themselves are full of radio buttons, so `window.radioButtons` is not it.
+    private func tabStrip(of window: XCUIElement) -> [(label: String, frame: CGRect)] {
         guard let snapshot = try? window.snapshot() else { return [] }
         func tabGroup(_ node: XCUIElementSnapshot) -> XCUIElementSnapshot? {
             if node.elementType == .tabGroup { return node }
