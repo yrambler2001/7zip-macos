@@ -219,6 +219,12 @@ enum TestResetCoordinator {
             if NSApp.modalWindow === window {
                 stopModalSession()
             }
+            // No fade. The settle ticker calls this every 20 ms until the window is gone, and
+            // ordering a window out again while AppKit is still animating it out over-releases the
+            // `_NSWindowTransformAnimation` it made for the first call -- a `EXC_BAD_ACCESS` in
+            // `objc_release` under `CA::Transaction::commit`, measured once in the app-hosted suite. A
+            // reset is tearing the UI down, not presenting it, so there is nothing to animate anyway.
+            window.animationBehavior = .none
             window.orderOut(nil)
         }
         // A modal session whose window is already gone (or one belonging to an alert AppKit has

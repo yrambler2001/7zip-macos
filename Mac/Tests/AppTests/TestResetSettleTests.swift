@@ -24,13 +24,41 @@ import XCTest
 
 final class TestResetSettleTests: AppHostTestCase {
 
-    /// A window that refuses to go away: `orderOut` and `close` do nothing, so
-    /// `TestResetCoordinator.transientWindows()` never empties and step 2 must time out. It stands in
-    /// for whatever a future scope leaves on screen -- the point is that the reset acknowledges anyway.
+    /// A window that will not stay away, so `TestResetCoordinator.transientWindows()` never empties
+    /// and step 2 must time out. It stands in for whatever a future scope leaves on screen -- the
+    /// point is that the reset acknowledges anyway.
+    ///
+    /// It keeps coming *back* rather than overriding `orderOut`/`close` to swallow AppKit's calls:
+    /// swallowing them leaves AppKit's own window-animation bookkeeping half done, and the eventual
+    /// real close then over-releases `_NSWindowTransformAnimation` -- a segfault in `objc_release`
+    /// under `CA::Transaction::commit`, which is how this fixture killed the host app once.
+    /// `animationBehavior = .none` for the same reason: nothing to animate, nothing to over-release.
     private final class StubbornWindow: NSWindow {
-        var stubborn = true
-        override func orderOut(_ sender: Any?) { if !stubborn { super.orderOut(sender) } }
-        override func close() { if !stubborn { super.close() } }
+        private var stubborn = false
+
+        /// `super` is always called and the window comes straight back, synchronously, so
+        /// `transientWindows()` is never empty when the settle ticker looks -- a timer that put it
+        /// back a moment later raced the ticker and the reset settled by luck.
+        override func orderOut(_ sender: Any?) {
+            super.orderOut(sender)
+            if stubborn { super.orderFront(nil) }
+        }
+
+        func beStubborn() {
+            // `NSWindow` created directly defaults to `isReleasedWhenClosed = true`, and this test
+            // also holds it in a property: `close()` then released it twice and the host app died in
+            // `objc_release` under `objc_autoreleasePoolPop`. `NSWindowController` clears this flag for
+            // the windows the app itself makes, which is why nothing else here has to.
+            isReleasedWhenClosed = false
+            animationBehavior = .none
+            orderFront(nil)
+            stubborn = true
+        }
+
+        func relent() {
+            stubborn = false
+            close()
+        }
     }
 
     private var savedTimeout: TimeInterval = 15
@@ -56,17 +84,17 @@ final class TestResetSettleTests: AppHostTestCase {
         for window in NSApp.windows where window !== live && window.toolbar != nil {
             window.toolbar = nil
         }
+        // A reset left in flight by an earlier case would make this one's request queue behind it and
+        // its generation land two higher, which is a confusing way to learn that something else broke.
+        XCTAssertFalse(TestResetCoordinator.isResetting,
+                       "a previous case left a reset in flight at \(TestResetCoordinator.stage.rawValue)")
     }
 
     override func tearDown() {
         TestResetCoordinator.settleTimeout = savedTimeout
         if let saved = savedTestSupport { setenv("SZ_TEST_SUPPORT", saved, 1) } else { unsetenv("SZ_TEST_SUPPORT") }
-        if let window = stubborn {
-            window.stubborn = false
-            window.orderOut(nil)
-            window.close()
-            stubborn = nil
-        }
+        stubborn?.relent()
+        stubborn = nil
         for path in scratchFiles { try? FileManager.default.removeItem(atPath: path) }
         scratchFiles = []
         super.tearDown()
@@ -141,7 +169,7 @@ final class TestResetSettleTests: AppHostTestCase {
         let window = StubbornWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
                                     styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "modalfix stubborn window"
-        window.orderFront(nil)
+        window.beStubborn()
         stubborn = window
         XCTAssertTrue(window.isVisible, "the stall fixture must be on screen")
 
@@ -190,6 +218,14 @@ final class TestResetSettleTests: AppHostTestCase {
         defer {
             release.signal()
             _ = wait(for: "the parked reset to drain", timeout: 20) { !TestResetCoordinator.isResetting }
+            // The watchdog acknowledged while step 4 was still in flight, so the panels of the *live*
+            // window are still binding. Let them finish here rather than under the next case: the
+            // panel queue serializes them, so nothing is unsafe, but a half-bound window is a poor
+            // fixture for whatever runs next.
+            let deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+            }
         }
 
         let request = self.request(named: "stalled-rebuild")

@@ -175,6 +175,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     func windowWillClose(_ notification: Notification) {
         refreshTimer?.invalidate()
         saveState()
+        // A closed window needs no toolbar, and leaving one behind is not free: `NSToolbar`'s
+        // `removeItem(at:)` indexes the *displayed* items, while `toolbar.items` still holds every
+        // item, so anything that rebuilds toolbars by walking `NSApp.windows` -- which
+        // `OptionsPostApply.reloadLangItems()` does, and step 3 of `sevenzip://test/reset` calls --
+        // throws `NSInternalInconsistencyException` on a window that has no layout any more. Filed
+        // for `options` in `Mac/docs/requests.md`; this is the half that belongs here.
+        window?.toolbar = nil
     }
 
     func windowDidBecomeMain(_ notification: Notification) {
