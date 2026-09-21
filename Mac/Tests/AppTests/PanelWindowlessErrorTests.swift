@@ -187,6 +187,50 @@ final class PanelWindowlessErrorTests: AppHostTestCase {
                       "the error must be a sheet of the panel's own window")
     }
 
+    /// Deferring must not become *swallowing*. A panel that was closed while its folder was deleted is
+    /// reopened here, and the question is what the user then sees: anything except the stale listing of
+    /// a directory that no longer exists. Either the deferred reload reports the failure -- now on a
+    /// real window, as a sheet -- or the auto-refresh notices the directory is gone and goes up to the
+    /// nearest folder that still exists (`recoverFromRemovedDirectory`, fsfolder api section 7), which
+    /// is what 7zFM does. A deferred error that never appears at all would be a bug of its own.
+    func testAReopenedPanelDoesNotKeepShowingAFolderThatWasDeleted() {
+        let scratch = makeScratchDirectory("reopen-after-delete")
+        let controller = makeWindow(panels: 2)
+        navigate(controller.panels[0], to: TestPaths.fixtures)
+        navigate(controller.panels[1], to: scratch)
+        let hidden = controller.panels[1]
+        XCTAssertTrue(hidden.rows.contains { $0.name == "a.txt" })
+
+        controller.setFocusedPanel(0)
+        controller.switchOnOffOnePanel()                     // close it (F9)
+        XCTAssertNil(hidden.view.window)
+
+        try? FileManager.default.removeItem(atPath: scratch)
+        // Something asks every panel to reload while this one is closed, so the reload is deferred with
+        // a folder that can no longer be read -- the exact state the old code turned into a wedge.
+        Settings.notifyAllGroups()
+
+        let sighting = sightingWhile("reopening a panel whose folder was deleted", settle: 8) {
+            controller.switchOnOffOnePanel()                 // reopen it
+        }
+
+        XCTAssertFalse(sighting.isAppModal, "reopening must not open an app-modal session either")
+        if let window = sighting.window {
+            XCTAssertNotNil(window.sheetParent, "an error shown on reopen must be a sheet")
+        }
+        let movedAway = !hidden.currentPath.hasPrefix(scratch)
+        let listingIsGone = !hidden.rows.contains { $0.name == "a.txt" }
+        print("MODALFIX | reopened panel | path: \(hidden.currentPath) | moved away: \(movedAway)"
+              + " | stale row gone: \(listingIsGone)"
+              + " | error shown: \(sighting.window != nil)")
+        XCTAssertTrue(movedAway || listingIsGone || sighting.window != nil,
+                      "a reopened panel showed the stale contents of a deleted folder and said nothing: "
+                      + "path \(hidden.currentPath), \(hidden.rows.count) row(s)")
+        XCTAssertTrue(movedAway,
+                      "the panel should have gone up to the nearest folder that still exists, as 7zFM "
+                      + "does; it is still on \(hidden.currentPath)")
+    }
+
     /// Deferring is not dropping: a reload a panel missed while it was closed is applied when it comes
     /// back, which is what keeps the View menu, an Options apply and a language switch honest.
     func testReopeningAPanelAppliesTheReloadItDeferred() {
