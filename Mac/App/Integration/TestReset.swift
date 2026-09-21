@@ -108,22 +108,49 @@ enum TestAnimations {
 ///    back to their defaults, each panel's folder chain released **on the queue that owns it**;
 /// 5. **signal** -- bump the generation, publish it as the main window's accessibility value, and
 ///    only then write the acknowledgement file.
+///
+/// Steps 2 and 3-4 each have a deadline of `settleTimeout`, and step 5 runs when either expires. The
+/// acknowledgement is therefore **unconditional**: a reset that could not settle still bumps the
+/// generation, still writes the ack, and leaves a note beside it naming the step that stalled and what
+/// was still up. A test then fails with that message instead of timing out with nothing, which is the
+/// difference between a diagnosis and a shrug (`Mac/docs/reports/fastui.md` section 6.10).
 enum TestResetCoordinator {
 
     /// Number of completed resets. Published as the main window's accessibility value and written
     /// into the acknowledgement file; `0` before the first reset, exactly as the contract says.
     private(set) static var generation = 0
 
-    /// How long step 2 may take before the reset gives up waiting and carries on regardless. A
-    /// reset that never finished would be worse than one that finished with a warning: the test
-    /// would hang on the acknowledgement instead of failing with a message.
-    static let settleTimeout: TimeInterval = 15
+    /// How long each half of the reset may take before it gives up waiting and carries on regardless:
+    /// step 2's settle, and then steps 3-4 together. A reset that never finished would be worse than
+    /// one that finished with a warning -- the test would hang on the acknowledgement instead of
+    /// failing with a message that says which step stalled. `var`, so a test can shorten it.
+    static var settleTimeout: TimeInterval = 15
     static let settleInterval: TimeInterval = 0.02
+
+    /// Which step the reset in flight is on; the stall message names it.
+    enum Stage: String {
+        case idle
+        case stopping = "step 1 (stop everything)"
+        case settling = "step 2 (wait until it really has stopped)"
+        case reloadingSettings = "step 3 (reload the settings)"
+        case rebuildingPanels = "step 4 (rebuild the panels)"
+        case signalling = "step 5 (signal)"
+    }
+
+    private(set) static var stage: Stage = .idle
+    /// Why the last reset did not settle cleanly, or nil when it did. Logged, and written next to the
+    /// acknowledgement file so a test can quote it instead of reporting a bare timeout.
+    private(set) static var lastStall: String?
 
     private static var current: TestResetRequest?
     private static var queued: TestResetRequest?
     private static var timer: Timer?
+    private static var finishGuard: Timer?
     private static var deadline = Date.distantPast
+    /// Identifies the reset in flight, so a panel rebuild that calls back *after* the watchdog has
+    /// already acknowledged cannot finish the next reset by accident.
+    private static var runID = 0
+    private static var stall: String?
 
     static var isResetting: Bool { current != nil }
 
@@ -145,13 +172,23 @@ enum TestResetCoordinator {
 
     private static func begin(_ request: TestResetRequest) {
         current = request
+        runID += 1
+        stall = nil
+        stage = .stopping
         deadline = Date().addingTimeInterval(settleTimeout)
-        NSApp.mainMenu?.cancelTrackingWithoutAnimation()
-        OperationRunner.cancelActiveOperations()
-        closeTransientUI()
+        // The ticker is armed **first**, before anything that can unwind the stack. `closeTransientUI`
+        // used to call `NSApp.abortModal()`, which raises `NSAbortModalException`; the exception left
+        // this function -- and the `CFRunLoopTimer` callback it was running inside -- so the ticker was
+        // never created, `current` stayed set, `isResetting` was true for ever and no reset ever
+        // acknowledged again. It no longer raises (see `closeTransientUI`), and the order here means
+        // that even if something else did, the reset would still have a heartbeat.
         let ticker = Timer(timeInterval: settleInterval, repeats: true) { _ in settleTick() }
         RunLoop.main.add(ticker, forMode: .common)
         timer = ticker
+        NSApp.mainMenu?.cancelTrackingWithoutAnimation()
+        OperationRunner.cancelActiveOperations()
+        stage = .settling
+        closeTransientUI()
         settleTick()
     }
 
@@ -180,13 +217,38 @@ enum TestResetCoordinator {
                 parent.endSheet(window, returnCode: .cancel)
             }
             if NSApp.modalWindow === window {
-                NSApp.abortModal()
+                stopModalSession()
             }
             window.orderOut(nil)
         }
         // A modal session whose window is already gone (or one belonging to an alert AppKit has
         // not listed yet) still has to be told to stop, or the stack never unwinds.
-        if NSApp.modalWindow != nil { NSApp.abortModal() }
+        if NSApp.modalWindow != nil { stopModalSession() }
+    }
+
+    /// Ends the innermost modal session **without raising**.
+    ///
+    /// This is the fix for the wedge of `Mac/docs/reports/fastui.md` section 6.10, and the reason the
+    /// reset used to give up for good rather than after 15 s. `NSApp.abortModal()` is documented to
+    /// raise `NSAbortModalException`, and both callers of `closeTransientUI` run inside a
+    /// `CFRunLoopTimer` callback (the settle ticker, and `TestResetWatcher.poll` by way of `begin`).
+    /// An exception that unwinds out of a timer callback leaves that timer marked as firing, so the
+    /// run loop never fires it again: one ownerless `NSAlert` therefore killed the settle ticker *and*
+    /// the request watcher, and no reset could be delivered or acknowledged for the rest of the
+    /// process's life. The observed symptom was exactly that -- "generation was 0, is now 0; the
+    /// request file was taken".
+    ///
+    /// `stopModal(withCode:)` sets the session's stop flag instead of throwing, and the modal loop
+    /// notices when it next dequeues an event -- so one is posted. The settle ticker keeps calling
+    /// this every 20 ms, which is what unwinds a stack of nested sessions one layer per tick.
+    private static func stopModalSession() {
+        NSApp.stopModal(withCode: .abort)
+        guard let wake = NSEvent.otherEvent(with: .applicationDefined, location: .zero,
+                                            modifierFlags: [],
+                                            timestamp: ProcessInfo.processInfo.systemUptime,
+                                            windowNumber: 0, context: nil,
+                                            subtype: 0, data1: 0, data2: 0) else { return }
+        NSApp.postEvent(wake, atStart: true)
     }
 
     // MARK: step 2 -- wait until it really has
@@ -195,25 +257,62 @@ enum TestResetCoordinator {
         !OperationRunner.hasActiveOperation && NSApp.modalWindow == nil && transientWindows().isEmpty
     }
 
+    /// What is still up, for the stall message. A diagnostic that names the obstacle is worth more
+    /// than a clean-looking timeout in the test log.
+    private static var settleObstacles: String {
+        var parts: [String] = []
+        if OperationRunner.hasActiveOperation { parts.append("an operation is still running") }
+        if let modal = NSApp.modalWindow {
+            parts.append("an app-modal session is up (\(type(of: modal)), "
+                         + (modal.sheetParent == nil ? "owned by no window" : "a sheet") + ")")
+        }
+        let transient = transientWindows()
+        if !transient.isEmpty {
+            parts.append("\(transient.count) window(s) would not go: "
+                         + transient.map { "\(type(of: $0))" }.joined(separator: ", "))
+        }
+        return parts.isEmpty ? "nothing, in fact" : parts.joined(separator: "; ")
+    }
+
     private static func settleTick() {
-        guard let request = current else { return }
+        guard let request = current, stage == .settling else { return }
         if !hasSettled {
             guard Date() >= deadline else {
                 // Each unwound layer can expose the next modal session; keep telling them to go.
                 closeTransientUI()
                 return
             }
-            NSLog("7-Zip test reset: gave up waiting for the app to settle after %.0f s "
-                  + "(operation: %@, modal: %@, windows: %d)",
-                  settleTimeout,
-                  OperationRunner.hasActiveOperation ? "yes" : "no",
-                  NSApp.modalWindow == nil ? "no" : "yes",
-                  transientWindows().count)
+            record(stall: "\(Stage.settling.rawValue) timed out after \(Int(settleTimeout)) s: "
+                          + settleObstacles)
         }
         timer?.invalidate()
         timer = nil
+        // Steps 3 and 4 get a deadline of their own. Step 4 hands the panels a completion block, and
+        // a block that never arrives (a panel queue parked behind a folder nobody released, say) used
+        // to mean no acknowledgement at all, which a test can only report as a bare timeout.
+        armFinishGuard(request, runID)
+        stage = .reloadingSettings
         applySettings(request)
+        stage = .rebuildingPanels
         rebuild(request)
+    }
+
+    /// Writes the acknowledgement whatever happens, `settleTimeout` after step 2 ended.
+    private static func armFinishGuard(_ request: TestResetRequest, _ id: Int) {
+        finishGuard?.invalidate()
+        let guardTimer = Timer(timeInterval: settleTimeout, repeats: false) { _ in
+            guard current != nil, runID == id else { return }
+            record(stall: "\(stage.rawValue) did not finish within \(Int(settleTimeout)) s: "
+                          + settleObstacles)
+            finish(request, id)
+        }
+        RunLoop.main.add(guardTimer, forMode: .common)
+        finishGuard = guardTimer
+    }
+
+    private static func record(stall message: String) {
+        stall = stall.map { $0 + " | " + message } ?? message
+        NSLog("7-Zip test reset: %@", message)
     }
 
     // MARK: step 3 -- reload settings
@@ -239,18 +338,35 @@ enum TestResetCoordinator {
     // MARK: steps 4 and 5 -- rebuild the panels, then signal
 
     private static func rebuild(_ request: TestResetRequest) {
+        let id = runID
         guard let controller = (NSApp.delegate as? AppDelegate)?.mainWindowController else {
-            finish(request)
+            record(stall: "\(Stage.rebuildingPanels.rawValue) skipped: there is no main window")
+            finish(request, id)
             return
         }
-        controller.resetForTest(request) { finish(request) }
+        controller.resetForTest(request) { finish(request, id) }
     }
 
-    private static func finish(_ request: TestResetRequest) {
+    /// Step 5. Runs exactly once per reset -- `runID` drops a panel rebuild that calls back after the
+    /// watchdog has already acknowledged -- and it runs whether or not the reset settled, because a
+    /// test that is told "generation 4, and here is what did not settle" can fail with a message,
+    /// while a test that is told nothing can only time out.
+    private static func finish(_ request: TestResetRequest, _ id: Int) {
+        guard current != nil, runID == id else { return }
+        timer?.invalidate()
+        timer = nil
+        finishGuard?.invalidate()
+        finishGuard = nil
+        stage = .signalling
         generation += 1
+        lastStall = stall
         // Signal 1: the main window's accessibility value, for a test that polls instead of
         // watching a file.
         mainWindow?.setAccessibilityValue(String(generation))
+        // The stall note goes out *before* the acknowledgement, so a test that has seen the ack can
+        // trust the note next to it -- and a clean reset removes a note an earlier one left, so a
+        // stale file can never be read as this reset's diagnosis.
+        writeStallNote(for: request)
         // Signal 2: the acknowledgement file, written last of all and atomically, so a poller
         // never sees a half-written generation.
         if let ackPath = request.ackPath {
@@ -264,11 +380,33 @@ enum TestResetCoordinator {
                       error.localizedDescription)
             }
         }
+        stage = .idle
         current = nil
+        stall = nil
         if let next = queued {
             queued = nil
             begin(next)
         }
+    }
+
+    /// `<ack>.stall`, or `<SZ_STATE_DIR>/reset-stall` when the request named no ack file. Present only
+    /// when this reset did not settle; removed otherwise.
+    static func stallNotePath(for request: TestResetRequest) -> String? {
+        if let ackPath = request.ackPath { return ackPath + ".stall" }
+        guard let state = TestSupport.stateDirectory else { return nil }
+        return (state as NSString).appendingPathComponent("reset-stall")
+    }
+
+    private static func writeStallNote(for request: TestResetRequest) {
+        guard let path = stallNotePath(for: request) else { return }
+        guard let stall else {
+            try? FileManager.default.removeItem(atPath: path)
+            return
+        }
+        let url = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try? Data("\(generation): \(stall)\n".utf8).write(to: url, options: .atomic)
     }
 
     /// The value the main window publishes before the first reset.
