@@ -27,6 +27,10 @@ protocol PanelDelegate: AnyObject {
     func panel(_ panel: PanelViewController, copyOrMove move: Bool, copyToSame: Bool)
     /// Number keys with Alt: favorites (CPanel::SetBookmark / OpenBookmark).
     func panel(_ panel: PanelViewController, bookmark index: Int, set: Bool)
+    /// The window a panel belongs to, whether or not its view is currently installed in it. A panel
+    /// closed with F9 is kept alive and reused, so `view.window` is nil while it still has an owner;
+    /// this is the window its sheets go on (`ErrorAlert`, fastui section 6.10).
+    var panelHostWindow: NSWindow? { get }
 }
 
 final class PanelViewController: NSViewController, NSMenuItemValidation {
@@ -79,6 +83,10 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     var pendingCompressTarget: PanelContextTarget?
     private var pendingFocusName: String?
     private var pendingSelectionMask: String?
+    /// A reload asked for while this panel was closed (F9), replayed by `panelDidBecomeVisible()`.
+    /// 7zFM does not poll or redraw a hidden panel either -- `CPanel::OnTimer` belongs to the panel
+    /// that is on screen -- and a panel with no window has nowhere to put a message box.
+    private var needsReloadWhenShown = false
 
     var sortPropID: SZPropID { columnsModel.sortID }
     var ascending: Bool { columnsModel.ascending }
@@ -671,14 +679,47 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         // Forget the cached column model so the next apply() rebuilds it -- and with it the sort
         // order -- from the settings domain as it now stands (`FM.Columns.<FolderTypeID>`).
         folderTypeOfColumns = ""
+        needsReloadWhenShown = false                       // the navigate below supersedes it
         runOnQueue { [self] in self.folder = nil }
-        navigate(to: path, fallbackToRoot: true, completion: completion)
+        // `reportErrors: false`: a reset must not leave a sheet up. Its own step 1 has just closed
+        // every dialog, so an error raised by step 4 would survive the reset and greet the next test
+        // instead (`Mac/docs/api/resetcmd.md` section 4). The failure is logged and the panel falls
+        // back to the root, which is what a reset to a vanished path should do.
+        navigate(to: path, fallbackToRoot: true, reportErrors: false, completion: completion)
+    }
+
+    // MARK: - Visibility (SwitchOnOffOnePanel keeps the closed panel alive)
+
+    /// True while this panel's view is installed in a window. False for a panel closed with F9,
+    /// which stays in `MainWindowController.panels` so it can be reopened with its state (7zFM hides
+    /// the non-focused panel; it does not destroy the `CPanel`).
+    var isPanelVisible: Bool { isViewLoaded && view.window != nil }
+
+    /// The window this panel's sheets belong to: its own window while it is on screen, and otherwise
+    /// the window that owns it. Never nil just because the panel is closed -- that mistake is what
+    /// `ErrorAlert` exists to prevent (`Mac/docs/reports/fastui.md` section 6.10).
+    var hostWindow: NSWindow? { (isViewLoaded ? view.window : nil) ?? delegate?.panelHostWindow }
+
+    /// Called by `MainWindowController` when this panel's view goes back into the split view. A
+    /// reload that was deferred while the panel was closed runs now, when there is a window to draw
+    /// it in and a window to put an error on.
+    func panelDidBecomeVisible() {
+        guard needsReloadWhenShown else { return }
+        needsReloadWhenShown = false
+        reload(keepScroll: true)
     }
 
     // MARK: - Reload
 
     /// OnReload / RefreshListCtrl_SaveFocused: reload items, keep focus and selection by name.
+    ///
+    /// A closed panel defers instead: the listing it would build cannot be seen, the engine call is
+    /// wasted, and -- the reason this guard exists -- a failed reload of a folder that has since been
+    /// deleted used to report the error with nowhere to put it. Every route that reloads *every*
+    /// panel rather than the visible ones (the View menu's timestamp items, an Options apply, a
+    /// language switch, `ActiveContext.refreshAll()`) goes through here.
     func reload(keepScroll: Bool = false) {
+        guard isPanelVisible else { needsReloadWhenShown = true; return }
         let names = selectedNames()
         let focus = focusedRow()?.name
         runOnQueue { [self] in
@@ -701,8 +742,12 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     /// Timer poll (OnTimer, PanelItems.cpp:1458): reload when the folder reports a change; an FS
     /// folder that disappeared makes the panel go up instead (fsfolder api §7).
+    ///
+    /// `MainWindowController` only ticks `visiblePanels`, and the guard says so here as well so the
+    /// rule holds for any caller: a closed panel is not polled, exactly as 7zFM's per-panel timer is
+    /// not.
     func refreshIfChanged() {
-        guard !isOperating else { return }
+        guard isPanelVisible, !isOperating else { return }
         runOnQueue { [self] in
             guard let folder = self.folder else { return }
             if let fs = folder as? SZFileSystemFolder, fs.directoryWasRemoved {
@@ -844,17 +889,15 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         showError(message: message)
     }
 
+    /// A panel's error is a **sheet of the window that owns the panel**, never an app-modal alert.
+    ///
+    /// It used to branch on `view.window` and fall back to `NSAlert.runModal()`, which wedged the
+    /// whole app whenever a closed panel reported an error: see `ErrorAlert` and
+    /// `Mac/docs/reports/fastui.md` section 6.10. A panel that is out of the split view still belongs
+    /// to the main window, which `hostWindow` asks the delegate for, so there is a sheet parent even
+    /// then; with no window anywhere the message goes to the log.
     func showError(message: String) {
-        let alert = NSAlert()
-        alert.messageText = "7-Zip"
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        if let window = view.window {
-            alert.beginSheetModal(for: window)
-        } else {
-            alert.runModal()
-        }
+        ErrorAlert.present(ErrorAlert.make(message: message), on: hostWindow)
     }
 
     /// MessageBox_Error_UnsupportOperation (01 §2.8): lang 6008.

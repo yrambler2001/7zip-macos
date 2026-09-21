@@ -311,15 +311,11 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
             guard let self else { return }
             self.withoutChangeTracking { self.pageDidLoad() }
             guard let error = firstError else { return }
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "7-Zip"
-            alert.informativeText = error.localizedDescription
-            if let window = self.view.window {
-                alert.beginSheetModal(for: window) { _ in }
-            } else {
-                alert.runModal()
-            }
+            // The requests are asynchronous, so the Options window may have been closed while they
+            // were in flight: present on the app's main window then, never app-modal with no owner
+            // (`ErrorAlert`, `Mac/docs/reports/fastui.md` section 6.10).
+            ErrorAlert.present(ErrorAlert.make(message: error.localizedDescription),
+                               on: self.view.window ?? NSApp.mainWindow)
         }
         return true
     }

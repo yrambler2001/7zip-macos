@@ -35,8 +35,11 @@ extension PanelViewController {
     /// the last component opens the parent and uses the component as the selection mask; a file on
     /// the way is opened as an archive and binding continues inside it (nested archives included,
     /// handled by SZFolder.folder(forPath:)).
+    /// - Parameter reportErrors: false logs a failed bind instead of showing it. Used by
+    ///   `resetForTest`, which must not leave a sheet up after the reset has closed everything.
     func navigate(to path: String, formatHint: String? = nil, fallbackToRoot: Bool = true,
                   select name: String? = nil, focusListOnSuccess: Bool = false,
+                  reportErrors: Bool = true,
                   completion: ((Bool) -> Void)? = nil) {
         var target = path
         var mask: String? = nil
@@ -66,10 +69,13 @@ extension PanelViewController {
             }
             if let folderObject { self.folder = folderObject }
             let snap = folderObject.map { self.makeSnapshot($0) }
-            let silent = fallbackToRoot && path.isEmpty
+            let silent = (fallbackToRoot && path.isEmpty) || !reportErrors
             DispatchQueue.main.async {
                 if let failure, !silent, failure.code != SZError.Code.cancelled.rawValue {
                     self.showError(failure)
+                } else if let failure, !reportErrors, failure.code != SZError.Code.cancelled.rawValue {
+                    NSLog("7-Zip: panel %d could not open %@: %@", self.panelIndex, path,
+                          failure.localizedDescription)
                 }
                 if snap == nil {
                     self.setPendingFocus(name: nil)      // a failed bind must not arm the next apply

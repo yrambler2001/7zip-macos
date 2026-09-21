@@ -713,23 +713,19 @@ enum CommandExecutor {
         return lines
     }
 
+    /// `parent` used to be accepted and ignored: every message was app-modal with no owner window,
+    /// which is right for 7zG (a command line in a process with no window) and wrong the moment the
+    /// app *has* a window -- a URL command that failed then raised an alert nothing owned, the same
+    /// wedge as `Mac/docs/reports/fastui.md` section 6.10. `ErrorAlert.run` makes it a sheet of
+    /// `parent` when there is one and keeps it synchronous, so the callers' `return`-after-message
+    /// flow is unchanged.
     static func showError(_ text: String, parent: NSWindow?) {
         guard !suppressMessages else { return }
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        ErrorAlert.run(ErrorAlert.make(message: text, style: .critical), on: parent)
     }
 
     static func showInfo(_ text: String, parent: NSWindow?) {
         guard !suppressMessages else { return }
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        ErrorAlert.run(ErrorAlert.make(message: text, style: .informational), on: parent)
     }
 }

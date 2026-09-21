@@ -33,6 +33,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         panels.filter { splitView.arrangedSubviews.contains($0.view) }
     }
 
+    /// PanelDelegate: the window a panel belongs to even while its view is out of the split view, so
+    /// a closed panel still has a sheet parent instead of raising an ownerless app-modal alert
+    /// (`ErrorAlert`, `Mac/docs/reports/fastui.md` section 6.10).
+    var panelHostWindow: NSWindow? { window }
+
     // Toolbar identifiers (App.cpp g_ArchiveButtons / g_StandardButtons)
     private static let archiveItems: [NSToolbarItem.Identifier] = [.szAdd, .szExtract, .szTest]
     private static let standardItems: [NSToolbarItem.Identifier] = [.szCopy, .szMove, .szDelete, .szInfo]
@@ -260,6 +265,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         // ... and let the new panel lay its own subviews out at the width it has just been given,
         // rather than on some later pass that may not come.
         splitView.layoutSubtreeIfNeeded()
+        // A panel that was closed did not reload while it had no window (PanelViewController.reload),
+        // so whatever it missed -- a language switch, an Options apply, the View menu's timestamp
+        // level -- is applied now that it is back on screen.
+        for panel in visiblePanels { panel.panelDidBecomeVisible() }
     }
 
     func switchOnOffOnePanel() {
