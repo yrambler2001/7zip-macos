@@ -241,3 +241,45 @@ panel's own `copyItems` call. Two consequences for this scope:
 
 Dragging file-system items (plain file URLs) and every drop path are untouched.
 `rememberedPassword` is no longer passed for the promise; see the open request in `requests.md`.
+
+---
+
+## Note — 2026-09-21 (`mac/modalfix`)
+
+**A panel's error is a sheet of the window that owns the panel, and a closed panel does not reload
+on its own.** Both are behaviour changes other scopes can see.
+
+`PanelViewController.showError(_:)` / `showError(message:)` used to branch on `view.window` and fall
+back to `NSAlert.runModal()`. A panel closed with F9 (`IDM_VIEW_TWO_PANELS 732`) is kept alive and
+reused — 7zFM hides its non-focused panel rather than destroying the `CPanel`, and step 4 of
+`sevenzip://test/reset` rebuilds the hidden one too — but on macOS its view is out of the split view,
+so `view.window` is nil. The fallback therefore raised an **app-modal alert owned by no window**,
+which wedged the app (`Mac/docs/reports/fastui.md` §6.10, `reports/modalfix.md`).
+
+Two new members, and one new rule:
+
+```swift
+panel.isPanelVisible      // the view is installed in a window (false for a panel closed with F9)
+panel.hostWindow          // view.window, else the window that owns the panel (the delegate's)
+```
+
+* `PanelDelegate` gains `var panelHostWindow: NSWindow? { get }`; `MainWindowController` answers
+  with its own `window`. Any future implementer of `PanelDelegate` must provide it.
+* **`ErrorAlert`** (`Mac/App/Dialogs/ErrorAlert.swift`) is where every message box in the app should
+  now go: `ErrorAlert.present(_:on:)` for a non-blocking sheet, `ErrorAlert.run(_:on:)` for a
+  synchronous one (a sheet run in a nested modal loop, the `BrowseDialog` shape). With **no** window
+  at all `present` logs and `run` is app-modal — that is the 7zG case, a process with no window.
+  Never branch a presentation on whether a *view* has a window again.
+* `panel.reload(keepScroll:)` **defers** when `isPanelVisible` is false and
+  `MainWindowController.showSecondPanel()` replays it through `panel.panelDidBecomeVisible()`. So
+  `ActiveContext.refreshAll()`, the View menu's timestamp items, an Options apply and a language
+  switch all still reach a hidden panel — just when it is shown, not while it is invisible. A command
+  scope needs no change. `panel.refreshIfChanged()` carries the same guard (the window's 1 s timer
+  already only ticked `visiblePanels`).
+* `panel.navigate(...)` gains a defaulted `reportErrors: Bool = true`. `false` logs a failed bind
+  instead of showing it; `resetForTest` uses it, because a reset must not leave a sheet up after its
+  own step 1 has closed everything.
+
+Nothing else about the panel API changed. The three confirmation alerts that are app-modal **by
+design** (`confirmDelete`, `confirmSuspiciousName`, `confirmCopyToArchive` — 7zFM's `MessageBoxW`
+answers, and always raised by a gesture on the visible panel) were left alone; see `reports/modalfix.md`.

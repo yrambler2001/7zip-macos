@@ -332,3 +332,69 @@ over 4 rounds. Worth knowing for what it says about the 28.7 s-per-test baseline
 launches in about 0.7 s**, so the other 28 s of a test is XCUITest's launch handshake and the suite's
 own overhead, not the app. Removing the relaunch removes ~3.9 s of that; the rest is `fastui`'s to
 find.
+
+---
+
+## Note — 2026-09-21 (`mac/modalfix`)
+
+**The acknowledgement is now unconditional, and it can carry a diagnosis.** Section 4 step 5 and
+section 5 still hold — the generation, the accessibility value, then the ack file, in that order —
+but two things changed underneath.
+
+### 1. Step 1 stops a modal session without raising
+
+`closeTransientUI` called `NSApp.abortModal()`, which Apple documents as *raising*
+`NSAbortModalException`. Both of its callers run inside a `CFRunLoopTimer` callback (the settle
+ticker, and `TestResetWatcher.poll` by way of `begin`), and an exception that unwinds out of a timer
+callback leaves that timer marked as firing, so the run loop never fires it again — the settle ticker
+and the request watcher would both die and the process would be unresettable for the rest of its life.
+It is now `NSApp.stopModal(withCode: .abort)` plus a posted `applicationDefined` event to wake the
+loop, which never raises; the settle ticker retries every 20 ms, so a stack of nested sessions unwinds
+one layer per tick. The ticker is also armed **before** anything that can unwind, so even a stray
+exception leaves the reset with a heartbeat.
+
+### 2. Two deadlines, and step 5 always runs
+
+`settleTimeout` (still 15 s, now a `var` so a test can shorten it) applies **twice**: to step 2, and
+then to steps 3–4 together. Whichever expires, step 5 runs anyway: the generation is bumped, the
+accessibility value published and the ack written.
+
+That second deadline is the one that mattered. Step 4 hands each panel a completion block and waits
+for all of them; a block that never arrives — a panel queue parked behind a long engine call, or a
+main queue starved because an app-modal session owns the main thread — meant `finish` was never
+reached, so nothing was ever written. Measured on the old code with a deliberately parked panel queue:
+*"no reset acknowledgement within 25 s (generation was 0, is now 0)"*, which is the failure
+`Mac/docs/reports/fastui.md` §6.10 reports verbatim. A test could only call that a timeout.
+
+```swift
+TestResetCoordinator.stage          // .idle / step 1 … step 5, while one is in flight
+TestResetCoordinator.lastStall      // why the last reset did not settle, or nil
+TestResetCoordinator.settleTimeout  // 15 s; a test may lower it
+TestResetCoordinator.stallNotePath(for: request)   // <ack>.stall, else <SZ_STATE_DIR>/reset-stall
+```
+
+### 3. The stall note — an addition a test harness should read
+
+When a reset does not settle cleanly it writes, **before** the ack file, a note at `<ack>.stall` (or
+`<SZ_STATE_DIR>/reset-stall` when the request named no ack):
+
+```
+5: step 2 (wait until it really has stopped) timed out after 15 s: 1 window(s) would not go: _NSAlertPanel
+5: step 4 (rebuild the panels) did not finish within 15 s: an operation is still running
+```
+
+The first field is the generation the note belongs to. A reset that settled **removes** the note, so a
+stale diagnosis can never be read as this reset's, and a test that has seen the ack can trust the note
+next to it. The ack file's own contents are unchanged (the generation as decimal text), so nothing in
+the frozen contract moved — a harness that ignores the note behaves exactly as before, and one that
+reads it can say *which step stalled* instead of "the reset timed out". Filed for `harness` to pick up.
+
+`finish` now runs exactly once per reset (`runID`), so a panel rebuild that calls back after the
+watchdog has already acknowledged cannot finish the *next* reset by accident.
+
+### 4. Step 4 no longer leaves a sheet up
+
+`PanelViewController.resetForTest` binds with `navigate(..., reportErrors: false)`: a path that has
+vanished is logged and the panel falls back to the root, instead of raising an error sheet that would
+survive the reset — step 1 has just closed everything, so anything step 4 raises would greet the next
+test. See the dated note in `api/panel.md`.
