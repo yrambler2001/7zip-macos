@@ -20,10 +20,6 @@ enum CommandExecutor {
     /// `g_DisableUserQuestions` (MyMessages.cpp:16-20): `-y` silences every box.
     private static var suppressMessages = false
 
-    /// Extra windows opened by the "Open archive" command: one file manager per archive, like
-    /// `7zFM.exe "%1"` (03 section 6.2, 01 section 9 #32).
-    private static var extraWindowControllers: [MainWindowController] = []
-
     // MARK: - Failures (GUI.cpp:437-494)
 
     /// `WinMain`'s exception ladder with IDS_MEM_ERROR resolved through the active language file
@@ -175,26 +171,20 @@ enum CommandExecutor {
 
     // MARK: - Open in the file manager (7zFM argv)
 
+    /// Every path gets a window of its own, like one `7zFM.exe "%1"` per archive (03 section 6.2,
+    /// 01 section 9 #32; user decision, Mac/docs/reports/newwindow.md): an archive opened from
+    /// Finder never replaces what a window already shows. A failed open closes that window, as the
+    /// 7zFM process ends when `WM_CREATE` fails -- and when it was the only window, the app quits
+    /// with it.
     static func openInFileManager(paths: [String], formatHint: String?) {
         guard !paths.isEmpty else { return }
         NSApp.activate(ignoringOtherApps: true)
-        let delegate = NSApp.delegate as? AppDelegate
-        for (index, path) in paths.enumerated() {
+        for path in paths {
             let full = (path as NSString).isAbsolutePath
                 ? path
                 : FileManager.default.currentDirectoryPath + "/" + path
-            if index == 0, let controller = delegate?.mainWindowController {
-                controller.openStartupPath(full, formatHint: formatHint)
-                controller.showWindow(nil)
-                continue
-            }
-            // Each further archive gets its own window, like one 7zFM per file.
-            let controller = MainWindowController()
-            extraWindowControllers.append(controller)
-            // A window of its own, like one 7zFM process per file: a failed open closes it.
+            let controller = MainWindows.open()
             controller.openStartupPath(full, formatHint: formatHint, closesWindowOnFailure: true)
-            controller.showWindow(nil)
-            controller.window?.cascadeTopLeft(from: NSPoint(x: 40, y: 40))
         }
     }
 

@@ -226,6 +226,10 @@ enum TestResetCoordinator {
             // reset is tearing the UI down, not presenting it, so there is nothing to animate anyway.
             window.animationBehavior = .none
             window.orderOut(nil)
+            // A second file-manager window (File > New Window, a reopen, an archive from Finder:
+            // `MainWindows`) is closed rather than hidden, so it leaves the window list and the
+            // next test starts with the one window a launch has.
+            if window.windowController is MainWindowController { window.close() }
         }
         // A modal session whose window is already gone (or one belonging to an alert AppKit has
         // not listed yet) still has to be told to stop, or the stack never unwinds.

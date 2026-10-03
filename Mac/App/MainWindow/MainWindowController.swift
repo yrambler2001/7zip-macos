@@ -23,6 +23,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         return true
     }()
     private var toolbarsMask = Settings.toolbarsMask
+    /// Set when the window closes: it has saved its state then, and must not save again on Quit,
+    /// where it would overwrite a window closed later (`MainWindows.saveAllForTermination`).
+    private(set) var isClosed = false
 
     /// FM.Panels.splitterPos -- the share of the *usable* width (the split view minus the divider)
     /// that panel 0 gets. This value is authoritative: the divider position is always derived from
@@ -57,13 +60,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         window.title = "7-Zip"
         window.minSize = NSSize(width: 360, height: 240)
         window.tabbingMode = .disallowed
+        // The controller owns the window; with several windows opening and closing
+        // (`MainWindows`), AppKit's extra release on close would free it under the controller.
+        window.isReleasedWhenClosed = false
         super.init(window: window)
         // Quit without closing the window (Cmd+Q): the nested-archive write-back of
         // windowWillClose runs here instead (PanelNestedArchives.swift, 01 §3.8).
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
                                                object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                for panel in self?.panels ?? [] { panel.closeNestedArchivesForShutdown() }
+                guard let self, !self.isClosed else { return }   // a closed window already did
+                for panel in self.panels { panel.closeNestedArchivesForShutdown() }
             }
         }
         window.delegate = self
@@ -217,8 +224,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     }
 
     func windowWillClose(_ notification: Notification) {
+        guard !isClosed else { return }
         refreshTimer?.invalidate()
         saveState()
+        isClosed = true
         // CPanel's destructor closes every archive level: a modified nested archive is offered
         // for write-back into its parent (PanelNestedArchives.swift, 01 §3.8).
         for panel in panels { panel.closeNestedArchivesForShutdown() }
@@ -229,6 +238,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         // throws `NSInternalInconsistencyException` on a window that has no layout any more. Filed
         // for `options` in `Mac/docs/requests.md`; this is the half that belongs here.
         window?.toolbar = nil
+        MainWindows.didClose(self)
     }
 
     func windowDidBecomeMain(_ notification: Notification) {
