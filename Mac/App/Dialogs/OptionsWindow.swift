@@ -97,8 +97,26 @@ class OptionsPageBase: NSViewController, OptionsPage {
     /// after every layout pass, a label narrower than that is told its real width so its height is
     /// measured for the lines it actually wraps into (the Windows pages are fixed-size dialogs whose statics wrap at
     /// their template width, 01b section 4.22).
+    /// How many times `viewDidLayout` re-told a label its width (for tests).
+    private(set) var labelWidthUpdates = 0
+    /// The page size of the last pass that re-told a label its width, and how many such passes in
+    /// a row ran at that size.
+    private var labelPassSize = NSSize.zero
+    private var labelPassesAtSize = 0
+    /// For a label whose width the page decides, one re-tell settles it (its width does not depend
+    /// on its preferredMaxLayoutWidth); a second covers a label whose new height moved a
+    /// neighbour. More passes at the same page size mean the width is feeding back into itself,
+    /// which AppKit ends with NSGenericException "more Update Constraints in Window passes than
+    /// there are views" (`mac/syslayout`), so the page stops there.
+    static let maxLabelPassesPerSize = 3
+
     override func viewDidLayout() {
         super.viewDidLayout()
+        if view.bounds.size != labelPassSize {
+            labelPassSize = view.bounds.size
+            labelPassesAtSize = 0
+        }
+        guard labelPassesAtSize < Self.maxLabelPassesPerSize else { return }
         var changed = false
         OptionsUI.forEachWrappingLabel(in: view) { field in
             // Never more than the cap: a label told its own full width feeds that width back into
@@ -106,10 +124,14 @@ class OptionsPageBase: NSViewController, OptionsPage {
             let width = min(field.frame.width, OptionsUI.wrappingLabelWidth)
             if width > 1, abs(field.preferredMaxLayoutWidth - width) > 0.5 {
                 field.preferredMaxLayoutWidth = width
+                labelWidthUpdates += 1
                 changed = true
             }
         }
-        if changed { view.needsLayout = true }
+        if changed {
+            labelPassesAtSize += 1
+            view.needsLayout = true
+        }
     }
 }
 

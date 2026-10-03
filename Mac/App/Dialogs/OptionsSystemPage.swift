@@ -108,9 +108,27 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
                   tip: "Select every row (Windows: * or Ctrl+A)")
 
         let buttons = OptionsUI.hstack([setButton, clearButton, selectAllButton], spacing: 6)
-        let header = NSStackView(views: [associateLabel, NSView(), buttons])
+        // IDT_SYSTEM_ASSOCIATE is a one-line static on Windows. It shares the row with the buttons,
+        // so it must not be a wrapping label: a wrapping label sized by its own intrinsic width in
+        // a row, next to a spacer view with no width of its own, had an ambiguous width, and
+        // OptionsPageBase.viewDidLayout wrote each answer back into preferredMaxLayoutWidth -- in
+        // Ukrainian it flipped 94.5 <-> 63.5 pt until AppKit raised "more Update Constraints in
+        // Window passes than there are views" (Mac/docs/reports/syslayout.md). Gravity areas pin
+        // the label to the leading edge and the buttons to the trailing one with no spacer view.
+        associateLabel.maximumNumberOfLines = 1
+        associateLabel.lineBreakMode = .byTruncatingTail
+        associateLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        associateLabel.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(749), for: .horizontal)
+        buttons.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        // A stack view hugs at 250 by default; it must not stretch, or the free space between
+        // the gravity areas would be split ambiguously again.
+        buttons.setHuggingPriority(.defaultHigh, for: .horizontal)
+        let header = NSStackView()
         header.orientation = .horizontal
+        header.alignment = .centerY
         header.spacing = 8
+        header.setViews([associateLabel], in: .leading)
+        header.setViews([buttons], in: .trailing)
         header.translatesAutoresizingMaskIntoConstraints = false
 
         let scroll = OptionsUI.scrollTable(table, minHeight: 260)
@@ -161,6 +179,7 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
 
     override func relabelPage() {
         associateLabel.stringValue = Lang.text(2201, "Associate 7-Zip with:")
+        associateLabel.toolTip = associateLabel.stringValue      // in case a translation is cut
         typeColumn?.title = Lang.text(1020, "Type")
         // IDS_SYSTEM_ALL_USERS 2202 ("All users", IDB_SYSTEM_ALL 102) has no macOS counterpart: associations are
         // per-user only (01 section 9 #3), so the second Windows column is replaced by this note.
