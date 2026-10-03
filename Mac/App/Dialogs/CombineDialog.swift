@@ -59,7 +59,7 @@ final class CombineDialog: NSObject {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.message = Lang.text(6007, "Specify a folder:")
+        panel.message = Lang.text(6007, "Specify a folder:")   // IDS_SET_FOLDER
         panel.directoryURL = URL(fileURLWithPath: pathCombo.stringValue)
         if panel.runModal() == .OK, let url = panel.url {
             pathCombo.stringValue = url.path + "/"

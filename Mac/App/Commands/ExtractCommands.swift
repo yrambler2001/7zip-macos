@@ -212,18 +212,24 @@ enum ExtractCommands {
         runnerOptions.initialStatus = .extracting
         runnerOptions.parentWindow = context.window
         runnerOptions.titleFileName = context.displayPath
-        if !answer.password.isEmpty { runnerOptions.password = answer.password }
-
         let folder = context.folder
+        // CPanel::CopyTo passes fl.Password and writes it back afterwards (PanelCopy.cpp,
+        // requests.md navgaps -> extract): the archive level's own password, per level.
+        runnerOptions.password = answer.password.isEmpty ? folder.archive?.password : answer.password
         let indices = context.indices.map { NSNumber(value: $0) }
+        // The panel showing this archive is parked while the worker uses its folder.
+        let parking = PanelViewController.parkPanels(showing: folder)
         OperationRunner.run(runnerOptions) { runner -> SZOperationSummary in
+            parking.waitUntilParked()
+            defer { PanelViewController.rememberPassword(of: runner, in: folder) }
             // CPanel::CopyTo with NeedRegistryZone (PanelCopy.cpp:188-198): the quarantine of
             // the archive is propagated per Options.WriteZoneIdExtract (01 §9 #23, opsgaps).
-            try folder.extractItems(at: indices, toPath: answer.directoryPath,
-                                    pathMode: answer.pathMode, overwriteMode: answer.overwriteMode,
-                                    testMode: false, zoneMode: SZFolder.registryZoneMode,
-                                    zoneSourcePath: nil, progress: runner)
+            return try folder.extractItems(at: indices, toPath: answer.directoryPath,
+                                           pathMode: answer.pathMode, overwriteMode: answer.overwriteMode,
+                                           testMode: false, zoneMode: SZFolder.registryZoneMode,
+                                           zoneSourcePath: nil, progress: runner)
         }
+        parking.release()
         ActiveContext.refresh()
     }
 
@@ -236,13 +242,18 @@ enum ExtractCommands {
         runnerOptions.titleFileName = context.displayPath
 
         let folder = context.folder
+        runnerOptions.password = folder.archive?.password        // fl.Password, as for Extract
         let indices = context.indices.isEmpty ? nil : context.indices.map { NSNumber(value: $0) }
         let window = context.window
+        let parking = PanelViewController.parkPanels(showing: folder)
         let result = OperationRunner.run(runnerOptions) { runner -> SZOperationSummary in
-            try folder.extractItems(at: indices, toPath: TestSupport.temporaryDirectory,
-                                    pathMode: .curPaths, overwriteMode: .skip,
-                                    testMode: true, progress: runner)
+            parking.waitUntilParked()
+            defer { PanelViewController.rememberPassword(of: runner, in: folder) }
+            return try folder.extractItems(at: indices, toPath: TestSupport.temporaryDirectory,
+                                           pathMode: .curPaths, overwriteMode: .skip,
+                                           testMode: true, progress: runner)
         }
+        parking.release()
         if case .success(let summary) = result, summary.errorCount == 0 {
             // The Agent has no CDecompressStat, so only the file count and the "no errors" line
             // are available here; the full statistics block is the 7zG `t` path above.

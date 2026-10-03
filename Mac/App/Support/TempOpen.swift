@@ -297,9 +297,14 @@ final class TempOpenSession: NSObject {
         let folder = self.folder
         let index = tempFile.itemIndex
         let path = tempFile.filePath
+        // The panels inside this archive chain are parked: the folder captured when the item was
+        // opened belongs to the same archive objects the panel may be using right now.
+        let parking = PanelViewController.parkPanels(showing: folder)
         let result = OperationRunner.run(runnerOptions) { runner -> Void in
+            parking.waitUntilParked()
             try SZTempOpen.updateItem(at: index, of: folder, fromFilePath: path, progress: runner)
         }
+        parking.release()
         switch result {
         case .success:
             tempFile.refreshRecordedAttributes()

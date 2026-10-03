@@ -1,8 +1,7 @@
 // PanelIcons.swift -- the panel's icon rule (SetItemText, PanelListNotify.cpp:152-522, and
-// LoadFullPathAndShow, PanelFolderChange.cpp:406-520): the real file-system icon
-// (IFolderGetSystemIconIndex, which the bridge leaves to the app -- Mac/docs/requests.md) for
-// file-system, volume and root items, and the extension cache inside archives unless
-// ShowRealFileIcons is on. The address bar shows the Computer, volume or archive-file icon.
+// LoadFullPathAndShow, PanelFolderChange.cpp:406-520): the real icon (IFolderGetSystemIconIndex,
+// which the bridge leaves to the app -- Mac/docs/requests.md) for volume and root items, and for
+// file-system items when ShowRealFileIcons is on; the icon by extension otherwise. The address bar shows the Computer, volume or archive-file icon.
 
 import AppKit
 import SevenZipKit
@@ -16,10 +15,15 @@ enum PanelIcons {
                      large: Bool) -> NSImage {
         let size = large ? largeSize : smallSize
         if row.isParentRow { return resized(Icons.folder, size) }
-        // Real icons: FS folders, the volumes list and the root always; archives only when the
-        // user asked for them (ShowRealFileIcons) -- and there the file does not exist, so the
-        // extension cache is all there is.
-        if !row.fullPath.isEmpty {
+        // Real icons: the volumes list and the root always; a file-system folder only when the
+        // user asked for them (ShowRealFileIcons, IDX_SETTINGS_SHOW_REAL_FILE_ICONS 2502): 7zFM
+        // queries IFolderGetSystemIconIndex only `if (!Is_Slow_Icon_Folder() || _showRealFileIcons)`
+        // (PanelItems.cpp:587), and Is_Slow_Icon_Folder() is IsFSFolder(). Off -- the Windows
+        // default -- an FS item gets its icon by extension, like an archive item.
+        let slowIconFolder = (snapshot?.isFileSystem ?? false)
+            && !(snapshot?.isVolumesFolder ?? false) && !(snapshot?.isRoot ?? false)
+        let realIcon = !slowIconFolder || Settings.showRealFileIcons
+        if realIcon, !row.fullPath.isEmpty {
             let key = "\(large ? "L" : "S")\(row.fullPath)"
             if let cached = cache[key] { return cached }
             let image = NSWorkspace.shared.icon(forFile: row.fullPath)

@@ -86,6 +86,7 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
     private let overwriteModeCombo = NSPopUpButton()         // IDC_EXTRACT_OVERWRITE_MODE 103
     private let elimDupBox: NSButton                        // IDX_EXTRACT_ELIM_DUP 3430
     private let ntSecurityBox: NSButton                     // IDX_EXTRACT_NT_SECUR 3431 (hidden)
+    // IDX_EXTRACT_ALT_STREAMS 3432 is not built: NTFS alternate streams do not exist on macOS (01 §9 #6).
     private let passwordField = NSSecureTextField()          // IDE_EXTRACT_PASSWORD 120
     private let plainPasswordField = NSTextField()           // the same control with PasswordChar = 0
     private let showPasswordBox: NSButton                    // IDX_PASSWORD_SHOW 3803

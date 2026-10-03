@@ -48,6 +48,8 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     ]
 
     // IDX_SYSTEM_INTEGRATE_TO_MENU 2301 -- read-only on macOS (see the file header).
+    // IDX_SYSTEM_INTEGRATE_TO_MENU_2 2310 (the 32-bit shell DLL on 64-bit Windows) has no
+    // counterpart: there is one Finder extension (03 §1.8).
     private let integrateCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let integrateStatus = OptionsUI.note("")
     private let enableButton = NSButton()

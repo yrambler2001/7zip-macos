@@ -347,7 +347,11 @@ extension PanelViewController: NSFilePromiseProviderDelegate {
             let release = DispatchSemaphore(value: 0)
             runOnQueue { parked.signal(); release.wait() }
             parked.wait()
-            DispatchQueue.main.sync { ok = self.extractForPromise(engineIndex: index, toDirectory: directory) }
+            // Not `DispatchQueue.main.sync`: the extraction runs a modal session (the Progress
+            // dialog, maybe a password question from its worker), and a main-queue block is not
+            // re-entered by the nested run loop, so a worker question would wait for ever
+            // (requests.md, navgaps -> every scope).
+            Self.performOnMainRunLoop { ok = self.extractForPromise(engineIndex: index, toDirectory: directory) }
             release.signal()
         }
         completionHandler(ok ? nil : SZErrors.error(with: .engine, message: "extraction failed"))

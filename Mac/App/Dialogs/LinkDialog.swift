@@ -127,7 +127,7 @@ final class LinkDialog: NSObject {
         footnote.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         footnote.textColor = .secondaryLabelColor
 
-        let link = DialogKit.button(Lang.text(7701, "Link"), target: self, action: #selector(linkClicked), key: "\r")
+        let link = DialogKit.button(Lang.text(7701, "Link"), target: self, action: #selector(linkClicked), key: "\r")  // IDB_LINK_LINK 7701
         let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked),
                                       key: "\u{1b}")
         let buttons = NSStackView(views: [NSView(), link, cancel])

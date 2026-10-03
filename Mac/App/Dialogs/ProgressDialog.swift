@@ -108,12 +108,12 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
 
         // Two label/value columns, exactly the row order of ProgressDialog2a.rc.
         let grid = NSGridView(views: [
-            [DialogKit.label(Lang.text(3900, "Elapsed time:")), elapsedValue,      // 3900 / 120
-             DialogKit.label(Lang.text(3902, "Total size:")), totalValue],         // 3902 / 122
-            [DialogKit.label(Lang.text(3901, "Remaining time:")), remainingValue,  // 3901 / 121
-             DialogKit.label(Lang.text(3903, "Speed:")), speedValue],              // 3903 / 123
-            [DialogKit.label(Lang.text(1032, "Files:")), filesValue,               // 1032 / 111
-             DialogKit.label(Lang.text(3904, "Processed:")), processedValue],       // 3904 / 124
+            [DialogKit.label(Lang.text(3900, "Elapsed time:")), elapsedValue,      // IDT_PROGRESS_ELAPSED 3900 / 120
+             DialogKit.label(Lang.text(3902, "Total size:")), totalValue],         // IDT_PROGRESS_TOTAL 3902 / 122
+            [DialogKit.label(Lang.text(3901, "Remaining time:")), remainingValue,  // IDT_PROGRESS_REMAINING 3901 / 121
+             DialogKit.label(Lang.text(3903, "Speed:")), speedValue],              // IDT_PROGRESS_SPEED 3903 / 123
+            [DialogKit.label(Lang.text(1032, "Files:")), filesValue,               // IDT_PROGRESS_FILES 1032 / 111
+             DialogKit.label(Lang.text(3904, "Processed:")), processedValue],       // IDT_PROGRESS_PROCESSED 3904 / 124
             [DialogKit.label(""), filesTotalValue,                                 //        112
              packedLabel, packedValue],                                            // 1008 / 110
             [errorsLabel, errorsValue,                                             // 3906 / 126

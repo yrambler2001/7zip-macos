@@ -162,7 +162,7 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
     override func relabelPage() {
         associateLabel.stringValue = Lang.text(2201, "Associate 7-Zip with:")
         typeColumn?.title = Lang.text(1020, "Type")
-        // IDS_SYSTEM_ALL_USERS 2202 ("All users") has no macOS counterpart: associations are
+        // IDS_SYSTEM_ALL_USERS 2202 ("All users", IDB_SYSTEM_ALL 102) has no macOS counterpart: associations are
         // per-user only (01 section 9 #3), so the second Windows column is replaced by this note.
         perUserNote.stringValue = "macOS keeps file associations per user only, so the Windows "
             + "\u{201C}\(Lang.text(2202, "All users"))\u{201D} column does not apply. "

@@ -32,7 +32,7 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
     }
 
     private(set) var entries: [Entry] = []
-    private let table = NSTableView()
+    private let table = NSTableView()      // IDC_LANG_LANG 100 (the language combo, as a table)
     private let langLabel = OptionsUI.label(2102, "Language:")      // IDT_LANG_LANG 2102
     // IDT_LANG_INFO 101: a static on Windows that the text simply overflows; a read-only text view
     // here, because ShowLangInfo can list up to 50 missing and 50 extra ids.

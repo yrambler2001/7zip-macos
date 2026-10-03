@@ -164,7 +164,7 @@ final class PasswordDialog: NSObject, NSTextFieldDelegate {
         NSApp.runModal(for: dialog.window)
         dialog.window.orderOut(nil)
         if let result = dialog.result, result.showPassword != options.showPassword {
-            SZSettings.setBool(result.showPassword, forKey: "Extraction.ShowPassword")
+            Settings.extractShowPassword = result.showPassword   // through Settings, so observers hear it
         }
         return dialog.result
     }

@@ -47,6 +47,11 @@
   _flags = info.Flags;
   _timeFlags = info.TimeFlags;
   _signatureCount = info.Signatures.Size();
+  _signatureOffset = info.SignatureOffset;
+  NSMutableArray<NSData *> *signatures = [NSMutableArray arrayWithCapacity:info.Signatures.Size()];
+  FOR_VECTOR (i, info.Signatures)
+    [signatures addObject:[NSData dataWithBytes:(const Byte *)info.Signatures[i] length:info.Signatures[i].Size()]];
+  _signatures = signatures;
   return self;
 }
 
@@ -101,7 +106,9 @@ static NSArray<SZFormatInfo *> *g_formats = nil;
 
 + (NSArray<SZFormatInfo *> *)formats
 {
-  if (!g_CodecsObj && ![self loadCodecs:NULL])
+  // Through the lock even when loaded: the codecs are built on a worker at launch, and a reader
+  // that saw g_CodecsObj set before g_formats was assigned would get an empty list.
+  if (![self loadCodecs:NULL])
     return @[];
   return g_formats ?: @[];
 }
@@ -138,6 +145,30 @@ static NSArray<SZFormatInfo *> *g_formats = nil;
   if (![self loadCodecs:NULL])
     return nil;
   return [self formatAtEngineIndex:g_CodecsObj->FindFormatForArchiveType(SZUStringFromNSString(name))];
+}
+
++ (NSArray<SZFormatInfo *> *)formatsMatchingHeader:(NSData *)header
+{
+  // The signature test of OpenStream's first pass (OpenArchive.cpp, `IsSignatureMatched`): a
+  // handler matches when one of its signatures sits at its SignatureOffset in the header bytes.
+  NSMutableArray<SZFormatInfo *> *out = [NSMutableArray array];
+  const Byte *bytes = (const Byte *)header.bytes;
+  const NSUInteger length = header.length;
+  for (SZFormatInfo *format in [self formats])
+  {
+    const NSUInteger offset = format.signatureOffset;
+    for (NSData *signature in format.signatures)
+    {
+      if (signature.length == 0 || offset > length || signature.length > length - offset)
+        continue;
+      if (memcmp(bytes + offset, signature.bytes, signature.length) == 0)
+      {
+        [out addObject:format];
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 + (NSSet<NSString *> *)allExtensions

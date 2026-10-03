@@ -260,10 +260,10 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
 
     /// The value grid plus the log column (IDD_BENCH is 332 + 140 du wide).
     private func buildResultsView() -> NSView {
-        compressCurrent = valueRow()
+        compressCurrent = valueRow()          // IDT_BENCH_COMPRESS_SIZE1 170 is element [4]
         compressResulting = valueRow()
-        decompressCurrent = valueRow()
-        decompressResulting = valueRow()
+        decompressCurrent = valueRow()        // the IDT_BENCH_CURRENT2 7656 row
+        decompressResulting = valueRow()      // the IDT_BENCH_RESULTING2 7657 row
         totalValues = [DialogKit.value(Self.processingString),    // IDT_BENCH_TOTAL_USAGE_VAL 133
                        DialogKit.value(Self.processingString),    // IDT_BENCH_TOTAL_RPU_VAL 131
                        DialogKit.value(Self.processingString)]    // IDT_BENCH_TOTAL_RATING_VAL 130
@@ -283,13 +283,17 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
         func addGroup(_ title: String, current: [NSTextField], resulting: [NSTextField]) {
             let group = DialogKit.label(title, bold: true)
             grid.addRow(with: [group])
+            // IDT_BENCH_CURRENT 7606 (IDT_BENCH_CURRENT2 7656 in the decompress group, which
+            // Windows also labels with 7606 text)
             grid.addRow(with: [DialogKit.label("    " + Lang.text(7606, "Current")),
                                current[4], current[0], current[1], current[2], current[3]])
+            // IDT_BENCH_RESULTING 7607 / IDT_BENCH_RESULTING2 7657
             grid.addRow(with: [DialogKit.label("    " + Lang.text(7607, "Resulting")),
                                resulting[4], resulting[0], resulting[1], resulting[2], resulting[3]])
         }
-        addGroup(Lang.text(7602, "Compressing"), current: compressCurrent, resulting: compressResulting)
-        addGroup(Lang.text(7603, "Decompressing"), current: decompressCurrent, resulting: decompressResulting)
+        addGroup(Lang.text(7602, "Compressing"), current: compressCurrent, resulting: compressResulting)  // IDG_BENCH_COMPRESSING 7602
+        addGroup(Lang.text(7603, "Decompressing"), current: decompressCurrent, resulting: decompressResulting)  // IDG_BENCH_DECOMPRESSING 7603
+        // IDG_BENCH_TOTAL_RATING 7605
         grid.addRow(with: [DialogKit.label(Lang.text(7605, "Total Rating"), bold: true),
                            DialogKit.label(""), totalValues[0], DialogKit.label(""),
                            totalValues[1], totalValues[2]])

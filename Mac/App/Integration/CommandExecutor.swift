@@ -58,11 +58,32 @@ enum CommandExecutor {
     /// engine's own directory walk expands the wildcards, sorts the result and applies the excludes.
     /// Only called when the censor actually needs it, so a Finder selection (`-aiw-!` per item)
     /// still never touches the disk.
+    ///
+    /// The walk is a blocking engine call, so it runs on an `OperationRunner` worker like every
+    /// other one (opsinfra api §1), never on the main thread: for a wildcard over a large tree the
+    /// app used to hang with no window and answer no URL, Apple event or accessibility query
+    /// (requests.md, resetcmd -> cmdmode). WaitMode keeps a quick walk windowless; a slow one shows
+    /// the Progress dialog with "Scanning...". The engine walk itself cannot be interrupted, so a
+    /// Cancel takes effect when it returns: the command then ends as a user break.
     private static func expand(_ specs: [SevenZipPathSpec], fallback: [String],
-                               sortedArchiveList: Bool) throws -> [String] {
+                               sortedArchiveList: Bool, parent: NSWindow?) throws -> [String] {
         guard SevenZipCommandLine.needsCensorWalk(specs) else { return fallback }
-        return try SZUpdater.expandPathSpecs(specs.map(bridgeSpec),
-                                            sortedArchiveList: sortedArchiveList)
+        let bridged = specs.map(bridgeSpec)
+        let walk = { try SZUpdater.expandPathSpecs(bridged, sortedArchiveList: sortedArchiveList) }
+        guard Thread.isMainThread else { return try walk() }
+        var options = OperationRunner.Options(title: "7-Zip")
+        options.initialStatus = .scanning
+        options.parentWindow = parent
+        // The walk's own failure is returned inside the success value, so the caller's `report`
+        // shows it once with the command's exit code, and the runner shows nothing itself.
+        let outcome = OperationRunner.run(options) { runner -> Result<[String], Error> in
+            let result = Result { try walk() }
+            if runner.progressCheckBreak() {
+                throw NSError(domain: SZErrorDomain, code: SZError.Code.cancelled.rawValue)
+            }
+            return result
+        }
+        return try outcome.get().get()
     }
 
     // MARK: - Entry point
@@ -185,7 +206,7 @@ enum CommandExecutor {
         do {
             // The archive list is the sorted one, so "Cannot find archive" is exit 7 as upstream.
             archives = try expand(command.archiveSpecs, fallback: command.resolvedArchivePaths,
-                                  sortedArchiveList: true)
+                                  sortedArchiveList: true, parent: parentWindow)
         } catch {
             return report(error, parent: parentWindow)
         }
@@ -377,7 +398,7 @@ enum CommandExecutor {
         do {
             // The item censor's walk: an empty result is "nothing to add", not an error.
             sources = try expand(itemSpecs, fallback: command.resolvedItemPaths,
-                                 sortedArchiveList: false)
+                                 sortedArchiveList: false, parent: parentWindow)
         } catch {
             return report(error, parent: parentWindow)
         }
@@ -642,7 +663,7 @@ enum CommandExecutor {
         let paths: [String]
         do {
             paths = try expand(command.itemSpecs, fallback: command.resolvedItemPaths,
-                               sortedArchiveList: false)
+                               sortedArchiveList: false, parent: parentWindow)
         } catch {
             return report(error, parent: parentWindow)
         }
