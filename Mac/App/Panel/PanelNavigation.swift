@@ -52,10 +52,15 @@ extension PanelViewController {
         setPendingFocus(name: name, selectionMask: mask)
         let expanded = (target as NSString).expandingTildeInPath
         runOnQueue { [self] in
+            // BindToPath starts with CloseOpenFolders: every nested level is closed -- and a
+            // modified one written back into its parent -- before the new chain is opened, so the
+            // new chain sees the updated parent (PanelNestedArchives.swift, 01 §3.8).
+            self.leaveNestedArchives(from: self.folder, to: nil)
             var folderObject: SZFolder? = nil
             var failure: NSError? = nil
             do {
-                folderObject = try SZFolder.folder(forPath: expanded, passwordDelegate: self)
+                folderObject = try SZFolder.folder(forPath: expanded, formatHint: formatHint,
+                                                   passwordDelegate: self)
                 if let folderObject, folderObject.supportsFlatMode {
                     let flat = folderObject.isArchive ? self.flatModeForArc : self.flatModeForDisk
                     if flat {
@@ -87,7 +92,6 @@ extension PanelViewController {
                 completion?(failure == nil)
             }
         }
-        _ = formatHint   // -t<type>: SZFolder detects the format itself; kept for the CLI grammar
     }
 
     /// OpenParentFolder (PanelFolderChange.cpp:917): CloseOneLevel at an archive root, else
@@ -102,6 +106,9 @@ extension PanelViewController {
             guard let folder = self.folder else { return }
             do {
                 let parent = try folder.bindToParentFolder()
+                // CloseOneLevel -> OpenParentArchiveFolder: leaving a nested archive's root writes
+                // a modified copy back into the parent, which is reloaded in place.
+                self.leaveNestedArchives(from: folder, to: parent)
                 self.folder = parent
                 if parent.supportsFlatMode {
                     let flat = parent.isArchive ? self.flatModeForArc : self.flatModeForDisk
@@ -126,6 +133,7 @@ extension PanelViewController {
         runOnQueue { [self] in
             let volumes = SZRootFolder.makeVolumesFolder()
             do { try volumes.loadItems() } catch { }
+            self.leaveNestedArchives(from: self.folder, to: volumes)     // CloseOpenFolders
             self.folder = volumes
             let snap = self.makeSnapshot(volumes)
             DispatchQueue.main.async { self.apply(snap, selectNames: []) }
@@ -215,7 +223,9 @@ extension PanelViewController {
         let engineIndex = row.engineIndex
         let isFS = snapshot?.isFileSystem ?? false
         let ext = row.pathExtension.lowercased()
-        let alwaysStart = isFS && !row.isDirectory && Self.startExtensions.contains(ext)
+        // DoItemAlwaysStart applies inside archives too (PanelItemOpen.cpp:993, :1503): a .docx in
+        // a zip is started, not opened as an archive.
+        let alwaysStart = !row.isDirectory && Self.startExtensions.contains(ext)
         runOnQueue { [self] in
             guard let folder = self.folder else { return }
             do {
@@ -293,20 +303,10 @@ extension PanelViewController {
     /// IsVirus_Message (PanelItemOpen.cpp:867): 5+ consecutive spaces, an RLO override, or an
     /// executable extension hidden behind trailing dots and spaces asks for confirmation (3012).
     func confirmSuspiciousName(_ name: String) -> Bool {
-        var suspicious = name.contains("     ") || name.contains("\u{202E}") || name.contains("\u{202D}")
-        var trimmed = name
-        while trimmed.hasSuffix(".") || trimmed.hasSuffix(" ") { trimmed.removeLast() }
-        if trimmed != name, Self.exeExtensions.contains((trimmed as NSString).pathExtension.lowercased()) {
-            suspicious = true
-        }
-        guard suspicious else { return true }
-        let alert = NSAlert()
-        alert.messageText = "7-Zip"
-        alert.informativeText = Lang.format(Lang.get(3012, "The file name is suspicious: {0}\nDo you want to open it?"), name)
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Lang.text(406, "Yes"))
-        alert.addButton(withTitle: Lang.text(407, "No"))
-        return alert.runModal() == .alertFirstButtonReturn
+        // One list and one text for every caller: SuspiciousName (TempOpen.swift) carries the
+        // macOS executables of 01 §9 #27 as well.
+        guard SuspiciousName.looksDangerous(name) else { return true }
+        return SuspiciousName.confirm(name, parent: hostWindow)
     }
 
     // MARK: - Address bar drop-down (01 §3.9)

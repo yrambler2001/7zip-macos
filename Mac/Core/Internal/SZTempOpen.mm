@@ -592,9 +592,14 @@ HRESULT CSZVirtFileSystem::FlushToDisk()
 
   NSString *message = nil;
   const HRESULT hr = SZRunCatching(&message, [&]() -> HRESULT {
-    CMyComPtr2<IProgress, CSZProgressAdapter> cb;
+    // CThreadCopyFrom hands CopyFromFile a CUpdateCallback100Imp (PanelItemOpen.cpp), and
+    // CAgentFolder::CommonUpdateOperation QI's IFolderArchiveUpdateCallback out of it: with a bare
+    // IProgress the engine reports nothing and never asks the delegate whether to cancel
+    // (mac/archgaps: a Cancel in the progress dialog had no effect).
+    CMyComPtr2<IProgress, CSZUpdateCallbackAdapter> cb;
     cb.Create_if_Empty();
     cb->Delegate = progress;
+    cb->ArchivePath = folder.fullPath;
     return operations->CopyFromFile((UInt32)index, SZUStringFromNSString(filePath).Ptr(), cb.Interface());
   });
   if (hr == S_OK)

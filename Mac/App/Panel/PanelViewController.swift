@@ -46,6 +46,9 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     var rememberedPassword: String?
     /// Set while an operation owns the folder on another thread (CDisableTimerProcessing).
     private(set) var isOperating = false
+    /// Set once the nested archives of the chain were closed for good (window close / quit), so
+    /// the write-back question is asked only once (PanelNestedArchives.swift).
+    var nestedArchivesClosedForShutdown = false
 
     // MARK: main-thread state
     private(set) var snapshot: PanelSnapshot?

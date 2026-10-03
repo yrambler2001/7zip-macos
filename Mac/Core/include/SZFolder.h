@@ -22,6 +22,11 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, copy, nullable) NSString *handlerName;
 /// GetNameOfProperty(): lang string 1000 + propID, else the handler name, else the number.
 @property (nonatomic, readonly, copy) NSString *localizedName;
+/// YES for a column that comes from IArchiveGetRawProps (CPropColumn::IsRawProp,
+/// PanelItems.cpp:177-199): WIM's SHA-1 and reparse data, XAR's checksum, the file-system image
+/// handlers' raw fields. Its varType is SZVarTypeEmpty and its cells are rendered by the bridge
+/// from the raw bytes (01 §3.2). kpidNtSecure is never listed (NT security is hidden, 01 §9 #7).
+@property (nonatomic, readonly) BOOL isRawProperty;
 @end
 
 @interface SZFolder : NSObject
@@ -37,6 +42,12 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable SZFolder *)folderForPath:(NSString *)path
                     passwordDelegate:(nullable id<SZPasswordDelegate>)passwordDelegate
                                error:(NSError **)error NS_SWIFT_NAME(folder(forPath:passwordDelegate:));
+/// The same, opening the first archive file on the path with `formatHint` (the 7zFM command
+/// line's `-t<type>`, BindToPath's arcFormat: "7z", "*", "#", "zip:tar" ...; nil = detect).
++ (nullable SZFolder *)folderForPath:(NSString *)path
+                          formatHint:(nullable NSString *)formatHint
+                    passwordDelegate:(nullable id<SZPasswordDelegate>)passwordDelegate
+                               error:(NSError **)error NS_SWIFT_NAME(folder(forPath:formatHint:passwordDelegate:));
 
 #pragma mark Items
 
@@ -60,8 +71,28 @@ NS_ASSUME_NONNULL_BEGIN
                                   propID:(SZPropID)propID
                           timestampLevel:(SZTimestampLevel)level NS_SWIFT_NAME(displayStringOfItem(at:propID:timestampLevel:));
 
-/// Columns declared by the folder, in the folder's order (includes kpidIsDir if declared).
+/// Columns declared by the folder, in the folder's order (includes kpidIsDir if declared),
+/// followed by the raw properties (isRawProperty) when the folder implements
+/// IArchiveGetRawProps -- the order CPanel::InitColumns builds them in.
 @property (nonatomic, readonly, copy) NSArray<SZPropertyInfo *> *properties;
+
+#pragma mark Raw properties (IArchiveGetRawProps, 01 §3.2, §3.11)
+
+/// The raw bytes of a raw property (IArchiveGetRawProps::GetRawProp), nil when the item has none
+/// or the property is not a raw one of this folder.
+- (nullable NSData *)rawPropertyOfItemAtIndex:(NSInteger)index propID:(SZPropID)propID NS_SWIFT_NAME(rawPropertyOfItem(at:propID:));
+/// A raw property as text. List form (PanelListNotify.cpp:265-349): reparse data decoded,
+/// more than 64 bytes as "data:<size>", otherwise hex -- upper case for a CRC / checksum of at
+/// most 8 bytes, lower case otherwise. Properties-dialog form (PanelMenu.cpp:212-246): the same
+/// with a 256-byte limit and no reparse decoding. "" when the item has no value.
+/// `displayStringOfItemAtIndex:` already returns the list form for raw columns.
+- (NSString *)rawPropertyStringOfItemAtIndex:(NSInteger)index
+                                      propID:(SZPropID)propID
+                           forPropertiesDialog:(BOOL)forDialog NS_SWIFT_NAME(rawPropertyString(at:propID:forPropertiesDialog:));
+/// The formatter behind rawPropertyStringOfItemAtIndex:, for bytes obtained elsewhere.
++ (NSString *)stringForRawPropertyData:(NSData *)data
+                                propID:(SZPropID)propID
+                   forPropertiesDialog:(BOOL)forDialog NS_SWIFT_NAME(rawPropertyString(data:propID:forPropertiesDialog:));
 
 #pragma mark Folder properties
 
@@ -119,7 +150,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSArray<SZPropertyInfo *> *)propertiesAtLevel:(NSInteger)level NS_SWIFT_NAME(properties(atLevel:));
 - (nullable id)propertyAtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(property(atLevel:propID:));
 - (NSString *)displayStringAtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(displayString(atLevel:propID:));
-/// The "2" variants (GetArcNumProps2 / GetArcProp2): the archive handler's own extra properties.
+/// The "2" variants (GetArcNumProps2 / GetArcProp2): the properties the level below (level - 1)
+/// reports for the item this level was opened from. Only levels 1 ..< levelCount have them;
+/// any other level answers empty / nil (CAgent itself would index Arcs[-1]).
 - (NSArray<SZPropertyInfo *> *)properties2AtLevel:(NSInteger)level NS_SWIFT_NAME(properties2(atLevel:));
 - (nullable id)property2AtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(property2(atLevel:propID:));
 @end

@@ -326,3 +326,31 @@ Supersedes parts of §3 and §7.9; the text above still describes what `mac/pane
   (`contains` on a whole segment still works).
 * `copyItemsOut` passes the outermost archive (`snapshot.archivePath`) as the zone source of a copy
   out of an archive (`Get_ZoneId_Stream_from_ParentFolders`).
+
+## Note — 2026-10-03 (`mac/archgaps`)
+
+* **Raw properties (`IArchiveGetRawProps`).** `SZFolder.properties` now ends with the folder's raw
+  properties (`SZPropertyInfo.isRawProperty`, `varType == .empty`), in the order
+  `CPanel::InitColumns` appends them; `kpidNtSecure` is never listed (01 §9 #7). For a raw column
+  `displayStringOfItem(at:propID:timestampLevel:)` already returns the list-cell text and
+  `compareItem(at:with:propID:)` the raw order (`CompareItems2`), so the panel needed no change.
+  `rawPropertyOfItem(at:propID:)` gives the bytes, `rawPropertyString(at:propID:forPropertiesDialog:)`
+  the Properties-dialog text (256-byte limit), `SZFolder.rawPropertyString(data:propID:forPropertiesDialog:)`
+  the formatter alone. `PanelProperties.build` uses the dialog form for raw lines.
+* **`SZArcProps.properties2(atLevel:)` / `property2(atLevel:propID:)`** answer empty / nil outside
+  `1 ..< levelCount` (CAgent reads `Arcs[level - 1]`; level 0 crashed the Properties dialog).
+  `PanelProperties.build` walks the levels innermost first like `PanelMenu.cpp` and adds the
+  failed-to-open level after a double separator.
+* **Nested-archive write-back** (`PanelNestedArchives.swift`): `leaveNestedArchives(from:to:)` runs on
+  the panel queue wherever the panel leaves archive levels -- `navigate(to:)` (before the new chain
+  is opened), `goUp()`, `openDrivesFolder()` -- and `closeNestedArchivesForShutdown()` on the main
+  thread from `windowWillClose` and `willTerminate`. Any new code that replaces `panel.folder` with a
+  folder outside the current chain must call `leaveNestedArchives(from: folder, to: new)` first, on
+  the queue. `resetForTest` deliberately does not (it drops the chain without a question).
+  Bridge half: `SZArchive.tempFilePath`, `.tempFileWasChanged`, `.refreshTempFileAttributes()`,
+  `.keepTempDirectory()` / `.keepsTempDirectory`, `.writeBackIntoOuterFolder(progress:)`.
+* `TempOpenManager.finishSessions(inside:)` (extract-owned `TempOpen.swift`) offers a pending edit of
+  an item inside a nested archive before that archive is written back, and stops its watcher.
+* `SZTempOpen.updateItem(at:of:fromFilePath:progress:)` now hands `CopyFromFile` the update callback
+  adapter (`CSZUpdateCallbackAdapter`) instead of a bare `IProgress`: Cancel, progress and the
+  re-open password reach it.

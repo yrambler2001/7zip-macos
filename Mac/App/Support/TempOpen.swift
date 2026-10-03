@@ -161,7 +161,7 @@ enum SuspiciousName {
     /// True when the name hides its real extension behind many spaces, a right-to-left override,
     /// or trailing dots/spaces. The caller then asks IDS_VIRUS 3012 before launching.
     static func looksDangerous(_ name: String) -> Bool {
-        if name.contains("\u{202E}") || name.contains("\u{202B}") || name.contains("\u{202A}") { return true }
+        if name.contains("\u{202E}") || name.contains("\u{202D}") || name.contains("\u{202B}") || name.contains("\u{202A}") { return true }
         if name.contains("     ") { return true }               // 5+ consecutive spaces
         var trimmed = name
         while let last = trimmed.last, last == "." || last == " " { trimmed.removeLast() }
@@ -328,6 +328,9 @@ final class TempOpenSession: NSObject {
         TempOpenManager.shared.forget(self)
     }
 
+    /// True when the edited item lives in `archive` (any folder of it).
+    func belongs(to archive: SZArchive) -> Bool { folder.archive === archive }
+
     /// Called at quit: 7zFM waits for every watcher before the window closes (01 §1.1).
     func finishAtShutdown() {
         if !finished, tempFile.wasModified, !archiveIsReadOnly {
@@ -373,6 +376,14 @@ final class TempOpenManager {
     }
 
     var openCount: Int { sessions.count }
+
+    /// The panel is leaving `archive` (a nested archive about to be written back into its parent,
+    /// `PanelNestedArchives.swift`): a pending edit of an item inside it is offered first, so the
+    /// write-back carries it, and its watcher stops -- 7zFM deletes the nested copy at that point
+    /// (CFolderLink::DeleteDirAndFile), so a later save could not reach the parent anyway.
+    func finishSessions(inside archive: SZArchive) {
+        for session in sessions where session.belongs(to: archive) { session.finishAtShutdown() }
+    }
 
     /// Called from applicationWillTerminate: ask about every modified temp file, then clean up.
     func finishAll() {

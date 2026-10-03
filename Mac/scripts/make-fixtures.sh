@@ -9,6 +9,8 @@
 #   secret.7z          7z with encrypted headers (-mhe=on), password "secret"
 #   secret.zip         zip with ZipCrypto-encrypted entries, password "secret"
 #   nested.zip         zip containing test.7z and test.tar.gz (archive inside archive)
+#   test.wim           WIM image: per-file SHA-1 as an IArchiveGetRawProps column (archgaps)
+#   test.xar           xar (/usr/bin/xar): per-file checksum as a raw property (archgaps)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SEVENZZ="${SEVENZZ:-$ROOT/CPP/7zip/Bundles/Alone2/b/m_arm64/7zz}"
@@ -39,6 +41,9 @@ $Z a -bd -bso0 -tgzip "$OUT/test.tar.gz" "$WORK/test.tar"
 $Z a -bd -bso0 -txz   "$OUT/test.tar.xz" "$WORK/test.tar"
 $Z a -bd -bso0 -t7z  -psecret -mhe=on "$OUT/secret.7z"  readme.txt notes.md sub
 $Z a -bd -bso0 -tzip -psecret         "$OUT/secret.zip" readme.txt notes.md sub
+rm -f "$OUT/test.wim" "$OUT/test.xar"
+$Z a -bd -bso0 -twim "$OUT/test.wim" readme.txt notes.md sub
+/usr/bin/xar -cf "$OUT/test.xar" readme.txt notes.md sub
 cd "$OUT"
 $Z a -bd -bso0 -tzip -mx=0 "$OUT/nested.zip" test.7z test.tar.gz
 ls -la "$OUT"

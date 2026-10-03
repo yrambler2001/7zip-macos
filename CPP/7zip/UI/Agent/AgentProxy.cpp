@@ -972,6 +972,12 @@ HRESULT CProxyArc2::Load(const CArc &arc, IProgress *progress)
     {
       const wchar_t *s;
       unsigned len;
+#ifdef __APPLE__
+      // The BSTR that `s` points at must outlive AllocStringAndCopy below; declared inside the
+      // else block it is freed first, and macOS zeroes freed blocks, so every tree-handler name
+      // (WIM, XAR, HFS, APFS, NTFS, Ext, FAT) came out as NULs (Mac/docs/upstream-patches.md).
+      NCOM::CPropVariant prop;
+#endif
       if (p && propType == NPropDataType::kUtf8z)
       {
         tempAString = (const char *)p;
@@ -981,7 +987,9 @@ HRESULT CProxyArc2::Load(const CArc &arc, IProgress *progress)
       }
       else
       {
+#ifndef __APPLE__
         NCOM::CPropVariant prop;
+#endif
         RINOK(arc.Archive->GetProperty(i, kpidName, &prop))
         if (prop.vt == VT_BSTR)
           s = prop.bstrVal;

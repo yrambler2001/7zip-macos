@@ -5,6 +5,7 @@
 
 #import <Foundation/Foundation.h>
 #import <SevenZipKit/SZFolder.h>
+#import <SevenZipKit/SZProgressDelegate.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -34,6 +35,32 @@ NS_ASSUME_NONNULL_BEGIN
 /// not seekable; removed when the archive is closed / deallocated. nil otherwise.
 @property (nonatomic, readonly, copy, nullable) NSString *tempDirectory;
 @property (nonatomic, readonly, nullable) SZArcProps *arcProps;
+
+#pragma mark Nested archive opened from a temp copy (CFolderLink, 01 §3.8)
+
+/// The extracted copy inside `tempDirectory` this archive was opened from (CFolderLink::FilePath),
+/// nil for an archive opened by path or straight from an item stream.
+@property (nonatomic, readonly, copy, nullable) NSString *tempFilePath;
+/// CFolderLink::WasChanged_from_FolderLink: the temp copy's size or modification time differs
+/// from what was recorded when it was opened (or last written back), i.e. an update inside the
+/// nested archive rewrote it and the parent archive still holds the old bytes. Always NO without
+/// a temp copy, and NO once the copy has vanished.
+@property (nonatomic, readonly) BOOL tempFileWasChanged;
+/// Re-records size and modification time after the copy was written back into the parent.
+- (void)refreshTempFileAttributes;
+/// Leaves `tempDirectory` on disk when the archive is closed or deallocated: after a failed or
+/// cancelled write-back the modified copy is the only one (OpenParentArchiveFolder returns
+/// before DeleteDirAndFile in that case).
+- (void)keepTempDirectory;
+@property (nonatomic, readonly) BOOL keepsTempDirectory;
+/// OpenParentArchiveFolder's update half (PanelItemOpen.cpp:598-624 -> OnOpenItemChanged):
+/// IFolderOperations::CopyFromFile of `tempFilePath` into `outerFolder`, replacing the item this
+/// archive was opened from, then re-records the copy's attributes and reloads `outerFolder`.
+/// The parent is rewritten through a temp file and moved over the original, so a failure or a
+/// cancel leaves it untouched. Fails without a temp copy, or when the parent is read-only.
+/// BLOCKS; call on the queue that owns `outerFolder` (or while that queue is parked).
+- (BOOL)writeBackIntoOuterFolderWithProgress:(nullable id<SZProgressDelegate>)progress
+                                       error:(NSError **)error NS_SWIFT_NAME(writeBackIntoOuterFolder(progress:));
 
 /// IInFolderArchive::BindToRootFolder, items loaded.
 - (nullable SZFolder *)rootFolder:(NSError **)error NS_SWIFT_NAME(rootFolder());
