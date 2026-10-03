@@ -42,9 +42,11 @@ final class AboutDialog: NSObject {
 
         // IDB_ABOUT_HOMEPAGE 110 "www.7-zip.org"
         let homePage = DialogKit.button("www.7-zip.org", target: self, action: #selector(homePageClicked))
-        let help = DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(helpClicked))
         let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r")
-        let buttons = NSStackView(views: [help, NSView(), homePage, ok])
+        // IDD_ABOUT has only OK and www.7-zip.org (AboutDialog.rc); its help topic is F1-only
+        // (CAboutDialog::OnHelp), which Help > Contents covers here. 7zFM 25.01 shows two buttons
+        // (Mac/docs/reports/wincompare.md), so the port's extra Help button is gone.
+        let buttons = NSStackView(views: [NSView(), homePage, ok])
         buttons.orientation = .horizontal
         buttons.spacing = 10
 
@@ -71,7 +73,6 @@ final class AboutDialog: NSObject {
         if let url = URL(string: Self.homePageURL) { NSWorkspace.shared.open(url) }
     }
 
-    @objc private func helpClicked() { Help.show(topic: Help.start) }
     @objc private func okClicked() { NSApp.stopModal() }
 
     /// OnInit (:32-53): the codecs error message, when there is one, is shown first.

@@ -348,7 +348,10 @@ final class TimeMenuDelegate: NSObject, NSMenuDelegate {
     static func format(_ date: Date, level: Int, utc: Bool) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = utc ? TimeZone(secondsFromGMT: 0) : TimeZone.current
+        // Local time the way the engine converts it (MyWindows.cpp FileTimeToLocalFileTime, and
+        // Windows' own): with the offset in force *now*, not the one of the date's season, so a
+        // dialog shows the same "11:30" for a January file that the list shows in October.
+        f.timeZone = utc ? TimeZone(secondsFromGMT: 0) : TimeZone(secondsFromGMT: TimeZone.current.secondsFromGMT())
         switch level {
         case -3: f.dateFormat = "yyyy-MM-dd"
         case -1: f.dateFormat = "yyyy-MM-dd HH:mm"

@@ -100,7 +100,9 @@ enum ExtractCommands {
         // The statistics block is shown as an info box after the progress window closes, and
         // only when there were no errors (01 §8.3 step 4).
         if case .success(let extractResult) = result, let summary = extractResult.testSummary {
-            showInfo(summary, parent: window)
+            // ExtractGUI.cpp:156: FinalMessage.OkMessage.Title = Title -- 7zG titles the box
+            // "Testing" (7zG 25.01 shows exactly that, wincompare.md).
+            showInfo(summary, title: Lang.text(3302, "Testing"), parent: window)
         }
         ActiveContext.refresh()
     }
@@ -375,10 +377,12 @@ enum ExtractCommands {
         if let parent { alert.beginSheetModal(for: parent, completionHandler: nil) } else { alert.runModal() }
     }
 
-    private static func showInfo(_ text: String, parent: NSWindow?) {
+    /// MessageBoxW(OkMessage.Message, OkMessage.Title): an empty title is "7-Zip"
+    /// (ProgressDialog2.cpp:1029-1034), which is what the in-archive test (Panel.cpp:1083) gets.
+    private static func showInfo(_ text: String, title: String = "7-Zip", parent: NSWindow?) {
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "7-Zip"
+        alert.messageText = title
         alert.informativeText = text
         alert.addButton(withTitle: Lang.text(401, "OK"))
         alert.runModal()

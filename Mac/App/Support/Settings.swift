@@ -457,13 +457,15 @@ enum Settings {
 
     static var extractSplitDestValue: Bool { extractSplitDest ?? true }
 
-    /// `Extraction.ElimDup` (bool pair; the Extract dialog treats absent as true).
+    /// `Extraction.ElimDup` (bool pair, Key_Get_BoolPair: absent = false). With no caller opinion
+    /// either, GetBoolsVal returns the caller's Val, which is false too, so the Extract dialog
+    /// opened from the toolbar starts unchecked -- as 7zG 25.01 does (wincompare.md).
     static var extractElimDup: Bool? {
         get { boolPair(Key.extractElimDup) }
         set { setBoolPair(newValue, Key.extractElimDup) }
     }
 
-    static var extractElimDupValue: Bool { extractElimDup ?? true }
+    static var extractElimDupValue: Bool { extractElimDup ?? false }
 
     /// `Extraction.Security` (bool pair). Kept for compatibility only: NT security is hidden on
     /// macOS (01 section 9 #7).

@@ -98,7 +98,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(Settings.extractOverwriteModeValue, Int(SZOverwriteMode.ask.rawValue))
         XCTAssertNil(Settings.extractSplitDest)
         XCTAssertTrue(Settings.extractSplitDestValue)                 // Key_Get_BoolPair_true
-        XCTAssertTrue(Settings.extractElimDupValue)
+        XCTAssertFalse(Settings.extractElimDupValue)                  // Key_Get_BoolPair (wincompare)
         XCTAssertFalse(Settings.extractShowPasswordValue)
         XCTAssertEqual(Settings.extractMemLimitGB, -1)                // no limit
         XCTAssertFalse(Settings.extractMemLimitEnabled)
