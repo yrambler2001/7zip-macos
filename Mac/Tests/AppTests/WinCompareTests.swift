@@ -299,4 +299,37 @@ final class WinCompareTests: AppHostTestCase {
         }
         XCTAssertTrue(appeared)
     }
+
+    /// Properties: sizes grouped (IsSizeProp -> ConvertSizeToString), times at ns precision.
+    func testPropertiesFormatting() {
+        XCTAssertEqual(PanelProperties.sizeGrouped(.phySize, "101156"), "101 156")
+        XCTAssertEqual(PanelProperties.sizeGrouped(.size, "1234"), "1 234")
+        XCTAssertEqual(PanelProperties.sizeGrouped(.method, "1234"), "1234", "not a size property")
+        XCTAssertEqual(PanelProperties.sizeGrouped(.size, "?"), "?")
+
+        let scratch = makeScratch()
+        let controller = makeWindow()
+        let panel = controller.focusedPanel
+        navigate(panel, to: scratch + "/test.7z")
+        guard let index = panel.rows.first(where: { $0.name == "readme.txt" })?.engineIndex,
+              let snapshot = panel.snapshot else { return XCTFail("no archive folder") }
+        var lines = PanelPropertyLines()
+        panel.queue.sync {                       // the folder belongs to the panel queue
+            guard let folder = panel.folder else { return }
+            lines = PanelProperties.build(folder: folder, itemIndices: [index], snapshot: snapshot, level: .min)
+        }
+        let modified = zip(lines.names, lines.values).first { $0.0 == "Modified" }?.1 ?? ""
+        XCTAssertTrue(modified.hasSuffix(":00.0000000"), "7z keeps 100 ns: \(modified)")
+        let phy = zip(lines.names, lines.values).first { $0.0 == "Physical Size" }?.1 ?? ""
+        XCTAssertTrue(phy.isEmpty || phy.contains(" ") || phy.count <= 3, "grouped: \(phy)")
+    }
+
+    /// CSplitDialog::OnInit appends the file name to the caption.
+    func testSplitDialogCaptionNamesTheFile() {
+        let appeared = ModalProbe.present({ _ = SplitDialog.run(filePath: "b.bin", path: "/tmp/", parent: nil) }) { window in
+            XCTAssertEqual(window.title, "Split File b.bin")
+            XCTAssertFalse(self.texts(window).contains("b.bin"), "no separate file-name label")
+        }
+        XCTAssertTrue(appeared)
+    }
 }

@@ -36,12 +36,17 @@ commands through the responder chain over the same folder, and writes the same d
 `Mac/build/wincompare/out`. Menus are dumped with real validation. Dialogs come up through the
 real command, not a direct `run`. The Compress walk pretends to be the PC: 8 threads and
 21 240 692 736 bytes of RAM, through `CompressModel.hardwareOverride`. The test runs only when
-`Mac/build/wincompare/cmp` exists, so normal runs skip it. To rebuild that folder, run the
-commands in `wincompare-data/README` order: §1 above, then `cp -Rp`.
+`Mac/build/wincompare/cmp` exists, so normal runs skip it. To rebuild that folder, run
+`wincompare-data/harness/make-cmp.sh <dir>` and copy `<dir>/cmp` there.
 
-**Count.** 412 items were compared: 214 menu items over 9 menu states, 31 context-menu entries
-over 5 targets, 17 list states, 52 dialog captures, 23 behaviour and error-text cases, and the
-Compress matrix of 7 formats × all levels and methods (75 states, 9 lists each).
+**Count.** 1 311 captured items were compared:
+
+- 897 menu rows over 8 menu states;
+- 268 context-menu rows over 6 targets;
+- 64 dialog captures;
+- 25 main-window states, which cover columns, rows, sorting, view modes and two panels;
+- 57 Compress states (7 formats × every level and method), with 9 lists and 2 figures each;
+- plus the behaviour and error-text cases of §7.
 
 **Verdicts.** **same**; **deliberate**, a macOS convention under a locked decision
 (`00-orchestration.md`, `parity.md` §C); **version**, where 25.01 differs from the 26.03 source and
@@ -57,7 +62,8 @@ Paired screenshots are `screenshots/wincompare-<area>-win.png` / `-mac.png`.
 | window title | the folder path | the folder path | same |
 | toolbar | Add, Extract, Test, Copy, Move, Delete, Info; text under the icons | the same seven, same order, text on | same |
 | address bar | Up button, icon, editable combo with the path | Up button, icon, editable combo | same |
-| FS columns | Name 160 L, Size 100 R, Modified 100 L, Created 100 L, Comment 100 L, Folders 100 R, Files 100 R | identical names, widths, alignment and order | same |
+| FS columns | Name 160 L, Size 100 R, Modified 100 L, Created 100 L, Comment 100 L, Folders 100 R, Files 100 R | identical names, alignment and order and the same widths | same |
+| date columns at their default width | `2024-01-15 11:30` fits in 100 px of 9 pt Segoe UI | cut to `2024-01-15 1...`: the list font needs 107 pt (screenshot `main-folder`) | **BUG → fixed**: time columns start at 120 pt |
 | 7z columns | 11: … Attributes R, CRC R, **Encrypted R**, Method L, Block R, Folders, Files | the same 11, Encrypted **centred** | **BUG → fixed** (VT_BOOL is LVCFMT_RIGHT) |
 | zip / tar / split columns | 18 / 19 / 11 columns | the same, in the same order | same |
 | size format | `1 234`, `101 156` | the same | same |
@@ -119,11 +125,11 @@ Dumps `win/dlg-<name>.txt` against `out/dlg-<name>.txt`.
 | Create Folder on an existing name | "Error Creating Folder", "Cannot create a file when that file already exists." | the same caption, `errno=17 : File exists` | deliberate (OS error text) |
 | Rename | in-place edit in the list | in-place edit | same |
 | Properties of an FS item | Explorer's property sheet | the port's own list (Name, Size, times, Mode, User, Group, iNode …) | deliberate (`parity.md` §C, shell sheet) |
-| Properties inside arc.7z | item block, then the archive block (Path, Type, Physical Size, Headers Size, Method, Solid, Blocks) | the same rows; sizes without grouping, a "Type 7-Zip.7z" folder line | same in content; filed (grouping) |
+| Properties inside arc.7z | item block, then the archive block (Path, Type, Physical Size, Headers Size, Method, Solid, Blocks); sizes `1 234`, `101 156`, Modified `2024-01-15 11:30:00.0000000` | the same rows; sizes `1234`, Modified at the list's minute level | **BUG → fixed** (AddPropertyString: IsSizeProp → ConvertSizeToString, other values at ns precision) |
 | Comment | `a.txt : Comment`, one-line combo, "&Comment:" | a multi-line "Comment" window | **BUG → fixed** (CComboDialog, IDS_COMMENT 6400 / IDS_COMMENT2 6401) |
 | Checksum information | rows Name / Size / CRC32 …; Size as `1234 bytes : 1 KiB` | `1 234 bytes` | **BUG → fixed** (HashGUI links OverwriteDialog.cpp's AddSizeValue) |
 | hash of two files / a folder | "SHA256 checksum for data", "… and names", digests with `-0000000N` | identical digests and labels | same |
-| Split | "Split File b.bin", 9 volume presets | "Split File", the same presets | same (title file name: filed) |
+| Split | "Split File b.bin", 9 volume presets | "Split File" plus a file-name label, the same presets | **BUG → fixed** (CSplitDialog::OnInit appends the name to the caption) |
 | Combine | "Combine Files vol.7z.001", `Files: 3    ( 100 114 bytes )` | the same | same |
 | Link | Hard, File Symbolic, Directory Symbolic, Directory Junction, WSL | the first three and a note | deliberate (`parity.md` §C) |
 | Select / Deselect | combo "Mask:" `*` | the same | same |
@@ -142,7 +148,7 @@ Dumps `win/dlg-<name>.txt` against `out/dlg-<name>.txt`.
 | Confirm delete in an archive | Yes / No / Cancel | Yes / No | **BUG → fixed** (MB_YESNOCANCEL) |
 | Delete on disk | no question, to the Recycle Bin (shell setting) | no question, to the Trash | same |
 | Test result | MessageBox **"Testing"**: Archives, Packed Size `101156 bytes : 98 KiB`, Folders, Files, Size, "There are no errors" | the same text under "7-Zip" | **BUG → fixed** (OkMessage.Title = Title) |
-| Test of broken.7z | progress window, messages: path, "Cannot open the file as [7z] archive", "Unexpected end of data" | the same three messages | same |
+| Test of broken.7z | progress window, "Files:" label, messages: path, "Cannot open the file as [7z] archive", "Unexpected end of data" | the same three messages; "Files" without the colon; an extra "Errors: 3" status line | messages same; colon **BUG → fixed** (LangSetDlgItems_Colon); status line filed |
 | Benchmark | dictionary, threads, Compressing / Decompressing / Total | the same layout | same (figures are machine-dependent) |
 
 ## 6. Compress dialog lists (01b §4.2, IDD_COMPRESS)
@@ -152,7 +158,7 @@ wim, xz and zip, the default state, every level and every method at Normal. Each
 method, dictionary, word, solid, threads, memory-use lists, the memory figures and encryption.
 
 - **Every list item, every default (`*` entry) and every memory figure is identical.** That covers
-  all 75 states, including `2464 MB / 16206 MB / 20 GB / 34 MB` at 7z Normal and `11581 MB` at
+  all 57 states, including `2464 MB / 16206 MB / 20 GB / 34 MB` at 7z Normal and `11581 MB` at
   Ultra. The Mac ran with the PC's hardware.
 - **BUG → fixed:** a one-method format (bzip2, gzip, xz) left its method combo enabled. Both
   25.01 and 26.03 gray it (EnableMultiCombo, CompressDialog.h:228).
@@ -192,8 +198,12 @@ method, dictionary, word, solid, threads, memory-use lists, the memory figures a
 | File menu: dynamic 7-Zip submenu at the top (FileMenuDelegate), shared builder `addFileCommands` | `Mac/App/MainMenu.swift` (shared) | orchestrator / shared |
 | View › Time shows local time; current offset for formatted dates | `Mac/App/MainMenu.swift` | shared |
 | Encrypted and other VT_BOOL columns right-aligned | `Mac/App/Panel/PanelFormat.swift` | panel |
+| Time columns 120 pt by default so a date is not cut | `Mac/App/Panel/PanelLogic.swift` | panel |
 | Copy/Move info text = GetItemsInfoString | `Mac/App/Panel/PanelFormat.swift`, `Mac/App/Commands/PanelCommands.swift` | panel |
 | Item comment through the combo dialog | `Mac/App/Panel/PanelOperations.swift` | panel |
+| Properties: grouped sizes, ns-precision times | `Mac/App/Dialogs/PropertiesDialog.swift` | panel |
+| Split caption with the file name, no extra label | `Mac/App/Dialogs/SplitDialog.swift` | tools |
+| "Files:" / "Packed Size:" with their colons | `Mac/App/Dialogs/ProgressDialog.swift` | opsinfra |
 | Yes / No / Cancel when deleting inside an archive | `Mac/App/Panel/PanelOperations.swift` | panel |
 | `Formatting.sizeValue` (AddSizeValue) | `Mac/App/Support/Formatting+WinCompare.swift` (new) | shared, extension file |
 | Overwrite file block | `Mac/App/Dialogs/OverwriteDialog.swift` | opsinfra |
@@ -204,18 +214,17 @@ method, dictionary, word, solid, threads, memory-use lists, the memory figures a
 | Test result titled "Testing" | `Mac/App/Commands/ExtractCommands.swift` | extract |
 | Method combo grayed for one method; `CompressModel.hardwareOverride` test hook | `Mac/App/Dialogs/CompressDialog.swift`, `CompressModel.swift` | compress |
 
-Tests: `Mac/Tests/AppTests/WinCompareTests.swift`, 13 cases covering the fixes. Also changed:
+Tests: `Mac/Tests/AppTests/WinCompareTests.swift`, 15 cases covering the fixes. Also changed:
 `SettingsTests` (ElimDup default), `HasherTests` (size text), `PanelGapsTests` and
 `GapsInputTests` (the cascaded menu).
 
 ## 10. Filed (requests.md)
 
 - `wincompare → extract`: the Extract dialog's archive summary has no IDD_EXTRACT counterpart.
-- `wincompare → panel`: Properties inside an archive shows sizes ungrouped (`1234` against
-  `1 234`), and the Split dialog's title lacks the file name ("Split File b.bin").
+- `wincompare → opsinfra`: the progress window's extra "Errors: N" status line.
 - `wincompare → orchestrator`: English from `en.ttt` against the .rc strings (§8).
-- `wincompare → opsinfra`: the progress window's "Files" label has no colon, and it shows an
-  "Errors: N" status line where 7zFM leaves it empty.
+- `wincompare → tools`: the About topic lost its only entry point with the Help button (F1 on
+  Windows).
 
 ## 11. Verification
 

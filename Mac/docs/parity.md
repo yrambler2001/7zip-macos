@@ -585,3 +585,30 @@ their icon by type); Diff is hidden in the panel's context menu without a Diff t
 shows 7-Zip's own wordmark; one English fallback for IDS_SET_FOLDER; lookup of a format by
 signature in the bridge; and every symbolic resource id of the inventories is cited in the code.
 
+
+## M. Checked against the real 7zFM — 2026-10-03, `mac/wincompare`
+
+The first comparison with the real program rather than its source. 7-Zip **25.01** ran on a
+Windows 11 PC, and the port ran here, over byte-identical fixtures. Menus, the context menu, the
+list, 64 dialog captures and the whole Compress matrix were dumped as text on both sides and
+diffed. `reports/wincompare.md` has the item-by-item tables and the paired screenshots.
+
+- **Same:** the Compress lists and memory figures for every format, level and method, with the
+  PC's hardware simulated. Also every list column, cell, size and date, the hash digests, and the
+  open-error and wrong-password texts.
+- **Fixed on the branch (20 items):**
+  - the File menu and the context menu get the cascaded "7-Zip" submenu, built per opening;
+  - the context menu's File part is now the File menu itself;
+  - View › Time shows local time;
+  - Encrypted is right-aligned, and a date fits its column;
+  - the Copy/Move info text, the item Comment dialog, the Properties formatting, and the hash and
+    Overwrite size texts;
+  - the Delete Temporary Files columns;
+  - About without Help, the Split caption, Extract's Eliminate-duplication default, and the
+    "Testing" result title;
+  - the one-method combo grayed, Yes/No/Cancel for an archive delete, and the progress colons.
+- **Version differences (the port follows 26.03):**
+  - ties in Date and Size sorting;
+  - `Add to "arc_2.7z"`;
+  - the grayed single-level combo.
+- **Filed:** four rows in `requests.md`.
