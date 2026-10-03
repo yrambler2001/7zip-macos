@@ -263,6 +263,9 @@ extension PanelViewController {
         // (requests.md, `opsgaps` -> `panel`; 01 section 9 #23).
         let zoneSource: String? = snap.isArchive && !snap.archivePath.isEmpty ? snap.archivePath : nil
         let result = runFolderOperation(options) { folder, runner -> Bool in
+            // CopyTo(..., usePassword, password) then fl.UsePassword / fl.Password = the answer
+            // (PanelItemOpen.cpp:1650-1658): a password asked for here stays with this level.
+            defer { Self.rememberPassword(of: runner, in: folder) }
             if move {
                 try folder.moveItems(at: engineIndices, toPath: destination, progress: runner)
             } else if let zoneSource {
@@ -297,6 +300,9 @@ extension PanelViewController {
         options.titleFileName = snap.archivePath
         options.password = rememberedPassword
         let result = runFolderOperation(options) { folder, runner -> Bool in
+            // UpdateCallbackSpec->Password = fl.Password (PanelCopy.cpp:405-411); the re-open after
+            // the update may ask, and the answer belongs to this level.
+            defer { Self.rememberPassword(of: runner, in: folder) }
             for (source, names) in groups {
                 try folder.copyItems(named: names, fromFolderPath: source, moveMode: move, progress: runner)
             }
@@ -321,6 +327,14 @@ extension PanelViewController {
         guard case .success = result else { return false }
         refreshAfterOperation(selectNames: paths.map { ($0 as NSString).lastPathComponent })
         return true
+    }
+
+    /// fl.UsePassword / fl.Password = what the operation used (PanelItemOpen.cpp:1653-1658).
+    /// Called on the operation's worker while the panel queue is parked.
+    static func rememberPassword(of runner: OperationRunner, in folder: SZFolder) {
+        guard runner.passwordWasAsked, let password = runner.password,
+              let level = folder.archive else { return }
+        level.password = password
     }
 
     // MARK: - Refresh after an operation

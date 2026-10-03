@@ -230,7 +230,8 @@ typedef NS_ENUM(NSInteger, SZZoneIDMode) {
 @property (class, nonatomic, readonly) NSString *openDirectoryPrefix;
 @property (class, nonatomic, readonly) NSString *extractDirectoryPrefix;
 
-/// A fresh `<temp>/<prefix>-XXXXXX` directory (mkdtemp). nil with `error` set on failure.
+/// A fresh `<temp>/<prefix><8 hex>` directory, mode 0700 (CTempDir::Create, "7zO1A2B3C4D"). nil
+/// with `error` set on failure.
 + (nullable NSString *)createTemporaryDirectoryWithPrefix:(NSString *)prefix
                                                     error:(NSError **)error
     NS_SWIFT_NAME(createTemporaryDirectory(prefix:));

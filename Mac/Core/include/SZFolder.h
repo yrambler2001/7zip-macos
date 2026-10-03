@@ -13,6 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 @class SZArchive;
 @class SZArcProps;
 @protocol SZPasswordDelegate;
+@protocol SZProgressDelegate;
 
 /// A column declared by the folder (IFolderFolder::GetPropertyInfo).
 @interface SZPropertyInfo : NSObject
@@ -48,6 +49,17 @@ NS_ASSUME_NONNULL_BEGIN
                           formatHint:(nullable NSString *)formatHint
                     passwordDelegate:(nullable id<SZPasswordDelegate>)passwordDelegate
                                error:(NSError **)error NS_SWIFT_NAME(folder(forPath:formatHint:passwordDelegate:));
+/// The same with a progress delegate for every archive opened on the way
+/// (SZArchiveOpener's `progress:` variants: the 7zFM "Opening" progress, IDS_OPENNING 3303).
++ (nullable SZFolder *)folderForPath:(NSString *)path
+                          formatHint:(nullable NSString *)formatHint
+                    passwordDelegate:(nullable id<SZPasswordDelegate>)passwordDelegate
+                            progress:(nullable id<SZProgressDelegate>)progress
+                               error:(NSError **)error NS_SWIFT_NAME(folder(forPath:formatHint:passwordDelegate:progress:));
+/// YES when the volume that holds `path` (or its nearest existing ancestor) compares names
+/// case-sensitively (pathconf _PC_CASE_SENSITIVE; URLResourceKey.volumeSupportsCaseSensitiveNames).
+/// 01 §9 #24: Windows compares every path without case; on macOS it depends on the volume.
++ (BOOL)volumeIsCaseSensitiveAtPath:(NSString *)path NS_SWIFT_NAME(volumeIsCaseSensitive(atPath:));
 
 #pragma mark Items
 
@@ -121,6 +133,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable SZFolder *)bindToPath:(NSString *)relativePath
                  passwordDelegate:(nullable id<SZPasswordDelegate>)passwordDelegate
                             error:(NSError **)error NS_SWIFT_NAME(bindToPath(_:passwordDelegate:));
+- (nullable SZFolder *)bindToPath:(NSString *)relativePath
+                 passwordDelegate:(nullable id<SZPasswordDelegate>)passwordDelegate
+                         progress:(nullable id<SZProgressDelegate>)progress
+                            error:(NSError **)error NS_SWIFT_NAME(bindToPath(_:passwordDelegate:progress:));
 /// The parent: BindToParentFolder, or for an archive root the folder the archive was opened
 /// from. At the virtual root returns a fresh root folder (check isRootFolder before going up).
 - (nullable SZFolder *)bindToParentFolder:(NSError **)error NS_SWIFT_NAME(bindToParentFolder());

@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let args = Array(CommandLine.arguments.dropFirst())
         if let first = args.first, !first.hasPrefix("-") {
             let hint = args.dropFirst().first { $0.hasPrefix("-t") }.map { String($0.dropFirst(2)) }
-            controller.openStartupPath(first, formatHint: hint)
+            controller.openStartupPath(first, formatHint: hint, closesWindowOnFailure: true)
         }
         NSApp.activate(ignoringOtherApps: true)
 

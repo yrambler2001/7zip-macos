@@ -157,10 +157,38 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         startRefreshTimer()
     }
 
-    /// Command-line path (FM.cpp:975-1012): panel 0 opens it; a file is opened as an archive.
-    func openStartupPath(_ path: String, formatHint: String?) {
-        let full = (path as NSString).isAbsolutePath ? path : FileManager.default.currentDirectoryPath + "/" + path
-        panels[0].navigate(to: full, formatHint: formatHint)
+    /// Command-line path (FM.cpp:975-1014): panel 0 opens it. An existing **file** is opened as an
+    /// archive (needOpenArc); if that fails, 7zFM shows "Error" -- IDS_CANT_OPEN_ARCHIVE 3005 or
+    /// IDS_CANT_OPEN_ENCRYPTED_ARCHIVE 3006 with the path, then the non-open level's text -- and
+    /// WM_CREATE returns -1, so the window never appears and the process ends. Here the window is
+    /// closed when it was created for this path (`closesWindowOnFailure`; for the only window that
+    /// ends the app, as on Windows); a window that was already showing something keeps it. A
+    /// cancelled open (E_ABORT) closes the same way without a box. A path that does not exist binds
+    /// its nearest existing folder, as BindToPath's walk up does (PanelFolderChange.cpp:151-190).
+    func openStartupPath(_ path: String, formatHint: String?, closesWindowOnFailure: Bool = false) {
+        var full = (path as NSString).isAbsolutePath ? path : FileManager.default.currentDirectoryPath + "/" + path
+        full = (full as NSString).standardizingPath
+        let manager = FileManager.default
+        var isDirectory: ObjCBool = false
+        if manager.fileExists(atPath: full, isDirectory: &isDirectory), !isDirectory.boolValue {
+            panels[0].openLaunchArchive(full, formatHint: formatHint) { [weak self] failure in
+                guard let self, let failure else { return }
+                if let message = failure.launchMessage(fullPath: full) {
+                    let alert = ErrorAlert.make(message: message, style: .critical)
+                    if closesWindowOnFailure {
+                        _ = ErrorAlert.run(alert, on: nil)        // MessageBoxW(NULL, ...): no owner
+                    } else {
+                        ErrorAlert.present(alert, on: self.window)
+                    }
+                }
+                if closesWindowOnFailure { self.window?.close() }
+            }
+            return
+        }
+        while !full.isEmpty, full != "/", !manager.fileExists(atPath: full) {
+            full = (full as NSString).deletingLastPathComponent
+        }
+        panels[0].navigate(to: full.isEmpty ? "/" : full, formatHint: formatHint)
     }
 
     func saveState() {

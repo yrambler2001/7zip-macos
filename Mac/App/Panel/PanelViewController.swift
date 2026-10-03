@@ -41,9 +41,19 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     // MARK: engine side (panel queue only)
     let queue: DispatchQueue
     /// Only ever assigned and used on `queue` (the engine's COM refcounts are not atomic).
-    var folder: SZFolder?
-    /// Password of the open archive chain, remembered like CFolderLink::Password.
-    var rememberedPassword: String?
+    var folder: SZFolder? {
+        didSet { archiveLevel.set(folder?.archive) }
+    }
+    /// The innermost archive level of `folder`, readable from any thread (PanelArchiveOpen.swift).
+    let archiveLevel = PanelArchiveLevel()
+    /// CFolderLink::Password of the innermost archive level (`_parentFolders.Back()`): every level
+    /// keeps its own (`SZArchive.password`), so leaving a level forgets its password and an
+    /// unrelated archive never inherits one (01 §8.7, 01b §4.16). Setting it outside an archive
+    /// does nothing.
+    var rememberedPassword: String? {
+        get { archiveLevel.current?.password }
+        set { archiveLevel.current?.password = newValue }
+    }
     /// Set while an operation owns the folder on another thread (CDisableTimerProcessing).
     private(set) var isOperating = false
     /// Set once the nested archives of the chain were closed for good (window close / quit), so
