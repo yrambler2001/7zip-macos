@@ -11,15 +11,12 @@
 // the pixel size, so 16px is a legible small icon rather than a shrunken large one.
 //
 // Output tree (all sRGB, 8bpc, premultiplied alpha):
-//     <out-dir>/app/<px>.png            the AppIcon slots
 //     <out-dir>/doc/<name>/<px>.png     one document icon per upstream format icon
 //
+// The app icon is not drawn here: make-icons.py writes <out-dir>/app/<px>.png straight from the
+// frames of CPP/7zip/UI/FileManager/FM.ico (winmatch: the original icon, not a redrawing).
+//
 // Shapes:
-//   * App icon  -- the macOS rounded-square.  macOS uses a continuous ("squircle") corner, which
-//     a superellipse |x/a|^5 + |y/a|^5 = 1 reproduces almost exactly: for Apple's 824pt body in a
-//     1024pt canvas with a 185.4pt corner radius, the rounded rect's 45-degree point is at 357.7
-//     and the superellipse's is at 358.7, a 1pt difference.  So the body is that superellipse,
-//     824/1024 = 0.8046875 of the canvas, centred, leaving Apple's 100/1024 margin on each side.
 //   * Document icon -- the standard page: 704x900 in a 1024 canvas (0.6875 x 0.8789), centred
 //     horizontally, with the top-right corner folded over by 190/1024.
 
@@ -31,11 +28,6 @@ import Foundation
 // MARK: - Manifest
 
 struct Manifest: Decodable {
-    struct App: Decodable {
-        let label: String
-        let gradientTop: String
-        let gradientBottom: String
-    }
     struct Icon: Decodable {
         let index: Int
         let name: String
@@ -45,7 +37,6 @@ struct Manifest: Decodable {
     }
     let pixelSizes: [Int]
     let body: [String: String]
-    let app: App
     let icons: [Icon]
 }
 
@@ -72,32 +63,6 @@ func shade(_ c: CGColor, _ t: CGFloat) -> CGColor {
 }
 
 // MARK: - Paths
-
-/// A superellipse |x/a|^n + |y/b|^n = 1 inscribed in `r`, as a polyline dense enough that
-/// CoreGraphics' anti-aliasing cannot tell it from a curve (1024 segments at any size).
-func superellipsePath(in r: CGRect, exponent n: CGFloat) -> CGPath {
-    let p = CGMutablePath()
-    let a = r.width / 2, b = r.height / 2
-    let cx = r.midX, cy = r.midY
-    let steps = 256
-    for quadrant in 0..<4 {
-        let sx: CGFloat = (quadrant == 0 || quadrant == 3) ? 1 : -1
-        let sy: CGFloat = (quadrant < 2) ? 1 : -1
-        for i in 0...steps {
-            // Sweep the parameter in the quadrant with a cosine ramp so the corner, where the
-            // curvature lives, gets most of the samples.
-            let t = CGFloat(i) / CGFloat(steps)
-            let u = (1 - cos(t * .pi / 2))
-            let x = a * pow(1 - pow(u, n), 1 / n)
-            let y = b * u
-            let pt = CGPoint(x: cx + sx * (quadrant % 2 == 0 ? x : y),
-                             y: cy + sy * (quadrant % 2 == 0 ? y : x))
-            if quadrant == 0 && i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-        }
-    }
-    p.closeSubpath()
-    return p
-}
 
 /// The macOS document page: a rounded rectangle whose top-right corner is cut off by a fold of
 /// side `fold`.  Returns the page outline; `foldPath` returns the little triangle that sits on it.
@@ -200,114 +165,6 @@ func withAppKit(_ ctx: CGContext, _ body: () -> Void) {
     NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
     body()
     NSGraphicsContext.current = saved
-}
-
-// MARK: - The app icon
-
-/// 7-Zip.app's icon: the macOS rounded-square in 7-Zip's two brand blues, carrying the manila
-/// archive sheet and the "7z" mark that CPP/7zip/UI/FileManager/FM.ico draws.
-///
-/// Small sizes get a deliberately different composition: below 64px the sheet's border and the
-/// white plate collapse into noise, so the mark is drawn straight onto the squircle at nearly
-/// twice the relative size.  That is the same "simplify the small sizes" rule Apple's own icons
-/// follow, and it is why this renderer draws every size instead of downsampling one.
-func drawAppIcon(_ px: Int, _ m: Manifest) -> CGContext {
-    let ctx = makeContext(px)
-    let S = CGFloat(px)
-    let top = rgb(m.app.gradientTop)          // zip.ico blue   #0000ff
-    let bottom = rgb(m.app.gradientBottom)    // 7z.ico  navy   #000080
-    let sheet = rgb(m.body["fill"]!)          //                #ffff99
-    let border = rgb(m.body["border"]!)       //                #999900
-
-    // ---- body: Apple's 824/1024 squircle, centred -------------------------------------
-    let inset = S * (1 - 0.8046875) / 2
-    let body = CGRect(x: inset, y: inset, width: S - 2 * inset, height: S - 2 * inset)
-    let shape = superellipsePath(in: body, exponent: 5)
-
-    // A soft contact shadow, as every macOS app icon has.  Skipped below 64px where it would
-    // just muddy the two or three pixels of margin available.
-    if px >= 64 {
-        ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: -S * 0.012), blur: S * 0.028,
-                      color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.30))
-        ctx.addPath(shape)
-        ctx.setFillColor(bottom)
-        ctx.fillPath()
-        ctx.restoreGState()
-    }
-
-    ctx.saveGState()
-    ctx.addPath(shape)
-    ctx.clip()
-    let cs = CGColorSpace(name: CGColorSpace.sRGB)!
-    let grad = CGGradient(colorsSpace: cs,
-                          colors: [shade(top, 0.10), top, bottom] as CFArray,
-                          locations: [0, 0.45, 1])!
-    ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: body.maxY),
-                           end: CGPoint(x: 0, y: body.minY), options: [])
-    // Glass highlight across the top third, the way macOS app icons catch light.
-    let gloss = CGGradient(colorsSpace: cs,
-                           colors: [CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.15),
-                                    CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0)] as CFArray,
-                           locations: [0, 1])!
-    ctx.drawLinearGradient(gloss, start: CGPoint(x: 0, y: body.maxY),
-                           end: CGPoint(x: 0, y: body.midY + body.height * 0.06), options: [])
-    ctx.restoreGState()
-
-    // Hairline rim so the icon keeps an edge against a light Dock background.
-    ctx.addPath(shape)
-    ctx.setStrokeColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.18))
-    ctx.setLineWidth(max(1, S * 0.004))
-    ctx.strokePath()
-
-    withAppKit(ctx) {
-        if px >= 64 {
-            // ---- the manila archive sheet, then "7z" in 7-Zip navy on it -----------------
-            // Proportions chosen so the mark's optical size barely changes across the 32 -> 64
-            // step where the sheet appears.
-            let w = S * 0.520, h = S * 0.600
-            let sheetRect = CGRect(x: (S - w) / 2, y: (S - h) / 2 - S * 0.010, width: w, height: h)
-            let r = S * 0.050
-            let sp = CGPath(roundedRect: sheetRect, cornerWidth: r, cornerHeight: r,
-                            transform: nil)
-            ctx.saveGState()
-            ctx.setShadow(offset: CGSize(width: 0, height: -S * 0.010), blur: S * 0.026,
-                          color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.40))
-            ctx.addPath(sp)
-            ctx.setFillColor(sheet)
-            ctx.fillPath()
-            ctx.restoreGState()
-
-            // A faint warm shading down the sheet, so a 1024px icon is not a flat colour field.
-            ctx.saveGState()
-            ctx.addPath(sp)
-            ctx.clip()
-            let sheetGrad = CGGradient(colorsSpace: cs,
-                                       colors: [shade(sheet, 0.45), sheet,
-                                                rgb(m.body["edge"]!, 0.55)] as CFArray,
-                                       locations: [0, 0.45, 1])!
-            ctx.drawLinearGradient(sheetGrad, start: CGPoint(x: 0, y: sheetRect.maxY),
-                                   end: CGPoint(x: 0, y: sheetRect.minY), options: [])
-            ctx.restoreGState()
-
-            ctx.addPath(sp)
-            ctx.setStrokeColor(border)
-            ctx.setLineWidth(max(1, S * 0.012))
-            ctx.strokePath()
-
-            drawLabel(ctx, m.app.label, in: sheetRect, colour: bottom,
-                      padding: w * 0.13, maxHeightFraction: 0.66)
-        } else {
-            // ---- 16px / 32px: the mark alone, as big as the body allows ------------------
-            // At 16px two glyphs have about 5px of stem each and run together, so the mark drops
-            // to the "7" the whole brand is built on; 32px still carries "7z" cleanly.
-            let box = body.insetBy(dx: body.width * 0.10, dy: body.height * 0.14)
-            drawLabel(ctx, px <= 16 ? String(m.app.label.prefix(1)) : m.app.label,
-                      in: box, colour: sheet,
-                      padding: box.width * 0.02, maxHeightFraction: 0.98)
-        }
-    }
-    return ctx
 }
 
 // MARK: - The document icons
@@ -486,10 +343,6 @@ if let i = args.firstIndex(of: "--contact-sheet"), i + 1 < args.count {
     exit(0)
 }
 
-for px in manifest.pixelSizes {
-    writePNG(drawAppIcon(px, manifest), to: "\(outDir)/app/\(px).png")
-}
-print("app icon: \(manifest.pixelSizes.count) sizes \(manifest.pixelSizes)")
 for icon in manifest.icons {
     for px in manifest.pixelSizes {
         writePNG(drawDocIcon(px, icon, manifest), to: "\(outDir)/doc/\(icon.name)/\(px).png")

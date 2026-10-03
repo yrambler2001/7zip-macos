@@ -21,7 +21,9 @@ What this script does, in order:
    package that is not part of a stock macOS + Xcode install.
 3. Derives the palette that the macOS art is drawn with: the shared "archive body" colours and
    each format's exact badge colour, read straight out of the decoded 32x32 frames.
-4. Writes ``icons-manifest.json`` for the Swift renderer, runs it, then assembles
+4. Writes ``icons-manifest.json`` for the Swift renderer, runs it (document icons), writes the
+   app icon straight from ``FM.ico``'s frames (:func:`stage_app_icon`: nearest frame per size,
+   nearest-neighbour, nothing redrawn), then assembles
    ``AppIcon.appiconset``, the ``doc-<name>.imageset``s, and the ``doc-<name>.icns`` files
    (via ``iconutil``), and finally verifies every emitted PNG really carries alpha and is not
    blank or a solid rectangle.
@@ -437,14 +439,10 @@ def stage_extract(repo: str, work: str) -> dict:
         "pixelSizes": PIXEL_SIZES,
         "body": {k: "#%02x%02x%02x" % v for k, v in BODY_PALETTE.items()},
         "app": {
-            # FM.ico draws "7z" inside a plate; 7z.ico's badge navy and zip.ico's blue are the
-            # two brand blues, used as the squircle gradient stops.
-            "label": "7z",
-            "gradientTop": next(e["badge"] for e in entries if e["name"] == "zip"),
-            "gradientBottom": next(e["badge"] for e in entries if e["name"] == "7z"),
-            "sources": ["CPP/7zip/UI/FileManager/FM.ico",
-                        "CPP/7zip/UI/FileManager/7zipLogo.ico",
-                        "CPP/7zip/Archive/Icons/7z.ico"],
+            # The app icon is FM.ico itself (IDI_ICON in FM.rc), frame by frame: see
+            # stage_app_icon.  Nothing about it is drawn.
+            "sources": ["CPP/7zip/UI/FileManager/FM.ico"],
+            "frames": [f"{f.width}x{f.height}/{f.encoding}{f.bpp}" for f in fm],
         },
         "icons": entries,
     }
@@ -464,6 +462,41 @@ def stage_draw(repo: str, work: str) -> None:
     cmd = ["swift", swift, os.path.join(work, "icons-manifest.json"), png_dir]
     print("$ " + " ".join(cmd))
     subprocess.run(cmd, check=True)
+    stage_app_icon(repo, work)
+
+
+def app_icon_frame(frames: list[Frame], px: int) -> Frame:
+    """The FM.ico frame nearest to `px` pixels (the larger one on a tie)."""
+    return min(frames, key=lambda f: (abs(f.width - px), -f.width))
+
+
+def scale_nearest(f: Frame, px: int) -> bytes:
+    """Nearest-neighbour resample of a square frame to px x px: every output pixel is one source
+    pixel, unchanged, so no colour that the .ico does not contain is introduced."""
+    out = bytearray(px * px * 4)
+    for y in range(px):
+        sy = y * f.height // px
+        for x in range(px):
+            sx = x * f.width // px
+            o = (sy * f.width + sx) * 4
+            out[(y * px + x) * 4:(y * px + x) * 4 + 4] = f.rgba[o:o + 4]
+    return bytes(out)
+
+
+def stage_app_icon(repo: str, work: str) -> None:
+    """The app icon is the original 7zFM icon (winmatch): for each macOS pixel size the nearest
+    FM.ico frame (16, 32 or 48 px), resampled nearest-neighbour to fill the whole canvas -- no
+    redrawing, no rounded-square mask, no added margin or shadow."""
+    fm = ico_frames(os.path.join(repo, "CPP/7zip/UI/FileManager/FM.ico"))
+    out_dir = os.path.join(work, "png", "app")
+    os.makedirs(out_dir, exist_ok=True)
+    used = []
+    for px in PIXEL_SIZES:
+        f = app_icon_frame(fm, px)
+        write_png(os.path.join(out_dir, f"{px}.png"), px, px,
+                  f.rgba if f.width == px else scale_nearest(f, px))
+        used.append(f"{px}<-{f.width}")
+    print("app icon from FM.ico: " + " ".join(used))
 
 
 def stage_assemble(repo: str, work: str, manifest: dict) -> None:
@@ -560,9 +593,15 @@ def stage_verify(repo: str, work: str, manifest: dict) -> int:
             problems.append(f"{who} {px}px: nothing opaque -- blank")
         # Distinct opaque colours: a stretched/blank icon collapses to one or two.
         colours = {rgba[i:i + 3] for i in range(0, len(rgba), 4) if rgba[i + 3] > 200}
-        if px >= 64 and len(colours) < 4:
+        if who == "app":
+            # The app icon is FM.ico resampled nearest-neighbour: only the .ico's own colours.
+            fm = ico_frames(os.path.join(repo, "CPP/7zip/UI/FileManager/FM.ico"))
+            src = {f.rgba[i:i + 3] for f in fm for i in range(0, len(f.rgba), 4) if f.rgba[i + 3] > 200}
+            if not colours <= src:
+                problems.append(f"app {px}px: colours not in FM.ico: {sorted(colours - src)[:4]}")
+        elif px >= 64 and len(colours) < 4:
             problems.append(f"{who} {px}px: only {len(colours)} opaque colours")
-        # Corners must be clear: both the squircle and the page leave them empty.
+        # Corners must be clear: FM.ico's frames and the page both leave them empty.
         for cx, cy in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
             if rgba[(cy * w + cx) * 4 + 3] > 8:
                 problems.append(f"{who} {px}px: corner ({cx},{cy}) is opaque")
