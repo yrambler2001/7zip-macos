@@ -271,4 +271,11 @@ final class NavGapsBridgeTests: XCTestCase {
                                          isFileSystem: false, hiddenByDefault: [], layout: nil)
         XCTAssertEqual(xarModel.columns.first { $0.propID == .checksum }?.width, 300)
     }
+
+    // MARK: - work dir "removable drives only" (PROGRESS 169)
+
+    func testInternalVolumesAreNotRemovable() {
+        XCTAssertFalse(SZFolder.volumeIsRemovable(atPath: NSHomeDirectory()))
+        XCTAssertFalse(SZFolder.volumeIsRemovable(atPath: work + "/not/yet/there.7z"))
+    }
 }

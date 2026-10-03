@@ -60,6 +60,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// case-sensitively (pathconf _PC_CASE_SENSITIVE; URLResourceKey.volumeSupportsCaseSensitiveNames).
 /// 01 §9 #24: Windows compares every path without case; on macOS it depends on the volume.
 + (BOOL)volumeIsCaseSensitiveAtPath:(NSString *)path NS_SWIFT_NAME(volumeIsCaseSensitive(atPath:));
+/// GetWorkDir's "removable drive" test on macOS (DRIVE_REMOVABLE / DRIVE_CDROM on Windows): the
+/// volume of `path` (or of its nearest existing ancestor) has removable media, or is ejectable and
+/// not internal. Options > Folders "for removable drives only" uses it (01b §4.8).
++ (BOOL)volumeIsRemovableAtPath:(NSString *)path NS_SWIFT_NAME(volumeIsRemovable(atPath:));
 
 #pragma mark Items
 

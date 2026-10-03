@@ -251,6 +251,9 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
   return _archive;
 }
 
+// Mac/Core/Platform/MacVolume.cpp (SevenZipCore), also used by the WorkDir.cpp patch.
+bool MacPath_IsOnRemovableVolume(const FString &path);
+
 #pragma mark - Opening by path
 
 + (SZFolder *)folderForPath:(NSString *)path
@@ -280,6 +283,11 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
     p = @"/";
   const long v = pathconf(p.fileSystemRepresentation, _PC_CASE_SENSITIVE);
   return v == 1;
+}
+
++ (BOOL)volumeIsRemovableAtPath:(NSString *)path
+{
+  return MacPath_IsOnRemovableVolume(SZFStringFromNSString(path));
 }
 
 + (SZFolder *)folderForPath:(NSString *)path
