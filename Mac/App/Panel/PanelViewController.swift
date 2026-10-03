@@ -128,6 +128,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                                   NSTextField(labelWithString: "")]
     /// The right edges of sections 0-2 (Panel.cpp CreateStatusBar: `{220, 320, 420, -1}`), in points.
     static let statusSectionEdges: [CGFloat] = [220, 320, 420]
+    /// The dividers in front of sections 1-3.
+    private var statusDividers: [NSView] = []
 
     init(index: Int) {
         panelIndex = index
@@ -243,6 +245,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             divider.boxType = .separator
             divider.translatesAutoresizingMaskIntoConstraints = false
             status.addSubview(divider)
+            statusDividers.append(divider)
             statusConstraints += [
                 divider.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: left),
                 divider.widthAnchor.constraint(equalToConstant: 1),
@@ -935,6 +938,18 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         } else {
             statusSections[1].stringValue = ""
             statusSections[2].stringValue = ""
+        }
+    }
+
+    /// A section that starts beyond a narrow panel's edge is not there at all (a Win32 status bar
+    /// part past the window edge is not drawn), rather than a view hanging outside the window.
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let width = view.bounds.width
+        for (i, edge) in Self.statusSectionEdges.enumerated() {
+            let hidden = edge + 12 > width
+            if statusSections[i].isHidden != hidden { statusSections[i].isHidden = hidden }
+            if statusDividers[i].isHidden != hidden { statusDividers[i].isHidden = hidden }
         }
     }
 

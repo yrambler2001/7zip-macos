@@ -13,7 +13,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     private(set) var numPanels = 1
     private(set) var focusedPanelIndex = 0             // LastFocusedPanel
     private var refreshTimer: Timer?
-    private var autoRefresh = Settings.autoRefresh     // AutoRefresh_Mode
+    private var autoRefresh = MainWindowController.processAutoRefresh     // AutoRefresh_Mode
+
+    /// CApp::AutoRefresh_Mode starts true in every 7zFM process and is never saved (01 §3.17,
+    /// 01b §5): the first window of this process puts the shared key back to true, so a value left
+    /// by an earlier run does not survive the launch. Windows of one process still share it.
+    private static let processAutoRefresh: Bool = {
+        Settings.autoRefresh = true
+        return true
+    }()
     private var toolbarsMask = Settings.toolbarsMask
 
     /// FM.Panels.splitterPos -- the share of the *usable* width (the split view minus the divider)
