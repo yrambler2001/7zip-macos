@@ -51,10 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Finder launched the app to open documents, their windows already exist and no empty
         // window is added (Mac/docs/reports/newwindow.md).
         let args = Array(CommandLine.arguments.dropFirst())
-        let launchedForDocuments = !MainWindows.controllers.isEmpty
         let startPath = args.first.flatMap { $0.hasPrefix("-") ? nil : $0 }
-        let controller: MainWindowController? = launchedForDocuments && startPath == nil
-            ? nil : MainWindows.open()
+        let controller: MainWindowController? = Self.needsLaunchWindow(
+            documentWindows: MainWindows.controllers.count, startPath: startPath) ? MainWindows.open() : nil
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try SZCodecs.loadCodecs()
@@ -79,6 +78,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // are both set, and it is started last so the window already exists when the first reset
         // arrives.
         TestResetWatcher.startIfNeeded()
+    }
+
+    /// Whether `applicationDidFinishLaunching` creates the default window. Not when the launch
+    /// was for documents -- Launch Services delivers a Finder double-click's open-documents event
+    /// *before* `applicationDidFinishLaunching` (measured, Mac/docs/reports/newwindow.md), so their
+    /// windows exist by then -- unless a 7zFM argv path also asks for a window of its own.
+    static func needsLaunchWindow(documentWindows: Int, startPath: String?) -> Bool {
+        documentWindows == 0 || startPath != nil
     }
 
     /// A re-launch of the running app -- Dock icon click, Finder double-click of 7-Zip.app,

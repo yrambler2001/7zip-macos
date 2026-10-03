@@ -26,6 +26,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     /// Set when the window closes: it has saved its state then, and must not save again on Quit,
     /// where it would overwrite a window closed later (`MainWindows.saveAllForTermination`).
     private(set) var isClosed = false
+    /// Set by `closeDiscardingState()`: the window closes without writing its state.
+    private var discardsStateOnClose = false
 
     /// FM.Panels.splitterPos -- the share of the *usable* width (the split view minus the divider)
     /// that panel 0 gets. This value is authoritative: the divider position is always derived from
@@ -226,7 +228,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     func windowWillClose(_ notification: Notification) {
         guard !isClosed else { return }
         refreshTimer?.invalidate()
-        saveState()
+        if !discardsStateOnClose { saveState() }
         isClosed = true
         // CPanel's destructor closes every archive level: a modified nested archive is offered
         // for write-back into its parent (PanelNestedArchives.swift, 01 §3.8).
@@ -239,6 +241,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         // for `options` in `Mac/docs/requests.md`; this is the half that belongs here.
         window?.toolbar = nil
         MainWindows.didClose(self)
+    }
+
+    /// Test support only (`sevenzip://test/reset` step 2): a second window goes away without saving,
+    /// because the reset is about to replace the settings domain -- which in a UI test is the very
+    /// plist file the test has just rewritten with the next seed, so a save here would overwrite it.
+    func closeDiscardingState() {
+        discardsStateOnClose = true
+        window?.close()
     }
 
     func windowDidBecomeMain(_ notification: Notification) {
