@@ -162,9 +162,15 @@ extension MainWindowController {
             }
         } else {
             if method != "*" { options.title = method }
+            // fl.Password of the level the panel shows, and the answer kept for it afterwards
+            // (requests.md, navgaps -> tools; 7zFM's CopyTo writes fl.Password back).
+            options.password = panel.rememberedPassword
             let folderPath = items.folderPath
             let names = Set(items.names)
+            var askedPassword: String?
+            defer { if let askedPassword { panel.rememberedPassword = askedPassword } }
             result = OperationRunner.run(options) { runner in
+                defer { if runner.passwordWasAsked { askedPassword = runner.password } }
                 let folder = try SZFolder.folder(forPath: folderPath, passwordDelegate: nil)
                 try folder.loadItems()
                 var indexes: [NSNumber] = []

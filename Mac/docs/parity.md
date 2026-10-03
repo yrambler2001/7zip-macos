@@ -1,8 +1,8 @@
 # Parity: what a user gets today, compared with the Windows 7-Zip File Manager
 
-Written by the `packaging` scope as the project's final audit, 2026-09-20, against branch
-`mac/packaging` (off `macos` at `dea739c`). It is meant to be read by someone deciding whether to
-use this app, not by someone defending it.
+First written by the `packaging` scope as the project's final audit (2026-09-20), refreshed by
+**`mac/release` on 2026-10-03** so that every section describes the current branch. It is meant to
+be read by someone deciding whether to use this app, not by someone defending it.
 
 The specification is `Mac/docs/01-fm-feature-inventory.md` (cited as `01 §n`),
 `Mac/docs/01b-fm-dialogs-settings.md` (`01b §n`) and
@@ -10,35 +10,28 @@ The specification is `Mac/docs/01-fm-feature-inventory.md` (cited as `01 §n`),
 `Mac/docs/reports/` say how each piece was verified. `Mac/docs/PROGRESS.md` is the item-by-item
 checklist; this file is the summary a user needs.
 
-**How this was checked.** A sample of 57 ticked checklist items was re-verified against the
-source, biased deliberately towards the expensive and the cross-scope ones — the items most
-likely to have been ticked optimistically. Nine were provably untrue and are now unticked, each
-with the evidence written next to it in `PROGRESS.md`; eleven more were true but overstated and
-carry a correction. The checklist therefore reads **386 of 496** rather than 395. Separately, the
-app was launched in **all 93 bundled languages** and screenshotted in five of them; that is
-`Mac/docs/reports/packaging.md`.
+## Where it stands (2026-10-03)
 
-Two caveats about the whole audit: it is a **source audit plus a driven-app audit**, not a
-hands-on review of every feature by a person, and **Finder's own context menu has never been
-exercised in Finder** on this machine, because Automation permission was never granted
-(`Mac/docs/reports/finder.md` lists 15 manual checks a human still owes).
+- **Checklist: 490 of 496.** The six open items are listed in section D with the reason for each:
+  two product decisions (a re-launch opening a new window, the panels' first folder), one
+  optional helper the locked design replaced, one check only a human can do (Finder's own menu),
+  and two packaging bookkeeping items that follow from those.
+- **Of the 14 "unfinished" gaps the first audit listed, none is left** (section D).
+- **What is still partial** is small and listed in section B: right-to-left mirroring, a third of
+  the translations being incomplete upstream, Finder opening a second archive into the front
+  window, and a handful of details.
+- **What nobody has verified** is in section E: Finder's own context menu, a real drag into Finder,
+  a Dock drop, the Help pages in a browser, the Dock-tile progress, and the whole Developer ID /
+  notarization path -- each needs a person, a permission or a certificate this machine does not
+  have. The list a human should walk is in `Mac/docs/reports/release.md` §6.
+- **Tests:** `Mac/scripts/verify.sh` (all targets: unit, app-hosted, three XCUITest shards) is the
+  gate; its last result is in `Mac/docs/reports/verify-latest.md`.
 
-**Update, 2026-09-20 (`mac/cmdmode`).** Four of the unfinished items below are closed and are
-annotated in place; nothing was renumbered and no evidence was deleted. Section F lists them with
-what was measured before the fix and what is left. The checklist therefore reads **390 of 496**.
-
-**Update, 2026-10-03 (`mac/opsgaps`).** D items 2, 3, 4 and 8 are closed (B items 6, 8 and 12's
-Dock half with them); section H says how. Five checklist boxes were ticked.
-
-**Update, 2026-10-03 (`mac/optgaps`).** D items 11 and 12 are closed, and B items 13, 14, 15, 17 and 23;
-section I says how. Three checklist boxes were ticked.
-
-**Update, 2026-10-03 (`mac/archgaps`).** D items 7 and 13 are closed (B item 11's raw half with
-them), and two crashes / blank listings found on the way are fixed; section J says how.
-
-**Update, 2026-10-03 (`mac/panelgaps`).** Items 1, 5 and 6 below are closed and item 9 mostly;
-each is annotated in place and section G says how. Four panel-section boxes were ticked; the
-checklist now reads **403 of 496** (the other nine came from branches merged since the audit).
+**How the first audit was done.** A sample of 57 ticked checklist items was re-verified against the
+source, biased towards the expensive and cross-scope ones; nine were untrue and were unticked with
+the evidence written next to them in `PROGRESS.md`. The app was launched in all 93 bundled
+languages and screenshotted in five (`Mac/docs/reports/packaging.md`). It is a source audit plus a
+driven-app audit, not a hands-on review of every feature by a person.
 
 ---
 
@@ -116,106 +109,49 @@ associations with 27 document icons and their UTIs; and association switching fr
 The full `CArcCmdLineParser` switch set, `#map` refusals with the upstream strings, list-file
 transport, `-thash`, `-seml`, and command dispatch.
 
-**Update, 2026-10-03 (`mac/navgaps`).** B items 20, 21 and 22 (Ver\*) are closed, and the open
-behaviour of a panel now matches 7zFM: the "Opening" progress, the per-level open text, passwords per
-archive level, the command-line open's "Error" box; section K says how. The checklist reads
-**467 of 496**.
+**Since then** (`mac/navgaps`, `mac/release`): the panel's archive open with its "Opening"
+progress and per-level passwords, Windows toolbar bitmaps and the four-part status bar, lazy codec
+loading, the launch-time temp sweep, the command-line update mode from `-u`, and the About box's
+own wordmark. Sections K and L.
 
 ---
 
 ## B. Partial — it works, with a limitation worth knowing
 
-1. **The panel's own right-click menu has a dead 7-Zip section.** Open archive, Extract files…,
-   Extract Here, Extract to…, Test archive, Add to archive…, Compress and email… and the two
-   "Add to *name*.7z/.zip" items are drawn and then greyed out: the menu items are built with
-   selectors that nothing implements, so the responder chain disables every one of them
-   (`PanelContextMenu.swift:22-32`; `Mac/docs/reports/screenshots/panel-10-context-menu.png`).
-   CRC SHA and the File-menu items on the same menu do work, and so do the same commands from the
-   File menu, the toolbar and **Finder's** 7-Zip menu. (`01 §2.9`)
-2. **Drag and drop only in the Details view.** The three icon/list view modes are neither a drag
-   source nor a drop target. (`01 §3.15`)
-3. **Dropping files on the window background** opens Add-to-archive for the panel's *selection*,
-   not for what you dropped: the dropped list is computed and discarded. (`01 §3.15`, `03 §4.2`)
-4. **Open Outside does nothing for an item inside an archive** — the code path exists but is never
-   called. It works normally for files and folders on disk. (`01 §3.8`)
-5. **Diff** compares two items selected in one panel; the Windows "focused item of each panel"
-   case is not implemented, and the menu item stays enabled even with no Diff tool configured.
-   (`01 §3.11`)
-6. **No help is bundled.** Help ▸ Contents and the About, Benchmark and temp-browser Help buttons
-   open the system help viewer; the Compress and Extract dialogs open 7-zip.org; the Options Help
-   button only beeps. Nothing points at a local `FM/index.htm` because there is none.
-   (`01 §2.6, §9 #17`)
-   **Closed 2026-10-03 (`mac/opsgaps`), see H.1.**
-7. ~~**`-scrc` while extracting or testing** is not wired, and the panel's Test button does not pass
-   `-thash`. The bridge support exists (`SZExtractOptions.hashMethods` →
-   `SZExtractResult.hashResults`); no caller sets it.~~ (`03 §2.6`, `01 §8.6`)
-   **Half closed 2026-09-20 (`mac/cmdmode`), see F.2.** `x -scrc<M>` and `t -scrc<M>` now report the
-   checksums of the extracted data in the hash list, cross-checked against `7zz t -scrcSHA256`. The
-   panel's own Test button still does not pass `-thash`: that file belongs to another scope and the
-   recipe is filed in `requests.md`.
-8. **Quarantine is not propagated** to files extracted normally — only to files you open from
-   inside an archive. (`01 §9 #23`)
-   **Closed 2026-10-03 (`mac/opsgaps`), see H.2.**
-9. ~~**Command mode** never returns exit code 8 (out of memory) and has no exception→message ladder;
-   `rn` is refused; wildcards inside `-i!` are not expanded. Exit codes 0, 1, 2, 7 and 255 are
-   correct.~~ (`03 §2.2, §2.7`)
-   **Closed 2026-09-20 (`mac/cmdmode`), see F.1.** All four halves were confirmed true by measurement
-   first. `SevenZipFailureLadder` is `WinMain`'s whole catch chain, exit 8 included; `rn` is
-   implemented; include and exclude wildcards are expanded by the engine's own
-   `EnumerateDirItemsAndSort` / `EnumerateItems`.
-10. ~~**`-sfx<module>` is ignored**: a self-extracting archive is always built from the bundled
-    `7z.sfx`, and `a -sfx` without `-ad` writes a plain archive.~~ (`01b §4.23`)
-    **Closed 2026-09-20 (`mac/cmdmode`), see F.3.** The named module is honoured and validated, and a
-    missing module, a bogus module or a non-7z `-t` is an error with nothing written. The Compress
-    dialog's own per-format Browse filter is a separate item and is still open.
-11. **Properties has no raw-property block** and no NT security summary: `IArchiveGetRawProps` is
-    not bridged. (`01 §3.11`)
-    **Raw properties closed 2026-10-03 (`mac/archgaps`), see J.1**; NT security stays hidden by the
-    locked decision.
-12. **Progress has no Dock-tile percentage**, and the messages list uses fixed column widths.
-    (`01b §4.17`)
-    **Dock tile closed 2026-10-03 (`mac/opsgaps`), see H.3**; the column widths are unchanged.
-13. **Options ▸ System** shows generic system icons rather than 7-Zip's format icons (which are
-    built and shipped, just not used here); a single click does not toggle a row and Return does
-    nothing (Space, `+`, `-`, `*` and the buttons do); Apply does not refresh Launch Services.
-    (`01b §4.21`)
-    **Closed 2026-10-03 (`mac/optgaps`), see I.1.**
-14. **Options ▸ Language** does not report a language file that fails to load — it is skipped
-    silently — and shows only counts, not the list of missing ids. (`01b §4.9`)
-    **Closed 2026-10-03 (`mac/optgaps`), see I.2.**
-15. **Options ▸ 7-Zip** forces the Options window far wider than the screen, because the
-    `pluginkit` status line is one unwrapped string; the tab row is pushed out of view on that
-    page. (`Mac/docs/reports/screenshots/packaging-31-options-menu-de.png`)
-    **Closed** (`mac/polish`); and every Options page now fits a 660 pt window in eight languages,
-    measured (`mac/optgaps`, I.3).
-16. **The two-panel splitter position is restored wrong intermittently** — panel 0 collapses to its
-    120 pt minimum instead of the stored ratio. (`01 §1.2`, `01b §5.7`)
-17. **Copy/Move, Benchmark and Properties draw their bottom button row clipped** by the window
-    edge. The buttons are still there and still work; it is a measuring bug in the shared dialog
-    builder, present in English as much as in any translation.
-    **Closed** (`mac/polish`, the `DialogKit.install` bottom constraint). Separately, every
-    `DialogKit` dialog now centres on its owner window instead of the screen (`mac/optgaps`, I.4).
-18. **Opening several archives from Finder**: the first reuses the front window's panel, only the
-    rest get windows of their own. (`03 §6.2`)
-19. **Only the five `Options.*` values reach the Finder extensions**; `Compression.*` and
-    `Extraction.*` do not. (`03 §6.4`)
-20. **The toolbar** persists its mask and visibility but renders SF Symbols, so "Large Buttons"
-    and "Show Buttons Text" do not reproduce the Windows 48×36 / 24×24 bitmaps. (`01 §1.3`)
-    **Closed 2026-10-03 (`mac/navgaps`), see K.4.**
-21. **The status bar** is one four-part label rather than four sections at fixed widths.
-    (`01 §1.2`)
-    **Closed 2026-10-03 (`mac/navgaps`), see K.4.**
-22. **File-menu enable rules** for Split, Combine, Link, Diff and the version-control items are not
-    evaluated the way `01 §2.1` specifies. (The version-control items are hidden.)
-    **Closed 2026-10-03 (`mac/navgaps`), see K.4.**
-23. **Right-to-left languages are not mirrored** (AppKit only mirrors an app that declares an RTL
-    localization, and this app carries none), and composite one-field strings — the status line,
-    the Copy dialog's info block — come out with their segments in reverse order. Nothing is
-    clipped or missing. Six of the 92 translations are RTL.
-    **Segment order closed 2026-10-03 (`mac/optgaps`), see I.5**; the app is still not mirrored.
-24. **A third of the translations are substantially incomplete** — 24 of 92 are missing more than a
-    quarter of the strings the app asks for, and those fall back to English. 28 are complete. Full
-    table in `Mac/docs/reports/packaging.md`.
+Current list. The first audit's 24 items are accounted for at the end of this section.
+
+1. **Opening several archives from Finder**: the first reuses the front window's panel, only the
+   rest get windows of their own; Windows starts one 7zFM per file. A file opened into a window
+   that already shows something keeps that window and reports a failure as a sheet (`03 §6.2`,
+   K.3). Decision for the orchestrator (`reports/release.md`).
+2. **Right-to-left languages are not mirrored**: AppKit mirrors only an app that declares an RTL
+   localization, and this one carries none; composite strings do come out in the right order
+   (I.5). Six of the 92 translations are RTL.
+3. **A third of the translations are substantially incomplete upstream** — 24 of 92 miss more than
+   a quarter of the strings the app asks for, and those fall back to English; 28 are complete.
+   Table in `Mac/docs/reports/packaging.md`.
+4. **The messages list** of the Progress window uses fixed column widths (`01b §4.17`).
+5. **The panels' first folder** when nothing is stored is the home folder, not 7zFM's root
+   ("Computer", one Up away) (`01 §1.4`). Deliberate in `mac/panel`; a decision is asked for.
+6. **A re-launch of the running app** (Dock, Finder, `open -a`) brings its window to the front, as
+   every Mac app does, instead of opening a new window as a new 7zFM process would (`01 §1.1`).
+   A second process (`open -n`) does get its own window. Decision asked for.
+7. **Cancel during a command-line wildcard scan** (`7zG a … *.txt -r` from the Finder extension or
+   a `sevenzip://` URL) takes effect when the engine's directory walk returns: the walk has no
+   break check. The window and the Cancel button are there; the app no longer hangs during it.
+8. **Drag between two separate 7-Zip processes** (`open -n`) goes through file promises, i.e. a
+   temp folder, instead of the source extracting straight into the target; within one process
+   (any number of windows) the direct path is used (`01 §3.15`).
+
+**The first audit's B items, by number:** 1-5 closed by `mac/panelgaps` (G.1-G.3; Diff's
+no-tool hiding now also in the panel's context menu, `mac/release`); 6 → H.1; 7 → F.2 and H.5;
+8 → H.2; 9 → F.1; 10 → F.3 and I.6; 11 → J.1 (NT security stays hidden by design); 12 → H.3
+(Dock tile; the column widths are item 4 above); 13, 14 → I.1, I.2; 15, 17 → `mac/polish` and
+I.3, I.4; 16 → `mac/polish` (the splitter ratio is authoritative and never derived during
+layout); 18 → item 1 above; 19 → **not a gap**: Windows' shell extension itself reads only the
+`Options.*` context-menu values (`ContextMenu.cpp:632-640`), which do reach the extensions;
+`Compression.*` and `Extraction.*` are read by the app that runs each command (L.3); 20-22 → K.4;
+23 → I.5 plus item 2 above; 24 → item 3 above.
 
 ---
 
@@ -246,6 +182,10 @@ decided up front (`00-orchestration.md`, `01 §9`, `03 §6`).
 | External `7z.dll` and `Codecs\*.dll` (`01 §6.8`) | the engine is statically linked; the Plugins page is informational | — |
 | Drive letters, `\\.\` physical-drive imaging, Network root (`01 §6.2, §6.3, §6.6`) | Computer = mounted volumes plus Documents; imaging and Network dropped | — |
 | Win32 controls, dialog units, the `IDD_*_2` small-screen templates (`01 §9 #14, #33`) | AppKit views; always the full menus and full-size dialogs | — |
+| `DeleteOldTempFiles` never called (`01 §1.1`, `§9 #11`) | stale `7zO*` / `7zE*` folders swept at launch, conservatively (L.1) | an improvement, documented as such |
+| One 7zFM process per window | one process, any number of windows; a re-launch activates it | macOS application model (B 6) |
+| Back / Forward | View ▸ Back / Forward (Cmd+[ / Cmd+]) over the panel's folder history | an addition; 7zFM has no navigation stack |
+| `FM\NumPanels`, `CurrentPanel`, `SplitterPos`, the `Columns` blob, `Compression\Options\<fmt>` sub-keys | `FM.Panels.*` (the splitter as a ratio), `FM.Columns.<ID>` as JSON, flat `Compression.Options.<Fmt>.<Name>` keys, `MemUse64` | `UserDefaults` value types; recorded as spec corrections in `requests.md` |
 
 ---
 
@@ -255,68 +195,75 @@ decided up front (`00-orchestration.md`, `01 §9`, `03 §6`).
 Alternate data streams and their folder and menu item; NT security descriptors; drive letters,
 `\\.\` imaging, NetFolder and the "Network" root; the long-path Recycle Bin message; registry
 persistence; the COM shell DLL, its Approved-list registration and `IExplorerCommand`; the
-16-item context-menu reduction; drop-handler mode; `ITaskbarList3` taskbar progress; large memory
-pages (`-slp`); HtmlHelp `.chm`; `Benchmark 2`; every `IDD_*_2` small-screen dialog; the 32-bit
-memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb names.
+16-item context-menu reduction; drop-handler mode; `ITaskbarList3` taskbar progress (mapped to the
+Dock tile); large memory pages (`-slp`); HtmlHelp `.chm` (mapped to the bundled HTML pages);
+`Benchmark 2`; every `IDD_*_2` small-screen dialog; the 32-bit memory and dictionary caps;
+`Set_Wow64` / `OleInitialize`; and the Explorer verb names.
 
-**Unfinished — real gaps, roughly in the order they would be missed.**
-1. ~~The handlers behind the panel context menu's 7-Zip commands (`01 §2.9`).~~ **Done 2026-10-03 (G.1).**
-2. ~~Bundled HTML help, and the Options Help button (`01 §9 #17`).~~ **Done 2026-10-03 (H.1).**
-3. ~~Quarantine on ordinary extraction, and zone propagation from the outermost archive
-   (`01 §9 #23`).~~ **Done 2026-10-03 (H.2)**; an explicit outermost-archive source for the panel's
-   copy is filed for `panel`.
-4. ~~`-scrc` on `x` / `t`~~ (**done 2026-09-20, F.2**), and `t -thash` from the panel
-   (`03 §2.6`, `01 §8.6`) — **the panel half is done 2026-10-03**: the context menu's C13 (G.1) and
-   now the toolbar / File-menu Test, which runs `t -thash` for checksum files (H.5).
-5. ~~Open Outside for items inside an archive; Diff across two panels (`01 §3.8, §3.11`).~~ **Done 2026-10-03 (G.2).**
-6. ~~Drag and drop in the three icon view modes; the dropped-file list for background drops
-   (`01 §3.15`).~~ **Done 2026-10-03 (G.3).**
-7. ~~Raw properties (`IArchiveGetRawProps`) in the columns and in Properties (`01 §3.2, §3.11`).~~ **Done 2026-10-03 (J.1).**
-8. Dock-tile progress, and the exception→message mapping for a failed operation
-   (`01b §4.17`, `01 §8.7`) — **the command-mode half is done 2026-09-20 (F.1)**: every failure a
-   command can hit is classified by `SevenZipFailureLadder`, and `SZUpdater` / `SZHasher` now give
-   `E_OUTOFMEMORY` the IDS_MEM_ERROR text `HResultToMessage` gives it, so the Progress dialog's own
-   final message matches Windows for those two. `SZExtractor` and `OperationRunner`'s generic alert
-   are filed in `requests.md`. **Both halves done 2026-10-03 (H.3, H.4).**
-9. File-menu enable and hide rules (`01 §2.1`) — **done 2026-10-03 (G.4)** except the Ver* (7vc) items and the small-screen variant.
-10. ~~Exit code 8 and the 7zG exception ladder; `EnumerateDirItemsAndSort` for `-i!` wildcards~~
-    (`03 §2.2, §2.7`) — **done 2026-09-20 (F.1)**.
-11. ~~`-sfx<module>`~~ (**done 2026-09-20, F.3**); ~~the Compress dialog's per-format Browse filter
-    (`01b §4.23`)~~ — **done 2026-10-03 (I.6)**.
-12. ~~Options ▸ System format icons, single-click and Return, and the Launch Services refresh;
-    Options ▸ Language's id lists and load-error report (`01b §4.21, §4.9`).~~ **Done 2026-10-03 (I.1, I.2).**
-13. ~~Write-back of a nested archive into its parent archive (`01 §3.8`).~~ **Done 2026-10-03 (J.2).**
-14. ~~Dropping onto the Dock icon as "Add to archive…"~~ (`03 §6.2`) — **done 2026-09-20 (F.4)**,
-    with one verification debt: no test on this machine can perform a real Dock drop.
+**Unfinished.** All 14 items of the first audit are closed: 1, 5, 6, 9 by `mac/panelgaps` (G);
+2, 3, 4, 8 by `mac/opsgaps` (H) with `mac/cmdmode` (F); 7, 13 by `mac/archgaps` (J); 10, 11, 14
+by `mac/cmdmode` (F) and `mac/optgaps` (I); 12 by `mac/optgaps` (I).
+
+**The six checklist items still open, and why** (`PROGRESS.md`):
+
+| Item | Why it is open |
+|---|---|
+| scaffold: every launch opens a new window (`01 §1.1`) | product decision: B 6 |
+| scaffold: panel start path falls back to the root (`01 §1.4`) | product decision: B 5 |
+| finder: optional `Contents/Helpers/7zG.app` (`03 §6.4`) | by design: the locked decision runs 7zG commands in process |
+| finder: Finder context menu verified in Finder (`03 §6.3`) | needs a human (no Automation permission here): `reports/finder.md` |
+| packaging: every box ticked or listed as a known gap | follows from the four above, each listed here and in `reports/release.md` |
+| packaging: screenshots for every scope; `architecture.md` current | `architecture.md` "As built" refreshed by `mac/release`; ticked only by the orchestrator, who owns that file |
 
 ---
 
 ## E. Verification debts
 
-Honest about what nobody has checked rather than what nobody has built.
+Honest about what nobody has checked rather than what nobody has built. Each needs a person, a
+permission or a certificate; the step-by-step list is `Mac/docs/reports/release.md` §6.
 
 * **Finder's context menu has never been opened in Finder.** The extension builds, signs,
   sandboxes and registers, and its menu model is unit-tested item for item, but the machine has no
-  Automation permission, so no test could drive Finder. `Mac/docs/reports/finder.md` lists 15
-  numbered checks for a human.
+  Automation permission. `Mac/docs/reports/finder.md` lists 15 numbered checks.
+* **A real drag from a panel into Finder** (file promises written by Finder) and **a drop onto the
+  Dock icon**: both are unit- and app-hosted-tested up to the AppKit boundary; XCUITest cannot drag
+  to another app or to the Dock.
+* **Help in a browser and the Dock-tile progress** are verified through in-process hooks
+  (`Help.opener`, `ProgressDockTile`), not by looking at the browser or the Dock.
 * **Only ad-hoc signing has ever been exercised.** There is no Developer ID on this machine
   (`security find-identity -v -p codesigning` → "0 valid identities found"), so the Developer ID
   and notarization paths of `Mac/scripts/package.sh` are written and guarded but never run end to
-  end. Their failure modes are guarded to refuse early rather than fail late.
-* **`fetch-assets.sh` and `make-fixtures.sh` were not re-run** by this audit; the bundled
-  `Lang/` and `SFX/` assets and the test fixtures are the ones already in the tree.
-* **`architecture.md`'s "As built" section is stale** — it still describes the Wave 1 app (it calls
-  `SZProgressDelegate` unused, `FinderSync.swift` a stub, and counts 17 tests). It is not
-  `packaging`-owned, so it was left alone and recorded here.
-* **Control-ID comments are incomplete.** Every `IDM_*` and `IDD_*` from the inventories appears in
-  the source as a comment, but roughly 43 control ids (`IDX_SETTINGS_SHOW_DOTS`,
-  `IDT_PROGRESS_ELAPSED`, the `IDG_BENCH_*` group, `IDC_LANG_LANG`, `IDB_LINK_LINK` and others)
-  are cited by their numeric lang id instead of their symbolic name, so the grep audit of
-  `PROGRESS.md §9.4` cannot pass yet.
-* **Tests.** 286 of 286 unit tests pass in Debug and in Release; the XCUITest suite passes,
-  including the six new localization tests. What the UI suite covers is breadth, not depth: it
-  asserts that things are present and populated, not that every operation produces the right bytes
-  — that is what the unit tests do.
+  end. The exact commands are in `Mac/README.md` and `reports/release.md`.
+* **Cleared on 2026-10-03:** `fetch-assets.sh` and `make-fixtures.sh` were re-run (assets
+  byte-identical; fixtures identical in content), `architecture.md`'s "As built" is current, and
+  the control-id comment audit finds all 359 symbols.
+
+---
+
+
+## History of updates
+
+**Update, 2026-09-20 (`mac/cmdmode`).** Four of the unfinished items below are closed and are
+annotated in place; nothing was renumbered and no evidence was deleted. Section F lists them with
+what was measured before the fix and what is left. The checklist therefore reads **390 of 496**.
+
+**Update, 2026-10-03 (`mac/opsgaps`).** D items 2, 3, 4 and 8 are closed (B items 6, 8 and 12's
+Dock half with them); section H says how. Five checklist boxes were ticked.
+
+**Update, 2026-10-03 (`mac/optgaps`).** D items 11 and 12 are closed, and B items 13, 14, 15, 17 and 23;
+section I says how. Three checklist boxes were ticked.
+
+**Update, 2026-10-03 (`mac/archgaps`).** D items 7 and 13 are closed (B item 11's raw half with
+them), and two crashes / blank listings found on the way are fixed; section J says how.
+
+**Update, 2026-10-03 (`mac/panelgaps`).** Items 1, 5 and 6 below are closed and item 9 mostly;
+each is annotated in place and section G says how. Four panel-section boxes were ticked; the
+checklist now reads **403 of 496** (the other nine came from branches merged since the audit).
+
+**Update, 2026-10-03 (`mac/navgaps`).** B items 20, 21 and 22 (Ver\*) are closed, and the open
+behaviour of a panel now matches 7zFM: the "Opening" progress, the per-level open text, passwords per
+archive level, the command-line open's "Error" box; section K says how. The checklist reads
+**467 of 496**.
 
 ---
 
@@ -605,4 +552,35 @@ Masks, the copy-onto-itself checks and name lookups follow the volume's case sen
 hunk, PROGRESS 169). Temp folders are `7zO<8 hex>` (PROGRESS 69). Auto Refresh starts on in every
 launch, as 7zFM never saves it (PROGRESS 642). Raw-property columns (SHA-1, checksums) start wide
 enough for their hex.
+
+---
+
+## L. Closed by `mac/release` — 2026-10-03
+
+`Mac/docs/reports/release.md` has the detail; each line names its test.
+
+### L.1 — startup, shutdown and the temp folder (`01 §1.1`)
+
+The window appears before the format table is built (the codecs load on a worker, as 7zFM loads
+them "at first use"); quitting first offers every edited temp file back to its archive and only
+then saves the window and panel state; and a launch removes `7zO*` / `7zE*` folders an earlier run
+left behind -- older than an hour (a day for e-mail folders), never while another 7-Zip process
+runs. Windows leaves them for ever (`DeleteOldTempFiles` has no caller): an improvement, not parity.
+
+### L.2 — threading
+
+A password or overwrite question asked from an operation that was started inside a main-queue block
+(Open Outside, a drag-out promise, a command URL) could hang the app; it cannot now. A wildcard
+command line no longer freezes the app while it scans. A command that works on an archive folder
+parks the panels showing that archive, so one engine folder is never used from two threads.
+Extract, Test, View / Edit and hashing inside an archive reuse, and remember, the password of the
+level they work on.
+
+### L.3 — smaller items
+
+`-u` switches select the Compress dialog's update mode as 7zG does, and the command line's own `-m`
+values are kept; "Show real file icons" works (off, the Windows default, file-system items get
+their icon by type); Diff is hidden in the panel's context menu without a Diff tool; the About box
+shows 7-Zip's own wordmark; one English fallback for IDS_SET_FOLDER; lookup of a format by
+signature in the bridge; and every symbolic resource id of the inventories is cited in the code.
 

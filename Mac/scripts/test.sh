@@ -324,6 +324,20 @@ tally() {
   fi
 }
 
+# XCUITest's automation mode is intermittent on some machines (requests.md, uiverify ->
+# orchestrator): a run can die before its first test with "Timed out while enabling automation
+# mode" and pass unchanged minutes later. Returns 0 (= retry) only for that failure, only when no
+# test case started, and only after the first attempt; it waits 15 s first.
+automation_mode_flake() {
+  local rc="$1" log="$2" attempt="$3"
+  [ "$rc" -ne 0 ] && [ "$attempt" -eq 1 ] || return 1
+  grep -q "Timed out while enabling automation mode" "$log" || return 1
+  grep -q "Test Case '.*' started" "$log" && return 1
+  echo "   automation mode timed out before any test ran; retrying once in 15 s ($log)"
+  sleep 15
+  return 0
+}
+
 # --- the classic path: one xcodebuild per target, built as it goes ------------------------------
 run_target() {
   local target="$1" log="$MAC/build/test-$1.log" rc=0 started elapsed
@@ -335,11 +349,16 @@ run_target() {
   started=$(date +%s)
   set +e
   # shellcheck disable=SC2046
-  xcodebuild -project "$MAC/7-Zip.xcodeproj" -scheme "$target" -configuration "$CONFIG" \
-    -derivedDataPath "$MAC/build/DerivedData" -destination 'platform=macOS,arch=arm64' \
-    -resultBundlePath "$bundle" "${TIMEOUT_ARGS[@]}" "${COMMON_SETTINGS[@]}" \
-    ${only_args[@]+"${only_args[@]}"} ${XCODEBUILD_EXTRA:-} test >"$log" 2>&1
-  rc=$?
+  local attempt
+  for attempt in 1 2; do
+    xcodebuild -project "$MAC/7-Zip.xcodeproj" -scheme "$target" -configuration "$CONFIG" \
+      -derivedDataPath "$MAC/build/DerivedData" -destination 'platform=macOS,arch=arm64' \
+      -resultBundlePath "$bundle" "${TIMEOUT_ARGS[@]}" "${COMMON_SETTINGS[@]}" \
+      ${only_args[@]+"${only_args[@]}"} ${XCODEBUILD_EXTRA:-} test >"$log" 2>&1
+    rc=$?
+    automation_mode_flake "$rc" "$log" "$attempt" || break
+    rm -rf "$bundle"
+  done
   set -e
   elapsed=$(( $(date +%s) - started ))
   grep -E "Test Case .* (passed|failed)|Executed [0-9]+ tests|error:|\*\* TEST" "$log" \
@@ -383,10 +402,15 @@ run_shard() {
   rm -rf "$bundle"
   started=$(date +%s)
   set +e
-  xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
-    -destination 'platform=macOS,arch=arm64' -resultBundlePath "$bundle" \
-    "${TIMEOUT_ARGS[@]}" "${only_args[@]}" >"$log" 2>&1
-  rc=$?
+  local attempt
+  for attempt in 1 2; do
+    xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
+      -destination 'platform=macOS,arch=arm64' -resultBundlePath "$bundle" \
+      "${TIMEOUT_ARGS[@]}" "${only_args[@]}" >"$log" 2>&1
+    rc=$?
+    automation_mode_flake "$rc" "$log" "$attempt" || break
+    rm -rf "$bundle"
+  done
   set -e
   elapsed=$(( $(date +%s) - started ))
   echo "$rc $elapsed" >"$MAC/build/shard-$target.rc"

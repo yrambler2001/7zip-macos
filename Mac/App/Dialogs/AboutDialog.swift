@@ -15,15 +15,20 @@ final class AboutDialog: NSObject {
         window = DialogKit.window(title: Lang.text(2900, "About 7-Zip"), resizable: false)
         super.init()
 
-        // IDI_LOGO 100, 32 x 32, SS_REALSIZEIMAGE
+        // IDI_LOGO 100, 32 x 32, SS_REALSIZEIMAGE (AboutDialog.rc:10, :21): 7zipLogo.ico at its
+        // real size, the 110 x 63 wordmark, shipped as `AboutLogo` by make-icons (requests.md,
+        // icons -> tools). The app icon stands in only if the asset is missing.
         let logo = NSImageView()
-        logo.image = NSApp.applicationIconImage
-        logo.imageScaling = .scaleProportionallyUpOrDown
+        let wordmark = NSImage(named: "AboutLogo")
+        logo.image = wordmark ?? NSApp.applicationIconImage
+        logo.imageScaling = wordmark == nil ? .scaleProportionallyUpOrDown : .scaleNone
         logo.translatesAutoresizingMaskIntoConstraints = false
+        let logoSize = wordmark?.size ?? NSSize(width: 64, height: 64)
+        logo.setAccessibilityIdentifier("aboutLogo")
         logo.addConstraint(NSLayoutConstraint(item: logo, attribute: .width, relatedBy: .equal,
-                                              toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 64))
+                                              toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: logoSize.width))
         logo.addConstraint(NSLayoutConstraint(item: logo, attribute: .height, relatedBy: .equal,
-                                              toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 64))
+                                              toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: logoSize.height))
 
         // IDT_ABOUT_VERSION 101 = "7-Zip <MY_VERSION> (<cpu>)"; IDT_ABOUT_DATE 102 = MY_DATE
         let version = DialogKit.label(SZBenchmark.versionWithCPUText, bold: true)

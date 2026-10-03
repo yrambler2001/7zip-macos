@@ -20,9 +20,9 @@ enum PanelIcons {
         // queries IFolderGetSystemIconIndex only `if (!Is_Slow_Icon_Folder() || _showRealFileIcons)`
         // (PanelItems.cpp:587), and Is_Slow_Icon_Folder() is IsFSFolder(). Off -- the Windows
         // default -- an FS item gets its icon by extension, like an archive item.
-        let slowIconFolder = (snapshot?.isFileSystem ?? false)
-            && !(snapshot?.isVolumesFolder ?? false) && !(snapshot?.isRoot ?? false)
-        let realIcon = !slowIconFolder || Settings.showRealFileIcons
+        let realIcon = showsRealIcons(isFileSystem: snapshot?.isFileSystem ?? false,
+                                      isVolumesFolder: snapshot?.isVolumesFolder ?? false,
+                                      isRoot: snapshot?.isRoot ?? false)
         if realIcon, !row.fullPath.isEmpty {
             let key = "\(large ? "L" : "S")\(row.fullPath)"
             if let cached = cache[key] { return cached }
@@ -38,6 +38,14 @@ enum PanelIcons {
             }
         }
         return resized(Icons.icon(forName: row.name, isDirectory: row.isDirectory), size)
+    }
+
+    /// `!Is_Slow_Icon_Folder() || _showRealFileIcons` (PanelItems.cpp:587, Panel.h:708): only a
+    /// file-system folder is a "slow icon" folder; the root and the volumes list always show
+    /// real icons.
+    static func showsRealIcons(isFileSystem: Bool, isVolumesFolder: Bool, isRoot: Bool) -> Bool {
+        let slowIconFolder = isFileSystem && !isVolumesFolder && !isRoot
+        return !slowIconFolder || Settings.showRealFileIcons
     }
 
     /// The folder icon left of the address bar: Computer for the root, the volume icon for the

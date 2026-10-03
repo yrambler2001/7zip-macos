@@ -290,7 +290,11 @@ extension PanelViewController {
         menu.addItem(.separator())
         item(551, "Properties", #selector(fileProperties(_:)))                       // IDM_PROPERTIES
         item(552, "Comment...", #selector(fileComment(_:)))                          // IDM_COMMENT
-        item(554, "Diff", #selector(MenuActions.fileDiff(_:)))                        // IDM_DIFF
+        // IDM_DIFF: copied from the File menu, which drops it when no Diff tool is configured
+        // (MyLoadMenu.cpp:614, `item.wID == IDM_DIFF && diffPath.IsEmpty()`).
+        if !Settings.diffPath.isEmpty {
+            item(554, "Diff", #selector(MenuActions.fileDiff(_:)))                    // IDM_DIFF
+        }
         menu.addItem(.separator())
         item(555, "Create Folder", #selector(fileCreateFolder(_:)))                  // IDM_CREATE_FOLDER
         item(556, "Create File", #selector(fileCreateFile(_:)))                      // IDM_CREATE_FILE

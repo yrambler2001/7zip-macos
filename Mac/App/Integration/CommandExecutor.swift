@@ -466,6 +466,7 @@ enum CommandExecutor {
         }
 
         var result = CompressDialogResult()
+        var commandLineProperties: [String] = []
         if command.showDialog {
             // UpdateGUI.cpp:315-541: the Compress dialog, pre-filled from the command line. The
             // archive path is shown without its extension, which is what `-saa` then re-adds.
@@ -482,8 +483,24 @@ enum CommandExecutor {
             input.openShareForWrite = command.openShareForWrite
             input.deleteAfterCompressing = command.deleteAfterCompressing
             input.parentWindow = parentWindow
+            // di.UpdateMode = FindActionSet(Commands.Front().ActionSet) (UpdateGUI.cpp:446-453):
+            // `a` / `u` and any `-u` switches pick the combo item; a set that is none of the four
+            // is E_NOTIMPL before the dialog opens.
+            guard let updateMode = command.dialogUpdateMode,
+                  let mode = SZUpdateMode(rawValue: updateMode.rawValue) else {
+                showError("Not implemented", parent: parentWindow)          // HResultToMessage(E_NOTIMPL)
+                return .fatalError
+            }
+            input.updateMode = mode
             guard let answer = CompressDialogController.run(input) else { return .userBreak }
             result = answer
+            // `ParseProperties(options.MethodMode.Properties, di)` pre-parses `-m tm/tc/ta` into
+            // di.MTime / CTime / ATime, but CCompressDialog::OnOK overwrites all three from the
+            // format's stored options (CompressDialog.cpp:1201-1205), so they never reach the
+            // dialog. What does survive is the command line's own `-m` list: `SetOutProperties`
+            // *appends* the dialog's properties to `options.MethodMode.Properties`, so the command
+            // line's come first and a dialog value of the same name wins (applied below).
+            commandLineProperties = command.methodProperties
         } else {
             // Without `-ad` the archive path is used as given; `-sae` means exactly that and
             // `-saa` appends the format's extension (Update.cpp:115-145).
@@ -497,7 +514,8 @@ enum CommandExecutor {
             result.parameters = command.methodProperties
                 .map { "-m" + $0 }
                 .joined(separator: " ")
-            result.updateMode = command.command == .update ? .update : .add
+            result.updateMode = command.dialogUpdateMode.flatMap { SZUpdateMode(rawValue: $0.rawValue) }
+                ?? (command.command == .update ? .update : .add)
             // The bug this replaces: `sfxMode` was only ever set from the Compress dialog, so
             // `a -sfx …` without `-ad` silently wrote a plain archive. `UpdateGUI.cpp:561-565`
             // fills the default module whether the dialog ran or not.
@@ -513,6 +531,12 @@ enum CommandExecutor {
         }
 
         let updateOptions = result.updateOptions()
+        if !commandLineProperties.isEmpty {
+            updateOptions.properties = commandLineProperties.map { text -> SZUpdateProperty in
+                guard let eq = text.firstIndex(of: "=") else { return SZUpdateProperty(name: text, value: "") }
+                return SZUpdateProperty(name: String(text[..<eq]), value: String(text[text.index(after: eq)...]))
+            } + updateOptions.properties
+        }
         if let sfxModulePath {
             // UpdateGUI.cpp:517 is `if (di.SFXMode) options.SfxMode = true;` — the dialog can turn
             // SFX **on**, never off, because `-sfx` already set it on `options`.

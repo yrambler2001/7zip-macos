@@ -58,7 +58,7 @@ Menu items whose action selector has no implementation yet are auto-disabled by 
 - Finder Sync extension monitors `/`, `/Volumes`, `~/Library/CloudStorage`; builds the exact 7-Zip menu (`03-shell-integration-inventory.md` §1, §6) for the selection; toolbar item with the same menu; sends `sevenzip://` URLs with the command and file list (a temp list file for long selections) to the app.
 - App handles URL commands and argv identically through `CommandLine`, showing only the dialogs 7zG would (Compress/Extract dialog when `-ad`, progress otherwise, hash results, test statistics).
 - `NSServices` in the app Info.plist provide the same commands without the extension enabled.
-- `CFBundleDocumentTypes` + UTI declarations for all 39 associated extensions; Options > System sets defaults via `NSWorkspace.setDefaultApplication(at:toOpen:)`.
+- `CFBundleDocumentTypes` + UTI declarations for all 40 associated extensions; Options > System sets defaults via `NSWorkspace.setDefaultApplication(at:toOpen:)`.
 - "Compress and email" via `NSSharingService.composeEmail`.
 - Dragging items out of an archive to Finder via `NSFilePromiseProvider` with lazy extraction.
 
@@ -66,33 +66,44 @@ Menu items whose action selector has no implementation yet are auto-disabled by 
 
 Fixtures: `Mac/Tests/Fixtures/` with small archives in several formats created by the built `7zz` (script `Mac/scripts/make-fixtures.sh`). Unit tests cover the bridge. UI automation uses XCUITest and `osascript`; screenshots go to `Mac/docs/reports/screenshots/`.
 
-## As built (Wave 1 scaffold, branch `mac/scaffold`)
+## As built (refreshed by `mac/release`, 2026-10-03)
 
-Code against these names; do not read the sources.
+The Wave 1 description that stood here (a stubbed `IFolderOperations`, an "unused"
+`SZProgressDelegate`, a stub Finder extension, 17 tests) is history. Code against the per-scope API
+documents in `Mac/docs/api/`, which each scope keeps current, rather than the sources:
 
-### SevenZipKit public API (`Mac/Core/include/`, `import SevenZipKit`)
+| Area | API document | Entry points |
+|---|---|---|
+| Bridge basics | `api/fsfolder.md`, `api/opsinfra.md` | `SZFolder`, `SZFileSystemFolder`, `SZRootFolder`, `SZFolderOperations` (copy / move / delete / rename / create / calc size, `IFolderOperations` on every folder kind), `SZProgressDelegate` (every long engine call reports through it) |
+| Archives | `api/extract.md`, `api/compress.md` | `SZArchiveOpener` / `SZArchive` (open in panel, nested levels, per-level `password`, write-back), `SZArchiveExtractor` (`SZExtractor.h`), `SZTempOpen` / `SZTempFile`, `SZUpdater` (`SZUpdateOptions`, SFX, volumes, `expandPathSpecs`) |
+| Tools | `api/tools.md` | `SZHasher`, `SZBenchmark`, `SZSplitFile` |
+| Formats, language, settings | this section | `SZCodecs` (lazy, thread-safe; `formats(matchingHeader:)` for lookup by signature), `SZLang.shared`, `SZSettings` / `SZWorkDirSettings`, `SZEngineVersionString()` |
+| App | `api/panel.md`, `api/options.md`, `api/opsinfra.md` | `MainWindowController` (one per window; `OperationContextProviding`), `PanelViewController` (one serial `queue` per panel owns its `SZFolder`; `runFolderOperation`, `parkPanels(showing:)` for command scopes), `OperationRunner` (worker thread + Progress dialog + questions), `Settings`, `Lang`, `DialogKit` |
+| Finder / command line | `api/finder.md` | `FinderSync.appex`, the two Quick Action appexes, `ServicesProvider`, `URLCommands` (`sevenzip://`), `SevenZipArguments.parse` → `CommandExecutor` (the 7zG grammar), `DockDropRouter` |
+| Test support | `api/resetcmd.md`, `api/harness.md` | `SZ_TEST_SUPPORT`, `SEVENZIP_DEFAULTS_SUITE`, `sevenzip://test/reset` (frozen contract: `test-support-contract.md`) |
+| Icons | `api/icons.md` | `Mac/scripts/make-icons.sh`, `doc-<name>` assets, `AboutLogo` |
 
-- `SZTypes.h`: `SZPropID` (all `kpid*`, Swift names `.name .size .mtime .ctime .atime .attrib .crc .isDir .packSize ...`), `SZVarType`, `SZTimestampLevel` (`.day .min .sec .NTFS .NS`), `SZExtractPathMode`, `SZOverwriteMode`, `SZOverwriteAnswer`, `SZOperationResult`, `SZAskMode`.
-- `SZError.h`: `SZErrorDomain`, `SZErrorCode` (Swift `SZError.Code.*`: `.engine .cancelled .outOfMemory .notImplemented .invalidArgument .notArchive .passwordRequired .wrongPassword .codecsNotLoaded .fileNotFound .notFolder .unsupported`), userInfo keys `SZErrorHRESULTKey`, `SZErrorEngineMessageKey`; helper class `SZErrors` (`errorWithCode:message:`, `errorWithHRESULT:message:`, `messageForHRESULT:`).
-- `SZCodecs`: `loadCodecs()` (throws), `isLoaded`, `unload()`, `formats: [SZFormatInfo]`, `formatCount`, `format(forExtension:)`, `format(forArchiveName:)`, `format(named:)`, `allExtensions`. `SZFormatInfo`: `index name extensions addExtensions mainExtension updateEnabled isHashHandler keepName findSignature supportsAltStreams supportsNtSecurity supportsSymLinks supportsHardLinks useGlobalOffset startOpen backwardOpen preArc pureStartOpen byExtOnlyOpen supportsCTime/ATime/MTime flags timeFlags signatureCount`.
-- `SZFolder` (owned by one serial queue): `SZFolder.folder(forPath:passwordDelegate:)` (walks into archives, "" = root), `loadItems()`, `itemCount`, `nameOfItem(at:)`, `prefixOfItem(at:)`, `sizeOfItem(at:)`, `isDirectory(at:)`, `propertyOfItem(at:propID:) -> Any?` (String/NSNumber/Date), `varTypeOfItem(at:propID:)`, `displayStringOfItem(at:propID:timestampLevel:)`, `properties: [SZPropertyInfo]` (`propID varType handlerName localizedName`), `folderProperty(forID:)`, `folderType` ("FSFolder" / "RootFolder" / "FSDrives" / "7-Zip.<type>"), `path`, `fullPath`, `isArchive isFileSystem isRootFolder isReadOnly`, `archive: SZArchive?`, `arcProps: SZArcProps?`, `bindToFolder(at:)`, `bindToFolder(named:)`, `bindToPath(_:passwordDelegate:)`, `bindToParentFolder()` (archive root -> outer folder; root -> root), `supportsFlatMode`, `flatMode`, `supportsChangeNotification`, `wasChanged`, `supportsCompare`, `compareItem(at:with:propID:)`, `SZFolder.compareFileName(_:with:)`, `SZFolder.timestampShowUTC`. `SZArcProps`: `levelCount`, `properties(atLevel:)`, `property(atLevel:propID:)`, `displayString(atLevel:propID:)`, `properties2(atLevel:)`, `property2(atLevel:propID:)`.
-- `SZFileSystemFolder: SZFolder`: `folder(withPath:)`, `directoryPath`, `fullPathOfItem(at:)`, `defaultHiddenPropIDs`. Columns Name, Size, Modified, Created (birth time), Accessed, Attributes; FSEvents-backed `wasChanged`; `IFolderOperations` stubbed (E_NOTIMPL) in `Mac/Core/Internal/FSFolderMac.cpp`.
-- `SZRootFolder: SZFolder`: `makeRootFolder()` (Computer "/", Volumes, Home, Documents), `makeVolumesFolder()` (FSDrives: Name, Total Size, Free Space, Type, Label, File System, Cluster Size from `statfs`), `rootEntryNames`.
-- `SZArchiveOpener`: `openArchive(atPath:formatHint:passwordDelegate:)`, `openArchive(in:itemIndex:formatHint:passwordDelegate:)` (stream via `IInArchiveGetStream`, else temp extraction into a `7zO-*` dir like 7zFM). `SZArchive`: `path type errorMessage outerFolder outerItemIndex isReadOnly tempDirectory arcProps`, `rootFolder()`, `reopen()`, `close()`. `SZPasswordDelegate`: `passwordForArchive(atPath:) -> String?` (engine thread; nil = cancel; no delegate -> `.passwordRequired`).
-- `SZLang.shared`: `string(forID:)`, `string(forID:fallback:)`, `translatedString(forID:)` (lang file only), `englishString(forID:)` (en.ttt + PropertyName.rc-only names), `loadLanguage(code:)` ("" system, "-" English), `loadLanguageFile(_:)`, `currentLanguageCode`, `comments`, `availableLanguages: [SZLanguageInfo]` (`code path englishName nativeName stringCount`), `SZLang.langDirectoryPath`, `englishStringCount` (444), `SZLang.systemLanguageCandidates`. Also installs the `MyLoadString` hook for the engine.
-- `SZSettings` (CFPreferences, domain `com.yrambler2001.7zip`, same as `UserDefaults.standard`): `string(forKey:)`/`setString(_:forKey:)`, `integer(forKey:defaultValue:)`/`setInteger`, `double`/`setDouble`, `bool(forKey:defaultValue:)`/`setBool`, `boolPair(forKey:)`/`setBoolPair` (nil = undefined), `stringArray`/`setStringArray`, `hasKey`, `removeKey`, `keys(withPrefix:)`, `synchronize`, `applicationID`; key constants `SZSettingsKey*` (`Lang`, `FM.Position`, `FM.Panels.numPanels/currentPanel/splitterPos`, `FM.PanelPath0/1`, `FM.ListMode0/1`, `FM.FlatViewArc0/1`, `FM.FolderHistory`, `FM.FolderShortcuts`, `FM.Toolbars`, ...). `SZWorkDirSettings`: `loadFromSettings()`, `save()`, `mode path forRemovableOnly` (backs `NWorkDir::CInfo`). Engine-side `NExtract/NCompression/NWorkDir/CContextMenuInfo` accessors use keys `Extraction.*`, `Compression.*`, `Compression.Options.<Format>.*`, `Options.*`.
-- `SZProgressDelegate` protocol (unused yet): `progressSetTotal:`, `progressSetCompleted:`, `progressSetRatioInfoInSize:outSize:`, `progressSetCurrentFile:isDirectory:`, `progressSetNumFilesProcessed:`, `progressAskOverwriteExisting:...suggestedName:`, `progressAskPasswordForPath:`, `progressShowMessage:`, `progressSetOperationResult:path:isEncrypted:`, `progressCheckBreak`.
-- `SZEngineVersionString()`, `SZEngineCopyrightString()`.
+### Threading, as enforced
 
-Internals: engine headers enter `.mm` files only via `Mac/Core/Internal/SZEngine.h` (renames `BOOL`); `SZBridgeUtils.h` (string/PROPVARIANT/HRESULT conversions, `SZRunCatching` exception ladder); `SZFolder+Internal.h` (raw `IFolderFolder` access, internal initializers). Platform layer in `Mac/Core/Platform/` (part of `SevenZipCore`).
+- No engine call on the main thread: operations run on an `OperationRunner` worker (WaitMode 500 ms,
+  then the Progress dialog), folder loads and binds on the owning panel's `queue`.
+- A worker's question (password, overwrite, memory) reaches the main thread through a
+  common-modes run-loop block, **never** `DispatchQueue.main.sync`, so it is delivered inside any
+  modal session, including one started from a main-queue block (`requests.md`, navgaps row).
+- A panel queue that needs the main thread uses `PanelViewController.performOnMainRunLoop` and
+  marks itself `queueHeldForMain`; a command that operates on a folder it got from `ActiveContext`
+  parks every panel showing that archive first (`parkPanels(showing:)`), so one `SZFolder` is never
+  used by two threads.
+- `SZCodecs` is built on a worker at launch, after the window exists (`FM.cpp:738-743`).
 
 ### App layout (`Mac/App/`)
 
-- `AppDelegate.swift` (`main()`, lang + codecs at launch, `[path] [-t<type>]` argv)
-- `MainMenu.swift` (every §2 item with IDM comments; `@objc protocol MenuActions` lists every selector: `fileOpen fileOpenInside ... fileExit editSelectAll ... viewTwoPanels ... favoritesSetBookmark favoritesOpenBookmark toolsOptions toolsBenchmark toolsDeleteTempFiles helpContents helpAbout toolbarAddToArchive toolbarExtractArchives toolbarTestArchives`; unimplemented ones are disabled)
-- `MainWindow/MainWindowController.swift` (toolbar Add/Extract/Test/Copy/Move/Delete/Info, split view, 1/2 panels, persistence, favorites, toolbar toggles, auto-refresh timer, About)
-- `Panel/PanelViewController.swift` (address bar, details table, status bar, navigation, sort, password prompt), `Panel/PanelTableView.swift` (Enter/Backspace/`\` keys), `Panel/PanelRow.swift` (row model + snapshot)
-- `Support/Lang.swift`, `Support/Settings.swift`, `Support/Formatting.swift`, `Support/Icons.swift`
-- `Mac/FinderSync/FinderSync.swift` (stub appex), `Mac/Tests/SevenZipKitTests/` (17 tests), `Mac/Tests/Fixtures/` (make-fixtures.sh)
-
-Implement menu commands in later waves as `extension MainWindowController` / `extension PanelViewController` in new files.
+- `AppDelegate.swift` (+ `Integration/AppDelegate+Integration.swift`): launch, argv, open events,
+  shutdown order (temp-file sessions, then state).
+- `MainMenu.swift` (every 01 §2 item with its IDM comment; `MenuActions` lists the selectors).
+- `MainWindow/`, `Panel/` (`panel`), `Commands/` (one file per command scope), `Dialogs/` (one file
+  per Windows dialog, `DialogKit` in `ProgressDialogSupport.swift`), `Support/` (settings, lang,
+  formatting, icons, `OperationRunner`, temp-open, the launch temp sweep), `Integration/`
+  (`finder`).
+- Tests: `Mac/Tests/SevenZipKitTests` (unit, ~390), `Mac/Tests/AppTests` (app-hosted, ~100),
+  `Mac/Tests/UITests` + `UIProbe1/2` (XCUITest, sharded); `Mac/scripts/verify.sh` runs them all.
