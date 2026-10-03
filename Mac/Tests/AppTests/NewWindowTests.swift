@@ -25,12 +25,14 @@ final class NewWindowTests: AppHostTestCase {
     private var savedMaximized = false
     private var savedSplitter = 0.5
     private var scratch = ""
+    private var savedToolbars: UInt32 = 0
 
     private var delegate: AppDelegate { NSApp.delegate as! AppDelegate }
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         before = MainWindows.controllers
+        savedToolbars = Settings.toolbarsMask
         savedPaths = [Settings.panelPath(0), Settings.panelPath(1)]
         savedNumPanels = Settings.numPanels
         savedCurrentPanel = Settings.currentPanel
@@ -48,7 +50,6 @@ final class NewWindowTests: AppHostTestCase {
         for controller in MainWindows.controllers where !before.contains(where: { $0 === controller }) {
             controller.window?.close()
         }
-        wait(for: "closed windows released") { true }
         // A closing window saves its state, as on Windows; put the host's settings back.
         Settings.setPanelPath(savedPaths[0], 0)
         Settings.setPanelPath(savedPaths[1], 1)
@@ -57,6 +58,7 @@ final class NewWindowTests: AppHostTestCase {
         Settings.windowFrame = savedFrame
         Settings.maximized = savedMaximized
         Settings.splitterPos = savedSplitter
+        Settings.toolbarsMask = savedToolbars
         try? FileManager.default.removeItem(atPath: scratch)
         super.tearDown()
     }
@@ -153,6 +155,22 @@ final class NewWindowTests: AppHostTestCase {
                 && controller.panels[0].currentPath.hasPrefix(self.scratch + "/a")
                 && controller.panels[1].currentPath.hasPrefix(self.scratch + "/b")
         }, "\(controller.panels.map(\.currentPath))")
+    }
+
+    /// Each window has its own Toolbars mask (one per 7zFM process). AppKit mirrors item changes
+    /// between toolbars that share an identifier, so with a shared one a toggle in one window was
+    /// replayed into the other and raised "already contains an item" -- found by this scope.
+    func testToolbarToggleInOneWindowLeavesTheOtherAlone() throws {
+        let first = delegate.openNewWindow()
+        let second = delegate.openNewWindow()
+        let before = try XCTUnwrap(second.window?.toolbar).items.map(\.itemIdentifier)
+        XCTAssertNotEqual(first.window?.toolbar?.identifier, second.window?.toolbar?.identifier)
+        first.viewArchiveToolbar(nil)               // IDM_VIEW_ARCHIVE_TOOLBAR 750
+        first.viewArchiveToolbar(nil)
+        first.viewStandardToolbar(nil)              // IDM_VIEW_STANDARD_TOOLBAR 751
+        XCTAssertEqual(second.window?.toolbar?.items.map(\.itemIdentifier), before,
+                       "the other window's toolbar changed with this one's")
+        first.viewStandardToolbar(nil)
     }
 
     // MARK: - saved state: the window closed last wins

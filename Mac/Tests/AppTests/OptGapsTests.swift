@@ -239,11 +239,14 @@ final class OptGapsTests: AppHostTestCase {
         XCTAssertEqual(center(a).x, center(parent.frame).x, accuracy: 1.5)
         XCTAssertEqual(center(a).y, center(parent.frame).y, accuracy: 1.5)
 
-        // No parent: the key / main window, never the screen while a window is up.
-        var owner: NSWindow?
+        // No parent: the key / main window, never the screen while a window is up. The owner is
+        // resolved *before* the dialog is presented, as the dialog does when it centres itself:
+        // once it is up it is the key window, so asking again from inside the probe gives another
+        // answer whenever the app is active and `parent` was key (mac/newwindow: a hosted case that
+        // opens archives activates the app, and the activation outlives that case).
+        let owner = DialogKit.owner(for: nil, parent: nil)
         var withoutParent: NSRect?
         XCTAssertTrue(ModalProbe.present({ _ = CommentDialog.run(value: "x", parent: nil) }) { window in
-            owner = DialogKit.owner(for: window, parent: nil)
             withoutParent = window.frame
         })
         let b = try XCTUnwrap(withoutParent)

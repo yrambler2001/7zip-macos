@@ -108,11 +108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openNewWindow()
     }
 
-    /// One new file-manager window, in front.
+    /// One new file-manager window, in front. No explicit activation: the reopen event activates
+    /// the app already, and File > New Window is chosen in the active app.
     @discardableResult
     func openNewWindow() -> MainWindowController {
         let controller = MainWindows.open()
-        NSApp.activate(ignoringOtherApps: true)
         controller.window?.makeKeyAndOrderFront(nil)
         return controller
     }

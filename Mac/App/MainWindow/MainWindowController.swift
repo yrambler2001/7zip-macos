@@ -134,7 +134,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     }
 
     private func buildToolbar() {
-        let toolbar = NSToolbar(identifier: "7zFMToolbar")
+        // One identifier per window: AppKit mirrors `insertItem` / `removeItem` into every live
+        // toolbar with the same identifier, so with several windows (MainWindows.swift) a toolbar
+        // toggle in one window -- each has its own Toolbars mask, as each 7zFM process had -- would
+        // be replayed into the others and raise "already contains an item" there.
+        let toolbar = NSToolbar(identifier: "7zFMToolbar-" + UUID().uuidString)
         toolbar.delegate = self
         toolbar.allowsUserCustomization = false
         toolbar.displayMode = (toolbarsMask & 1) != 0 ? .iconAndLabel : .iconOnly
