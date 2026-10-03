@@ -276,6 +276,29 @@ final class MessageListView: NSView, NSTableViewDataSource {
     }
 }
 
+// MARK: - the dialog window
+
+/// The window class of every `DialogKit` dialog. `NSApp.runModal(for:)` **centres a window on the
+/// screen** when it orders it in, which undid `install`'s placement for every dialog that went
+/// straight into `runModal` -- only Copy / Move / Create Folder, which order themselves front first,
+/// stayed on the main window (requests.md, `polish` -> `opsinfra`, measured in
+/// `OptGapsTests.testDialogsCentreOnTheirOwnerWindow`). Here `center()` means DS_CENTER: centre on
+/// the owner window, and on the screen only when the app shows no window.
+final class DialogWindow: NSWindow {
+
+    /// The parent the dialog was installed with (nil = the key / main window, resolved late).
+    weak var owner: NSWindow?
+
+    override func center() {
+        DialogKit.center(self, over: owner)
+    }
+
+    /// The plain AppKit behaviour, for a dialog with no owner at all.
+    func centerOnScreen() {
+        super.center()
+    }
+}
+
 // MARK: - control factories
 
 /// Small helpers so every dialog is laid out the same way (GuiCommon.rc: margin m = 8,
@@ -320,8 +343,8 @@ enum DialogKit {
     static func window(title: String, resizable: Bool) -> NSWindow {
         var style: NSWindow.StyleMask = [.titled, .closable]
         if resizable { style.insert(.resizable) }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 200),
-                              styleMask: style, backing: .buffered, defer: false)
+        let window = DialogWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 200),
+                                  styleMask: style, backing: .buffered, defer: false)
         window.title = title
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
@@ -396,8 +419,10 @@ enum DialogKit {
     /// Centres `window` on its owner (see `owner(for:parent:)`), kept inside the owner's screen as
     /// `CenterWindow` keeps a dialog inside the work area; on the screen when there is no owner.
     static func center(_ window: NSWindow, over parent: NSWindow?) {
+        // Remembered for the `center()` that `runModal(for:)` sends when it orders the window in.
+        if let parent, let dialog = window as? DialogWindow { dialog.owner = parent }
         guard let owner = owner(for: window, parent: parent) else {
-            window.center()
+            if let dialog = window as? DialogWindow { dialog.centerOnScreen() } else { window.center() }
             return
         }
         let frame = owner.frame

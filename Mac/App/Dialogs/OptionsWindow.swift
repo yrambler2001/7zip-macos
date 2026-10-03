@@ -283,9 +283,10 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
 
     init() {
         // A property sheet is as large as its largest page (PropertySheet sizes to the biggest
-        // template). 560 pt is the tallest page's need -- the 7-Zip page in French or Ukrainian,
-        // whose notes wrap to three lines (OptGapsTests.testOptionsPagesFitTheirWindow).
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 560),
+        // template). 580 pt holds the tallest page -- the 7-Zip page in French, Russian, Hebrew or
+        // Ukrainian once the Finder-extension status has wrapped to three lines, measured at
+        // 566 pt (OptGapsTests.testOptionsPagesFitTheirWindow).
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 580),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.title = Lang.text(2100, "Options")     // IDS_OPTIONS 2100
