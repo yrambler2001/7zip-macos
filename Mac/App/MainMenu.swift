@@ -100,6 +100,12 @@ enum MainMenu {
     private static func fileMenu() -> NSMenuItem {
         let menu = NSMenu(title: Lang.menuTitle(idmFile, "&File"))
         let a = MenuActions.self
+        // macOS addition, no Windows resource ID: a second 7zFM.exe launch is a new window on
+        // Windows (01 §1.1), here a window of this process (MainWindows.swift). Option+Cmd+N,
+        // because Cmd+N is IDM_CREATE_FILE's Ctrl+N under the Ctrl -> Cmd mapping.
+        item(menu, 0, lang: noLangID, "New Window", key: "n", mods: [.command, .option],
+             action: #selector(a.fileNewWindow(_:)))
+        menu.addItem(.separator())
         item(menu, 540, lang: 540, "&Open\tEnter", key: String(UnicodeScalar(NSDownArrowFunctionKey)!), mods: [.command], action: #selector(a.fileOpen(_:)))                  // IDM_OPEN
         item(menu, 541, lang: 541, "Open &Inside\tCtrl+PgDn", key: String(UnicodeScalar(NSPageDownFunctionKey)!), mods: [.command], action: #selector(a.fileOpenInside(_:)))  // IDM_OPEN_INSIDE
         let inside = Lang.stripMnemonic(Lang.dropAccelerator(Lang.translated(541) ?? "Open &Inside"))
@@ -395,6 +401,7 @@ final class FavoritesMenuDelegate: NSObject, NSMenuDelegate {
 /// (and in later waves' extensions); AppKit disables items nobody responds to.
 @objc protocol MenuActions {
     // File
+    func fileNewWindow(_ sender: Any?)            // macOS addition (no IDM_*): File > New Window
     func fileOpen(_ sender: Any?)                 // IDM_OPEN 540
     func fileOpenInside(_ sender: Any?)           // IDM_OPEN_INSIDE 541
     func fileOpenInsideOne(_ sender: Any?)        // IDM_OPEN_INSIDE_ONE 590

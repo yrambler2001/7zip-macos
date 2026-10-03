@@ -138,6 +138,9 @@ author (all 24 `runModal` sites use `DialogKit.window`); archgaps → extract an
    do. *Recommendation:* keep the Mac behaviour and tick PROGRESS "Every launch opens a new window"
    as *mapped* (a second process via `open -n` already gets its own window). The alternative is one
    line in `applicationShouldHandleReopen`.
+   **Decided (user, 2026-10-03): open a new window**, as each 7zFM.exe launch does -- with windows
+   open or not, plus File ▸ New Window. Built by `mac/newwindow` (`reports/newwindow.md`); PROGRESS
+   1.4 ticked.
 2. **The panels' first folder** when nothing is stored: home (as built) or 7zFM's root
    ("Computer"). *Recommendation:* keep home -- the root is one Up away and home is what a Mac user
    expects -- and tick PROGRESS "Panel start path" as *mapped*.
@@ -145,11 +148,14 @@ author (all 24 `runModal` sites use `DialogKit.window`); archgaps → extract an
    (navgaps K.3). *Recommendation:* open a new window when the front window shows anything but its
    launch state; it is what Windows does (one 7zFM per file) and loses nothing. Owner: `finder` /
    `panel`.
+   **Decided (user, 2026-10-03): always a new window**, not only when the front window has moved
+   on from its launch state. Built and tested by `mac/newwindow`.
 4. **`testmanagerd` sharing** (requests harness → orchestrator): *recommendation:* one sentence
    in `00-orchestration.md` that every `xcodebuild test`, unit runs included, waits for the
    app-launch lock when more than one agent runs; do not make `test.sh` take it for unit runs.
 5. **PROGRESS §9.4 "every box ticked or listed; status table done"**: becomes true when 1 and 2 are
-   answered and the human checks of §6 are done; tick it then.
+   answered and the human checks of §6 are done; tick it then. *1 is answered (`mac/newwindow`);
+   2 and §6 remain.*
 
 ## 5. Verification
 

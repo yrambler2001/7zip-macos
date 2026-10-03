@@ -12,14 +12,15 @@ checklist; this file is the summary a user needs.
 
 ## Where it stands (2026-10-03)
 
-- **Checklist: 490 of 496.** The six open items are listed in section D with the reason for each:
-  two product decisions (a re-launch opening a new window, the panels' first folder), one
-  optional helper the locked design replaced, one check only a human can do (Finder's own menu),
-  and two packaging bookkeeping items that follow from those.
+- **Checklist: 491 of 496.** The five open items are listed in section D with the reason for each:
+  one product decision (the panels' first folder), one optional helper the locked design
+  replaced, one check only a human can do (Finder's own menu), and two packaging bookkeeping
+  items that follow from those. The re-launch decision was taken by the user and built by
+  `mac/newwindow` (2026-10-03): starting 7-Zip again opens a new window, and every archive opened
+  from Finder gets its own window.
 - **Of the 14 "unfinished" gaps the first audit listed, none is left** (section D).
 - **What is still partial** is small and listed in section B: right-to-left mirroring, a third of
-  the translations being incomplete upstream, Finder opening a second archive into the front
-  window, and a handful of details.
+  the translations being incomplete upstream, and a handful of details.
 - **What nobody has verified** is in section E: Finder's own context menu, a real drag into Finder,
   a Dock drop, the Help pages in a browser, the Dock-tile progress, and the whole Developer ID /
   notarization path -- each needs a person, a permission or a certificate this machine does not
@@ -120,10 +121,9 @@ own wordmark. Sections K and L.
 
 Current list. The first audit's 24 items are accounted for at the end of this section.
 
-1. **Opening several archives from Finder**: the first reuses the front window's panel, only the
-   rest get windows of their own; Windows starts one 7zFM per file. A file opened into a window
-   that already shows something keeps that window and reports a failure as a sheet (`03 §6.2`,
-   K.3). Decision for the orchestrator (`reports/release.md`).
+1. ~~**Opening several archives from Finder**~~ -- closed by `mac/newwindow`: every archive gets a
+   window of its own, as Windows starts one 7zFM per file; a failed open closes that window (and
+   the app, when it was the only one), as 7zFM's process ends (`03 §6.2`, K.3).
 2. **Right-to-left languages are not mirrored**: AppKit mirrors only an app that declares an RTL
    localization, and this one carries none; composite strings do come out in the right order
    (I.5). Six of the 92 translations are RTL.
@@ -133,9 +133,11 @@ Current list. The first audit's 24 items are accounted for at the end of this se
 4. **The messages list** of the Progress window uses fixed column widths (`01b §4.17`).
 5. **The panels' first folder** when nothing is stored is the home folder, not 7zFM's root
    ("Computer", one Up away) (`01 §1.4`). Deliberate in `mac/panel`; a decision is asked for.
-6. **A re-launch of the running app** (Dock, Finder, `open -a`) brings its window to the front, as
-   every Mac app does, instead of opening a new window as a new 7zFM process would (`01 §1.1`).
-   A second process (`open -n`) does get its own window. Decision asked for.
+6. ~~**A re-launch of the running app**~~ -- closed by `mac/newwindow` (user decision): a Dock
+   click, a Finder double-click of the app or `open -a 7-Zip` opens a new window, with windows
+   open or not, as a new 7zFM process would (`01 §1.1`); File ▸ New Window (Option+Cmd+N, a macOS
+   addition) does the same. Arguments given to `open -a … --args` on a running app are not
+   delivered by Launch Services; `open -n` still starts a second process.
 7. **Cancel during a command-line wildcard scan** (`7zG a … *.txt -r` from the Finder extension or
    a `sevenzip://` URL) takes effect when the engine's directory walk returns: the walk has no
    break check. The window and the Cancel button are there; the app no longer hangs during it.
@@ -183,7 +185,7 @@ decided up front (`00-orchestration.md`, `01 §9`, `03 §6`).
 | Drive letters, `\\.\` physical-drive imaging, Network root (`01 §6.2, §6.3, §6.6`) | Computer = mounted volumes plus Documents; imaging and Network dropped | — |
 | Win32 controls, dialog units, the `IDD_*_2` small-screen templates (`01 §9 #14, #33`) | AppKit views; always the full menus and full-size dialogs | — |
 | `DeleteOldTempFiles` never called (`01 §1.1`, `§9 #11`) | stale `7zO*` / `7zE*` folders swept at launch, conservatively (L.1) | an improvement, documented as such |
-| One 7zFM process per window | one process, any number of windows; a re-launch activates it | macOS application model (B 6) |
+| One 7zFM process per window | one process, one window per launch: a re-launch (Dock, Finder, `open -a`) or File ▸ New Window opens one; each window saves its state on close (last closed wins), Quit saves them back to front | macOS application model; `reports/newwindow.md` |
 | Back / Forward | View ▸ Back / Forward (Cmd+[ / Cmd+]) over the panel's folder history | an addition; 7zFM has no navigation stack |
 | `FM\NumPanels`, `CurrentPanel`, `SplitterPos`, the `Columns` blob, `Compression\Options\<fmt>` sub-keys | `FM.Panels.*` (the splitter as a ratio), `FM.Columns.<ID>` as JSON, flat `Compression.Options.<Fmt>.<Name>` keys, `MemUse64` | `UserDefaults` value types; recorded as spec corrections in `requests.md` |
 
@@ -204,15 +206,14 @@ Dock tile); large memory pages (`-slp`); HtmlHelp `.chm` (mapped to the bundled 
 2, 3, 4, 8 by `mac/opsgaps` (H) with `mac/cmdmode` (F); 7, 13 by `mac/archgaps` (J); 10, 11, 14
 by `mac/cmdmode` (F) and `mac/optgaps` (I); 12 by `mac/optgaps` (I).
 
-**The six checklist items still open, and why** (`PROGRESS.md`):
+**The five checklist items still open, and why** (`PROGRESS.md`):
 
 | Item | Why it is open |
 |---|---|
-| scaffold: every launch opens a new window (`01 §1.1`) | product decision: B 6 |
 | scaffold: panel start path falls back to the root (`01 §1.4`) | product decision: B 5 |
 | finder: optional `Contents/Helpers/7zG.app` (`03 §6.4`) | by design: the locked decision runs 7zG commands in process |
 | finder: Finder context menu verified in Finder (`03 §6.3`) | needs a human (no Automation permission here): `reports/finder.md` |
-| packaging: every box ticked or listed as a known gap | follows from the four above, each listed here and in `reports/release.md` |
+| packaging: every box ticked or listed as a known gap | follows from the three above, each listed here and in `reports/release.md` |
 | packaging: screenshots for every scope; `architecture.md` current | `architecture.md` "As built" refreshed by `mac/release` (orchestrator-owned, so the orchestrator ticks it); `release-*` and `panelgaps-*` screenshots added; `optgaps` has none of its own -- an Options ▸ System screenshot case re-entered AppKit's constraint pass in the hosted test run and was dropped (its pages appear in `options-*` / `packaging-*`) |
 
 ---
