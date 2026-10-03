@@ -286,3 +286,21 @@ if let hashes = result.hashResults { HashResultsDialog.show(results: hashes, par
 Covered by `Mac/Tests/SevenZipKitTests/{DragOutPromiseTests,ExtractHashTests}.swift`; the digests
 are cross-checked against `7zz x -scrcSHA256` / `7zz t -scrcSHA256`. See
 `Mac/docs/reports/cleanup.md`.
+
+---
+
+## Note — 2026-10-03 (`mac/opsgaps`)
+
+* **§6's quarantine gap is closed.** `zoneIDMode` now has its Windows effect: the engine's
+  `ReadZoneFile_Of_BaseFile` / `WriteZoneFile_To_BaseFile` are enabled on `__APPLE__` and carry
+  `com.apple.quarantine` (upstream patch, `Mac/docs/upstream-patches.md`), so `.all` copies the
+  archive's attribute onto every extracted file, `.office` onto upstream's `kOfficeExtensions` only,
+  and nothing is written for an archive that has none. `SZTempOpen.applyQuarantine` is still what
+  temp-open uses. Extract inside an archive (`ExtractCommands.extractFromArchiveFolder`) passes
+  `SZFolder.registryZoneMode` through the new `extractItems(...zoneMode:zoneSourcePath:...)`
+  (`api/opsinfra.md`, note of the same date).
+* **§6's `-thash` gap is closed for the Test command**: `ExtractCommands.testArchives()` hands a
+  selection made only of checksum files (`ExtractCommands.areChecksumFiles(_:)`) to
+  `CommandExecutor.run(argv: ["t", "-thash", "--", ...])`.
+* `SZArchiveExtractor` gives `E_OUTOFMEMORY` without an engine text the IDS_MEM_ERROR 3000 message.
+* The Extract dialog's Help button opens the bundled `fm/plugins/7-zip/extract.htm` (`api/tools.md`).
