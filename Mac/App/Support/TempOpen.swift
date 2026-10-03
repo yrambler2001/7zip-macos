@@ -328,6 +328,9 @@ final class TempOpenSession: NSObject {
         TempOpenManager.shared.forget(self)
     }
 
+    /// True when the edited item lives in `archive` (any folder of it).
+    func belongs(to archive: SZArchive) -> Bool { folder.archive === archive }
+
     /// Called at quit: 7zFM waits for every watcher before the window closes (01 §1.1).
     func finishAtShutdown() {
         if !finished, tempFile.wasModified, !archiveIsReadOnly {
@@ -373,6 +376,14 @@ final class TempOpenManager {
     }
 
     var openCount: Int { sessions.count }
+
+    /// The panel is leaving `archive` (a nested archive about to be written back into its parent,
+    /// `PanelNestedArchives.swift`): a pending edit of an item inside it is offered first, so the
+    /// write-back carries it, and its watcher stops -- 7zFM deletes the nested copy at that point
+    /// (CFolderLink::DeleteDirAndFile), so a later save could not reach the parent anyway.
+    func finishSessions(inside archive: SZArchive) {
+        for session in sessions where session.belongs(to: archive) { session.finishAtShutdown() }
+    }
 
     /// Called from applicationWillTerminate: ask about every modified temp file, then clean up.
     func finishAll() {

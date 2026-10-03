@@ -50,6 +50,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         window.minSize = NSSize(width: 360, height: 240)
         window.tabbingMode = .disallowed
         super.init(window: window)
+        // Quit without closing the window (Cmd+Q): the nested-archive write-back of
+        // windowWillClose runs here instead (PanelNestedArchives.swift, 01 §3.8).
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                for panel in self?.panels ?? [] { panel.closeNestedArchivesForShutdown() }
+            }
+        }
         window.delegate = self
         TestAnimations.apply(to: window)
         // Signal 2 of the test-support contract: the reset generation, "0" before the first reset.
@@ -175,6 +183,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     func windowWillClose(_ notification: Notification) {
         refreshTimer?.invalidate()
         saveState()
+        // CPanel's destructor closes every archive level: a modified nested archive is offered
+        // for write-back into its parent (PanelNestedArchives.swift, 01 §3.8).
+        for panel in panels { panel.closeNestedArchivesForShutdown() }
         // A closed window needs no toolbar, and leaving one behind is not free: `NSToolbar`'s
         // `removeItem(at:)` indexes the *displayed* items, while `toolbar.items` still holds every
         // item, so anything that rebuilds toolbars by walking `NSApp.windows` -- which

@@ -73,7 +73,13 @@ enum PanelProperties {
             lines.add(propertyName(propID), text)
         }
         if let arcProps = folder.arcProps, arcProps.levelCount > 0 {
-            for level0 in 0..<arcProps.levelCount {
+            // PanelMenu.cpp:345-410: innermost level first; each level's kSpecProps and handler
+            // properties, then -- between two levels only -- the outer handler's properties of
+            // the item the inner level was opened from (GetArcProp2, which reads Arcs[level - 1]
+            // and so does not exist for level 0: asking for it read out of bounds and crashed).
+            let levels = arcProps.levelCount
+            for level2 in 0..<levels {
+                let level0 = levels - 1 - level2
                 lines.addSeparator()
                 lines.add("----" + Lang.text(1003, "Path") + " \(level0 + 1)----", "")
                 for propID in specProps {
@@ -86,12 +92,23 @@ enum PanelProperties {
                     guard !text.isEmpty else { continue }
                     lines.add(info.localizedName, text)
                 }
-                for info in arcProps.properties2(atLevel: level0) {
-                    guard let value = arcProps.property2(atLevel: level0, propID: info.propID) else { continue }
-                    let text = displayString(value)
-                    guard !text.isEmpty else { continue }
-                    lines.add(info.localizedName, text)
+                if level2 < levels - 1 {
+                    lines.addSeparator()                       // kSeparatorSmall
+                    for info in arcProps.properties2(atLevel: level0) {
+                        guard let value = arcProps.property2(atLevel: level0, propID: info.propID) else { continue }
+                        let text = displayString(value)
+                        guard !text.isEmpty else { continue }
+                        lines.add(info.localizedName, text)
+                    }
                 }
+            }
+            // The level that failed to open (NonOpen_ErrorInfo), after a double separator.
+            var needSeparator = true
+            for propID in specProps {
+                let text = arcProps.displayString(atLevel: levels, propID: propID)
+                guard !text.isEmpty else { continue }
+                if needSeparator { lines.addSeparator(); lines.addSeparator(); needSeparator = false }
+                lines.add(propertyName(propID), text)
             }
         }
         if !snapshot.archivePath.isEmpty {

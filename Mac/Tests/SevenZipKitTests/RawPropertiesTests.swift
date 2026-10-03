@@ -139,6 +139,19 @@ final class RawPropertiesTests: XCTestCase {
         XCTAssertFalse(fs.properties.contains { $0.isRawProperty })
     }
 
+    /// Archive-level "2" properties exist only between two levels; level 0 used to read
+    /// CArchiveLink::Arcs[-1] and crash the Properties dialog of every archive.
+    func testArcProps2OnlyBetweenLevels() throws {
+        let single = try XCTUnwrap(try root("test.wim").arcProps)
+        XCTAssertEqual(single.levelCount, 1)
+        XCTAssertEqual(single.properties2(atLevel: 0), [])
+        XCTAssertNil(single.property2(atLevel: 0, propID: .size))
+        XCTAssertEqual(single.properties(atLevel: 5), [])
+        // a .tar.gz opens as one gzip level here (the tar is an item), so it has none either
+        let gz = try XCTUnwrap(try root("test.tar.gz").arcProps)
+        XCTAssertEqual(gz.properties2(atLevel: gz.levelCount - 1), [])
+    }
+
     /// The two upstream renderers: the list cell (64-byte limit, reparse decoded) and the
     /// Properties dialog (256-byte limit), hex upper case only for a CRC / checksum <= 8 bytes.
     func testRawFormatterLimitsAndCase() {

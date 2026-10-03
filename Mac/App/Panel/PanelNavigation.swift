@@ -52,6 +52,10 @@ extension PanelViewController {
         setPendingFocus(name: name, selectionMask: mask)
         let expanded = (target as NSString).expandingTildeInPath
         runOnQueue { [self] in
+            // BindToPath starts with CloseOpenFolders: every nested level is closed -- and a
+            // modified one written back into its parent -- before the new chain is opened, so the
+            // new chain sees the updated parent (PanelNestedArchives.swift, 01 §3.8).
+            self.leaveNestedArchives(from: self.folder, to: nil)
             var folderObject: SZFolder? = nil
             var failure: NSError? = nil
             do {
@@ -102,6 +106,9 @@ extension PanelViewController {
             guard let folder = self.folder else { return }
             do {
                 let parent = try folder.bindToParentFolder()
+                // CloseOneLevel -> OpenParentArchiveFolder: leaving a nested archive's root writes
+                // a modified copy back into the parent, which is reloaded in place.
+                self.leaveNestedArchives(from: folder, to: parent)
                 self.folder = parent
                 if parent.supportsFlatMode {
                     let flat = parent.isArchive ? self.flatModeForArc : self.flatModeForDisk
@@ -126,6 +133,7 @@ extension PanelViewController {
         runOnQueue { [self] in
             let volumes = SZRootFolder.makeVolumesFolder()
             do { try volumes.loadItems() } catch { }
+            self.leaveNestedArchives(from: self.folder, to: volumes)     // CloseOpenFolders
             self.folder = volumes
             let snap = self.makeSnapshot(volumes)
             DispatchQueue.main.async { self.apply(snap, selectNames: []) }

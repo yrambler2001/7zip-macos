@@ -144,7 +144,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSArray<SZPropertyInfo *> *)propertiesAtLevel:(NSInteger)level NS_SWIFT_NAME(properties(atLevel:));
 - (nullable id)propertyAtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(property(atLevel:propID:));
 - (NSString *)displayStringAtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(displayString(atLevel:propID:));
-/// The "2" variants (GetArcNumProps2 / GetArcProp2): the archive handler's own extra properties.
+/// The "2" variants (GetArcNumProps2 / GetArcProp2): the properties the level below (level - 1)
+/// reports for the item this level was opened from. Only levels 1 ..< levelCount have them;
+/// any other level answers empty / nil (CAgent itself would index Arcs[-1]).
 - (NSArray<SZPropertyInfo *> *)properties2AtLevel:(NSInteger)level NS_SWIFT_NAME(properties2(atLevel:));
 - (nullable id)property2AtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(property2(atLevel:propID:));
 @end

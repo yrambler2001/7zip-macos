@@ -138,6 +138,8 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
 
 - (NSArray<SZPropertyInfo *> *)propertiesAtLevel:(NSInteger)level
 {
+  if (level < 0 || level >= self.levelCount)     // CAgent indexes Arcs[level] unchecked
+    return @[];
   UInt32 n = 0;
   if (_props->GetArcNumProps((UInt32)level, &n) != S_OK)
     return @[];
@@ -165,6 +167,9 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
 
 - (NSArray<SZPropertyInfo *> *)properties2AtLevel:(NSInteger)level
 {
+  // GetArcNumProps2 / GetArcPropInfo2 read Arcs[level - 1]: only levels 1 ..< levelCount exist.
+  if (level < 1 || level >= self.levelCount)
+    return @[];
   UInt32 n = 0;
   if (_props->GetArcNumProps2((UInt32)level, &n) != S_OK)
     return @[];
@@ -176,6 +181,8 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
 
 - (id)property2AtLevel:(NSInteger)level propID:(SZPropID)propID
 {
+  if (level < 1 || level >= self.levelCount)
+    return nil;
   NWindows::NCOM::CPropVariant prop;
   if (_props->GetArcProp2((UInt32)level, (PROPID)propID, &prop) != S_OK)
     return nil;
