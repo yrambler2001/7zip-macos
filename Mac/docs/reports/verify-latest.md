@@ -1,14 +1,14 @@
-# Verification run — 2026-10-03 15:24:27 +0200
+# Verification run — 2026-10-03 15:33:37 +0200
 
-* scope / branch: `release`  (commit `6dafc18`)
+* scope / branch: `release`  (commit `b9c963b`)
 * configuration: Debug (clean)
-* command: `Mac/scripts/verify.sh`  → exit 65
+* command: `Mac/scripts/verify.sh`  → exit 0
 * toolchain: `DEVELOPER_DIR=/Applications/Xcode.app`, Xcode 26.6
 
 | result | step | time | detail |
 |---|---|---|---|
-| ok | clean build (Debug) | 52s | OK: ~/things/a.noindex/7zip/.worktrees/release/Mac/build/Debug/7-Zip.app -> ~/things/a.noindex/7zip/.worktrees/release/Mac/build/DerivedData/Build/Products/Debug/7-Zip.app |
-| **FAIL** | all tests (sharded) | 30s | rc=65: BUILD-FOR-TESTING FAILED (rc=65); log: ~/things/a.noindex/7zip/.worktrees/release/Mac/build/build-for-testing.log |
+| ok | clean build (Debug) | 42s | OK: ~/things/a.noindex/7zip/.worktrees/release/Mac/build/Debug/7-Zip.app -> ~/things/a.noindex/7zip/.worktrees/release/Mac/build/DerivedData/Build/Products/Debug/7-Zip.app |
+| ok | all tests (sharded) | 724s | OK: tests passed |
 
 ## Parity (Mac/docs/PROGRESS.md)
 

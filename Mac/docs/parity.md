@@ -213,7 +213,7 @@ by `mac/cmdmode` (F) and `mac/optgaps` (I); 12 by `mac/optgaps` (I).
 | finder: optional `Contents/Helpers/7zG.app` (`03 §6.4`) | by design: the locked decision runs 7zG commands in process |
 | finder: Finder context menu verified in Finder (`03 §6.3`) | needs a human (no Automation permission here): `reports/finder.md` |
 | packaging: every box ticked or listed as a known gap | follows from the four above, each listed here and in `reports/release.md` |
-| packaging: screenshots for every scope; `architecture.md` current | `architecture.md` "As built" refreshed by `mac/release`; ticked only by the orchestrator, who owns that file |
+| packaging: screenshots for every scope; `architecture.md` current | `architecture.md` "As built" refreshed by `mac/release` (orchestrator-owned, so the orchestrator ticks it); `release-*` and `panelgaps-*` screenshots added; `optgaps` has none of its own -- an Options ▸ System screenshot case re-entered AppKit's constraint pass in the hosted test run and was dropped (its pages appear in `options-*` / `packaging-*`) |
 
 ---
 
