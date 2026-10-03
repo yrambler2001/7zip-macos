@@ -199,6 +199,8 @@ final class WinCompareDumpTests: AppHostTestCase {
         let controller = makeWindow()
         let panel = controller.focusedPanel
         navigate(panel, to: fixtures)
+        panel.setListViewMode(3)          // Details, 7zFM's default; an earlier test may have left another
+        settle()
         select(panel, [])
         save("main-folder.txt", mainDump(controller))
         attach(controller.window!, "main-folder-mac")

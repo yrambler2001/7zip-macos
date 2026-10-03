@@ -263,10 +263,22 @@ final class PanelTests: SevenZipUITestCase {
             return XCTFail("no context menu on the test.7z row")
         }
         let titles = panel.menuItemTitles(of: menu).filter { !$0.isEmpty }
-        screenshot("10-context-menu")
-        for expected in ["Open archive", "Extract files...", "Add to archive...", "Rename", "Delete", "Properties"] {
+        // CascadedMenu (default on): the 7-Zip commands are one "7-Zip" submenu at the top
+        // (ContextMenu.cpp:1013-1020), the File-menu items follow it directly.
+        XCTAssertEqual(titles.first, "7-Zip", "context menu: \(titles)")
+        for expected in ["Rename", "Delete", "Properties", "Open Inside *", "CRC", "Link..."] {
             XCTAssertTrue(titles.contains(expected), "context menu has no '\(expected)': \(titles)")
         }
+        let sevenZipItem = menu.menuItems["7-Zip"]
+        sevenZipItem.hover()
+        let sub = sevenZipItem.menus.firstMatch
+        XCTAssertTrue(sub.waitForExistence(timeout: 5), "the 7-Zip submenu did not open")
+        let verbs = panel.menuItemTitles(of: sub).filter { !$0.isEmpty }
+        screenshot("10-context-menu")
+        for expected in ["Open archive", "Extract files...", "Add to archive..."] {
+            XCTAssertTrue(verbs.contains(expected), "7-Zip submenu has no '\(expected)': \(verbs)")
+        }
+        app.typeKey(.escape, modifierFlags: [])
         app.typeKey(.escape, modifierFlags: [])
     }
 

@@ -611,4 +611,4 @@ diffed. `reports/wincompare.md` has the item-by-item tables and the paired scree
   - ties in Date and Size sorting;
   - `Add to "arc_2.7z"`;
   - the grayed single-level combo.
-- **Filed:** four rows in `requests.md`.
+- **Filed:** five rows in `requests.md`.

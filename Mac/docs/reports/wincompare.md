@@ -71,6 +71,7 @@ Paired screenshots are `screenshots/wincompare-<area>-win.png` / `-mac.png`.
 | attributes | `A -rw-r--r--`, `D drwxr-xr-x` | the same | same |
 | rows inside arc.7z | sub 2 710 / 0, a.txt 1 234 / 100 930, LZMA2:17, CRCs | identical cell for cell | same |
 | status bar | 4 parts at 220 / 320 / 420 px, "N / M object(s) selected" | the same parts and text, bidi-isolated | same |
+| a folder just opened | first item focused, **not** selected: "0 / 15 object(s) selected" | first item focused and selected: "1 / 15", part 1 its size | filed (operated-item fallback, `requests.md`) |
 | sort Name / Type / Size, Size twice | as shown | identical row order | same |
 | sort Date (all dates equal) | keeps the previous order | reverse name order | **version** (26.03 adds the name round, PanelSort.cpp:193-219; 25.01 had a stable sort with no tie-break) |
 | sort Size, equal sizes | vol.7z.001 before .002 | .002 before .001 | **version** (same reason) |
@@ -225,10 +226,40 @@ Tests: `Mac/Tests/AppTests/WinCompareTests.swift`, 15 cases covering the fixes. 
 - `wincompare → orchestrator`: English from `en.ttt` against the .rc strings (§8).
 - `wincompare → tools`: the About topic lost its only entry point with the Help button (F1 on
   Windows).
+- `wincompare → panel`: the operated-item fallback to an unselected focused row (§2).
 
 ## 11. Verification
 
-(filled in at the end of the run)
+These ran at the final code, `export DEVELOPER_DIR=/Applications/Xcode.app`.
+
+| run | result |
+|---|---|
+| `Mac/scripts/build.sh` | clean, no warnings in `Mac/` |
+| `Mac/scripts/test.sh` (unit) | 387 passed, 0 failed |
+| `Mac/scripts/test.sh -H` (app-hosted) | 129 passed, 0 failed (includes `WinCompareTests` 15 and `WinCompareDumpTests` 4) |
+| `Mac/scripts/test.sh -u`, probe shards | 6 + 6 passed |
+| `Mac/scripts/test.sh -u`, input shard | 43 of 45 passed |
+
+**The two input-shard failures:**
+
+- **`PanelTests.testListContextMenuContents`.** It expected "Open archive" at the top level of the
+  context menu. The test now opens the cascaded "7-Zip" submenu, and it passes when run alone
+  (`-o PanelTests/testListContextMenuContents`). `GapsInputTests` got the same change and passed
+  in the shard.
+- **`ResetCommandTests.testSelectionIsResetToTheFreshlyBoundDefault`.** It fails with "Not
+  hittable" on the `test.zip` row. The run's screen recording shows why: a macOS **"Force Quit
+  Applications — Your system has run out of application memory"** window sits over the lower part
+  of the 7-Zip window, where that row is. It is still on screen, and this agent cannot close it
+  (no Automation permission; `CLAUDE.md`). The test passed on `macos` before this branch and
+  touches no code this branch changed, so this is environmental. Re-run it once the window is
+  closed.
+
+**Where the memory pressure came from.** One cause is this branch's first dialog run. "Enter" on
+`broken.7z` starts the file through its association, which launched Archive Utility; it was
+killed afterwards. The dump test now uses the command-line open instead.
+
+**Automation mode.** The first `test.sh -u` attempt failed before any test with "Timed out while
+enabling automation mode", the known intermittent failure of `uiverify.md` §6. The retry ran.
 
 ## 12. The Windows machine
 
