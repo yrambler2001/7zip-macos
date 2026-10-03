@@ -251,6 +251,9 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
   return _archive;
 }
 
+// Mac/Core/Platform/MacVolume.cpp (SevenZipCore), also used by the WorkDir.cpp patch.
+bool MacPath_IsOnRemovableVolume(const FString &path);
+
 #pragma mark - Opening by path
 
 + (SZFolder *)folderForPath:(NSString *)path
@@ -263,6 +266,34 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
 + (SZFolder *)folderForPath:(NSString *)path
                  formatHint:(NSString *)formatHint
            passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                      error:(NSError **)error
+{
+  return [self folderForPath:path formatHint:formatHint passwordDelegate:passwordDelegate progress:nil error:error];
+}
+
++ (BOOL)volumeIsCaseSensitiveAtPath:(NSString *)path
+{
+  // pathconf answers for an existing path only: walk up to the nearest one (a destination that
+  // is about to be created lives on its parent's volume).
+  NSString *p = path.length ? path.stringByStandardizingPath : @"/";
+  NSFileManager *fm = [NSFileManager defaultManager];
+  while (p.length > 1 && ![fm fileExistsAtPath:p])
+    p = p.stringByDeletingLastPathComponent;
+  if (p.length == 0)
+    p = @"/";
+  const long v = pathconf(p.fileSystemRepresentation, _PC_CASE_SENSITIVE);
+  return v == 1;
+}
+
++ (BOOL)volumeIsRemovableAtPath:(NSString *)path
+{
+  return MacPath_IsOnRemovableVolume(SZFStringFromNSString(path));
+}
+
++ (SZFolder *)folderForPath:(NSString *)path
+                 formatHint:(NSString *)formatHint
+           passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                   progress:(id<SZProgressDelegate>)progress
                       error:(NSError **)error
 {
   NSString *p = path ?: @"";
@@ -287,7 +318,7 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
     NSString *rest = [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] componentsJoinedByString:@"/"];
     if (rest.length == 0)
       return f;
-    return [f bindToPath:rest passwordDelegate:passwordDelegate error:error];
+    return [f bindToPath:rest passwordDelegate:passwordDelegate progress:progress error:error];
   }
 
   NSFileManager *fm = [NSFileManager defaultManager];
@@ -314,7 +345,7 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
   }
   // prefix is a file: open it as an archive, continue inside
   SZArchive *archive = [SZArchiveOpener openArchiveAtPath:prefix formatHint:(formatHint.length ? formatHint : nil)
-                                         passwordDelegate:passwordDelegate error:error];
+                                         passwordDelegate:passwordDelegate progress:progress error:error];
   if (!archive)
     return nil;
   SZFolder *folder = [archive rootFolder:error];
@@ -323,7 +354,7 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
   if (i + 1 >= comps.count)
     return folder;
   NSString *rest = [[comps subarrayWithRange:NSMakeRange(i + 1, comps.count - i - 1)] componentsJoinedByString:@"/"];
-  return [folder bindToPath:rest passwordDelegate:passwordDelegate error:error];
+  return [folder bindToPath:rest passwordDelegate:passwordDelegate progress:progress error:error];
 }
 
 #pragma mark - Items
@@ -628,6 +659,10 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
   for (NSInteger i = 0; i < n; i++)
     if ([[self nameOfItemAtIndex:i] isEqualToString:name])
       return i;
+  // A name typed in another case still finds its item -- except in a directory on a
+  // case-sensitive volume, where "A" and "a" are two different files (01 §9 #24).
+  if (self.isFileSystem && [SZFolder volumeIsCaseSensitiveAtPath:self.fullPath])
+    return NSNotFound;
   for (NSInteger i = 0; i < n; i++)
     if ([[self nameOfItemAtIndex:i] caseInsensitiveCompare:name] == NSOrderedSame)
       return i;
@@ -636,6 +671,14 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
 
 - (SZFolder *)bindToPath:(NSString *)relativePath
         passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                   error:(NSError **)error
+{
+  return [self bindToPath:relativePath passwordDelegate:passwordDelegate progress:nil error:error];
+}
+
+- (SZFolder *)bindToPath:(NSString *)relativePath
+        passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                progress:(id<SZProgressDelegate>)progress
                    error:(NSError **)error
 {
   SZFolder *current = self;
@@ -666,7 +709,7 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
       return nil;
     }
     SZArchive *archive = [SZArchiveOpener openArchiveInFolder:current itemIndex:index formatHint:nil
-                                             passwordDelegate:passwordDelegate error:error];
+                                             passwordDelegate:passwordDelegate progress:progress error:error];
     if (!archive)
       return nil;
     SZFolder *root = [archive rootFolder:error];

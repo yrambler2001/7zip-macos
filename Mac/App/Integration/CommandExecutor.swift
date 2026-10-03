@@ -170,7 +170,8 @@ enum CommandExecutor {
             // Each further archive gets its own window, like one 7zFM per file.
             let controller = MainWindowController()
             extraWindowControllers.append(controller)
-            controller.openStartupPath(full, formatHint: formatHint)
+            // A window of its own, like one 7zFM process per file: a failed open closes it.
+            controller.openStartupPath(full, formatHint: formatHint, closesWindowOnFailure: true)
             controller.showWindow(nil)
             controller.window?.cascadeTopLeft(from: NSPoint(x: 40, y: 40))
         }

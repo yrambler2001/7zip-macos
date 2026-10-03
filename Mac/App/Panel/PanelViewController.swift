@@ -41,9 +41,19 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     // MARK: engine side (panel queue only)
     let queue: DispatchQueue
     /// Only ever assigned and used on `queue` (the engine's COM refcounts are not atomic).
-    var folder: SZFolder?
-    /// Password of the open archive chain, remembered like CFolderLink::Password.
-    var rememberedPassword: String?
+    var folder: SZFolder? {
+        didSet { archiveLevel.set(folder?.archive) }
+    }
+    /// The innermost archive level of `folder`, readable from any thread (PanelArchiveOpen.swift).
+    let archiveLevel = PanelArchiveLevel()
+    /// CFolderLink::Password of the innermost archive level (`_parentFolders.Back()`): every level
+    /// keeps its own (`SZArchive.password`), so leaving a level forgets its password and an
+    /// unrelated archive never inherits one (01 §8.7, 01b §4.16). Setting it outside an archive
+    /// does nothing.
+    var rememberedPassword: String? {
+        get { archiveLevel.current?.password }
+        set { archiveLevel.current?.password = newValue }
+    }
     /// Set while an operation owns the folder on another thread (CDisableTimerProcessing).
     private(set) var isOperating = false
     /// Set once the nested archives of the chain were closed for good (window close / quit), so
@@ -111,7 +121,15 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     private let scrollView = NSScrollView()
     let tableView = PanelTableView()
     private(set) var iconView: PanelIconView!
+    /// Section 0 of the status bar ("N / M object(s) selected"); sections 1-3 follow it.
     private let statusLabel = NSTextField(labelWithString: "")
+    /// Sections 1-3: selected size, focused item size, focused item time (Refresh_StatusBar).
+    private let statusSections = [NSTextField(labelWithString: ""), NSTextField(labelWithString: ""),
+                                  NSTextField(labelWithString: "")]
+    /// The right edges of sections 0-2 (Panel.cpp CreateStatusBar: `{220, 320, 420, -1}`), in points.
+    static let statusSectionEdges: [CGFloat] = [220, 320, 420]
+    /// The dividers in front of sections 1-3.
+    private var statusDividers: [NSView] = []
 
     init(index: Int) {
         panelIndex = index
@@ -203,7 +221,38 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         let status = NSView()
         status.translatesAutoresizingMaskIntoConstraints = false
+        status.clipsToBounds = true          // a narrow panel cuts the sections, as a Win32 status bar does
         status.addSubview(statusLabel)
+        // 01 §1.2 "Status bar": four parts with fixed right edges, a divider after each of the
+        // first three; the last one takes the rest.
+        var statusConstraints: [NSLayoutConstraint] = []
+        for (i, label) in statusSections.enumerated() {
+            label.font = statusLabel.font
+            label.lineBreakMode = .byTruncatingTail
+            Bidi.makeLeftToRight(label)
+            label.translatesAutoresizingMaskIntoConstraints = false
+            status.addSubview(label)
+            let left = Self.statusSectionEdges[i]
+            statusConstraints.append(label.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: left + 8))
+            statusConstraints.append(label.centerYAnchor.constraint(equalTo: status.centerYAnchor))
+            if i + 1 < statusSections.count {
+                statusConstraints.append(label.widthAnchor.constraint(lessThanOrEqualToConstant:
+                    Self.statusSectionEdges[i + 1] - left - 12))
+            } else {
+                statusConstraints.append(label.trailingAnchor.constraint(lessThanOrEqualTo: status.trailingAnchor, constant: -8))
+            }
+            let divider = NSBox()
+            divider.boxType = .separator
+            divider.translatesAutoresizingMaskIntoConstraints = false
+            status.addSubview(divider)
+            statusDividers.append(divider)
+            statusConstraints += [
+                divider.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: left),
+                divider.widthAnchor.constraint(equalToConstant: 1),
+                divider.topAnchor.constraint(equalTo: status.topAnchor, constant: 3),
+                divider.bottomAnchor.constraint(equalTo: status.bottomAnchor, constant: -3),
+            ]
+        }
 
         let topLine = NSBox(); topLine.boxType = .separator; topLine.translatesAutoresizingMaskIntoConstraints = false
         let statusLine = NSBox(); statusLine.boxType = .separator; statusLine.translatesAutoresizingMaskIntoConstraints = false
@@ -247,10 +296,12 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             status.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             status.heightAnchor.constraint(equalToConstant: 22),
             statusLabel.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: 8),
+            statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Self.statusSectionEdges[0] - 12),
             statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: status.trailingAnchor, constant: -8),
             statusLabel.centerYAnchor.constraint(equalTo: status.centerYAnchor),
             root.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),   // kPanelSizeMin
         ])
+        NSLayoutConstraint.activate(statusConstraints)
         view = root
         applyListViewMode()
         updateActiveHighlight()
@@ -416,7 +467,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         let hidden: Set<UInt32> = isFS
             ? Set(SZFileSystemFolder.defaultHiddenPropIDs.map { $0.uint32Value })
             : []
-        return PanelSnapshot(fullPath: folder.fullPath,
+        var snapshot = PanelSnapshot(fullPath: folder.fullPath,
                              fileSystemPath: archivePath.isEmpty ? (isFS ? folder.fullPath : "")
                                                                  : (archivePath as NSString).deletingLastPathComponent + "/",
                              folderType: folder.folderType, isRoot: isRoot,
@@ -432,6 +483,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                              hiddenByDefault: hidden,
                              supportsCompare: supportsCompare,
                              sortParams: params)
+        snapshot.isCaseSensitive = isFS && SZFolder.volumeIsCaseSensitive(atPath: folder.fullPath)
+        return snapshot
     }
 
     // MARK: - Applying a snapshot (RefreshListCtrl, PanelItems.cpp:467-960)
@@ -476,7 +529,9 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         var names = selectNames
         if let mask = pendingSelectionMask {                 // wildcard in the bound path (01 §3.8)
             pendingSelectionMask = nil
-            names = rows.filter { !$0.isParentRow && PanelMask.matches(mask: mask, name: $0.name) }.map { $0.name }
+            let caseSensitive = snap.isCaseSensitive
+            names = rows.filter { !$0.isParentRow && PanelMask.matches(mask: mask, name: $0.name, caseSensitive: caseSensitive) }
+                .map { $0.name }
         }
         if let pending = pendingFocusName {
             pendingFocusName = nil
@@ -872,21 +927,34 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         let total = rows.reduce(0) { $1.isParentRow ? $0 : $0 + 1 }
         let operated = operatedRowIndices().map { rows[$0] }
         let template = Lang.get(3002, "{0} object(s) selected")   // IDS_N_SELECTED_ITEMS
-        var parts = [Lang.format(template, "\(operated.count) / \(total)")]
-        if !operated.isEmpty {
-            parts.append(Formatting.size(operated.reduce(UInt64(0)) { $0 &+ $1.size }))
-        } else {
-            parts.append("")
-        }
+        // Part 0: "N / M object(s) selected"; part 1: the operated items' size.
+        statusLabel.stringValue = Bidi.isolate(Lang.format(template, "\(operated.count) / \(total)"))
+        statusSections[0].stringValue = operated.isEmpty
+            ? "" : Formatting.size(operated.reduce(UInt64(0)) { $0 &+ $1.size })
         // Parts 2 and 3 only when something is selected and the focused row is not "..".
         if !selectedIndexes.isEmpty, let focused = focusedRow(), !focused.isParentRow {
-            parts.append(Formatting.size(focused.size))
-            parts.append(focused.cells[.mtime] ?? "")
+            statusSections[1].stringValue = Formatting.size(focused.size)
+            statusSections[2].stringValue = focused.cells[.mtime] ?? ""
+        } else {
+            statusSections[1].stringValue = ""
+            statusSections[2].stringValue = ""
         }
-        // Segments isolated and laid out left to right, so a right-to-left translation does not
-        // reverse their order (`Bidi`, requests.md `packaging` -> `panel`, parity.md B 23).
-        statusLabel.stringValue = Bidi.join(parts.filter { !$0.isEmpty }, separator: "    ")
     }
+
+    /// A section that starts beyond a narrow panel's edge is not there at all (a Win32 status bar
+    /// part past the window edge is not drawn), rather than a view hanging outside the window.
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let width = view.bounds.width
+        for (i, edge) in Self.statusSectionEdges.enumerated() {
+            let hidden = edge + 12 > width
+            if statusSections[i].isHidden != hidden { statusSections[i].isHidden = hidden }
+            if statusDividers[i].isHidden != hidden { statusDividers[i].isHidden = hidden }
+        }
+    }
+
+    /// The four status-bar parts as shown, for tests and accessibility.
+    var statusBarTexts: [String] { [statusLabel.stringValue] + statusSections.map(\.stringValue) }
 
     // MARK: - Errors
 

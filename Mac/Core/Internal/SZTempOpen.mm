@@ -364,20 +364,22 @@ HRESULT CSZVirtFileSystem::FlushToDisk()
 
 + (nullable NSString *)createTemporaryDirectoryWithPrefix:(NSString *)prefix error:(NSError **)error
 {
-  NSString *templ = [SZSettings.temporaryDirectory stringByAppendingPathComponent:
-                     [prefix stringByAppendingString:@"-XXXXXX"]];
-  std::vector<char> buffer(templ.fileSystemRepresentation,
-                           templ.fileSystemRepresentation + strlen(templ.fileSystemRepresentation) + 1);
-  const char *made = mkdtemp(buffer.data());
-  if (!made)
+  // CTempDir::Create(prefix) -> CreateTempFile2(addRandom) (Windows/FileDir.cpp:880-935): the
+  // prefix plus eight upper-case hex digits, "7zO1A2B3C4D", retried on a name that exists.
+  NSString *root = SZSettings.temporaryDirectory;
+  for (unsigned attempt = 0; attempt < 100; attempt++)
   {
-    if (error)
-      *error = [SZErrors errorWithCode:SZErrorCodeEngine
-                              message:[NSString stringWithFormat:@"cannot create a temp folder in %@",
-                                       SZSettings.temporaryDirectory]];
-    return nil;
+    NSString *path = [root stringByAppendingPathComponent:
+                      [prefix stringByAppendingFormat:@"%08X", arc4random()]];
+    if (mkdir(path.fileSystemRepresentation, 0700) == 0)
+      return path;
+    if (errno != EEXIST)
+      break;
   }
-  return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:made length:strlen(made)];
+  if (error)
+    *error = [SZErrors errorWithCode:SZErrorCodeEngine
+                            message:[NSString stringWithFormat:@"cannot create a temp folder in %@", root]];
+  return nil;
 }
 
 + (uint64_t)inMemoryLimitForArchiveLevelCount:(NSInteger)levels

@@ -7,13 +7,21 @@ import SevenZipKit
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate,
                                  NSMenuItemValidation, NSUserInterfaceValidations, PanelDelegate {
 
-    private let splitView = NSSplitView()
+    private let splitView = PanelSplitView()
     /// index 0 always exists; 1 is created on demand (SwitchOnOffOnePanel).
     private(set) var panels: [PanelViewController] = []
     private(set) var numPanels = 1
     private(set) var focusedPanelIndex = 0             // LastFocusedPanel
     private var refreshTimer: Timer?
-    private var autoRefresh = Settings.autoRefresh     // AutoRefresh_Mode
+    private var autoRefresh = MainWindowController.processAutoRefresh     // AutoRefresh_Mode
+
+    /// CApp::AutoRefresh_Mode starts true in every 7zFM process and is never saved (01 §3.17,
+    /// 01b §5): the first window of this process puts the shared key back to true, so a value left
+    /// by an earlier run does not survive the launch. Windows of one process still share it.
+    private static let processAutoRefresh: Bool = {
+        Settings.autoRefresh = true
+        return true
+    }()
     private var toolbarsMask = Settings.toolbarsMask
 
     /// FM.Panels.splitterPos -- the share of the *usable* width (the split view minus the divider)
@@ -121,6 +129,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         toolbar.delegate = self
         toolbar.allowsUserCustomization = false
         toolbar.displayMode = (toolbarsMask & 1) != 0 ? .iconAndLabel : .iconOnly
+        toolbar.isVisible = (toolbarsMask & 12) != 0
         window?.toolbar = toolbar
         window?.toolbarStyle = .expanded
     }
@@ -157,10 +166,37 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         startRefreshTimer()
     }
 
-    /// Command-line path (FM.cpp:975-1012): panel 0 opens it; a file is opened as an archive.
-    func openStartupPath(_ path: String, formatHint: String?) {
-        let full = (path as NSString).isAbsolutePath ? path : FileManager.default.currentDirectoryPath + "/" + path
-        panels[0].navigate(to: full, formatHint: formatHint)
+    /// Command-line path (FM.cpp:975-1014): panel 0 opens it. An existing **file** is opened as an
+    /// archive (needOpenArc); if that fails, 7zFM shows "Error" -- IDS_CANT_OPEN_ARCHIVE 3005 or
+    /// IDS_CANT_OPEN_ENCRYPTED_ARCHIVE 3006 with the path, then the non-open level's text -- and
+    /// WM_CREATE returns -1, so the window never appears and the process ends. Here the window is
+    /// closed when it was created for this path (`closesWindowOnFailure`; for the only window that
+    /// ends the app, as on Windows); a window that was already showing something keeps it. A
+    /// cancelled open (E_ABORT) closes the same way without a box. A path that does not exist binds
+    /// its nearest existing folder, as BindToPath's walk up does (PanelFolderChange.cpp:151-190).
+    func openStartupPath(_ path: String, formatHint: String?, closesWindowOnFailure: Bool = false) {
+        var full = (path as NSString).isAbsolutePath ? path : FileManager.default.currentDirectoryPath + "/" + path
+        let manager = FileManager.default
+        var isDirectory: ObjCBool = false
+        if manager.fileExists(atPath: full, isDirectory: &isDirectory), !isDirectory.boolValue {
+            panels[0].openLaunchArchive(full, formatHint: formatHint) { [weak self] failure in
+                guard let self, let failure else { return }
+                if let message = failure.launchMessage(fullPath: full) {
+                    let alert = ErrorAlert.make(message: message, style: .critical)
+                    if closesWindowOnFailure {
+                        _ = ErrorAlert.run(alert, on: nil)        // MessageBoxW(NULL, ...): no owner
+                    } else {
+                        ErrorAlert.present(alert, on: self.window)
+                    }
+                }
+                if closesWindowOnFailure { self.window?.close() }
+            }
+            return
+        }
+        while !full.isEmpty, full != "/", !manager.fileExists(atPath: full) {
+            full = (full as NSString).deletingLastPathComponent
+        }
+        panels[0].navigate(to: full.isEmpty ? "/" : full, formatHint: formatHint)
     }
 
     func saveState() {
@@ -461,11 +497,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         item.label = label
         item.paletteLabel = label
         item.toolTip = label
-        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        // App.cpp AddButton: the 7-Zip bitmaps, 48x36 IDB_* with "Large Buttons", else the 24x24
+        // IDB_*2 (01 §1.3, §9 #15), RGB(255,0,255) masked. SF Symbols only if an asset is missing.
+        let large = (toolbarsMask & 2) != 0
+        item.image = Self.toolbarBitmap(itemIdentifier, large: large)
+            ?? NSImage(systemSymbolName: symbol, accessibilityDescription: label)
         item.target = nil          // responder chain; disabled while nobody implements the action
         item.action = action
         item.isBordered = true
         return item
+    }
+
+    /// The toolbar bitmap for an item: IDB_ADD 100 ... IDB_INFO 106 (48x36) or IDB_ADD2 150 ...
+    /// IDB_INFO2 156 (24x24), converted from CPP/7zip/UI/FileManager/*.bmp into the asset catalog.
+    static func toolbarBitmap(_ id: NSToolbarItem.Identifier, large: Bool) -> NSImage? {
+        let names: [NSToolbarItem.Identifier: String] = [
+            .szAdd: "add", .szExtract: "extract", .szTest: "test", .szCopy: "copy",
+            .szMove: "move", .szDelete: "delete", .szInfo: "info",
+        ]
+        guard let name = names[id] else { return nil }
+        return NSImage(named: "toolbar-\(name)-\(large ? "large" : "small")")
     }
 
     private func reloadToolbars() {
@@ -473,6 +524,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         while !toolbar.items.isEmpty { toolbar.removeItem(at: 0) }
         for (i, id) in visibleToolbarItems.enumerated() { toolbar.insertItem(withItemIdentifier: id, at: i) }
         toolbar.displayMode = (toolbarsMask & 1) != 0 ? .iconAndLabel : .iconOnly
+        // MoveSubWindows: the toolbar takes room only while one of the two toolbars is on (01 §1.2).
+        toolbar.isVisible = (toolbarsMask & 12) != 0
         Settings.toolbarsMask = toolbarsMask
     }
 
@@ -487,7 +540,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
 
     @objc func viewArchiveToolbar(_ sender: Any?) { toolbarsMask ^= 8; reloadToolbars() }             // IDM_VIEW_ARCHIVE_TOOLBAR 750
     @objc func viewStandardToolbar(_ sender: Any?) { toolbarsMask ^= 4; reloadToolbars() }            // IDM_VIEW_STANDARD_TOOLBAR 751
-    @objc func viewToolbarsLargeButtons(_ sender: Any?) { toolbarsMask ^= 2; reloadToolbars() }       // IDM_VIEW_TOOLBARS_LARGE_BUTTONS 752 (size is fixed on macOS; state kept)
+    @objc func viewToolbarsLargeButtons(_ sender: Any?) { toolbarsMask ^= 2; reloadToolbars() }       // IDM_VIEW_TOOLBARS_LARGE_BUTTONS 752: IDB_* 48x36 vs IDB_*2 24x24
     @objc func viewToolbarsShowButtonsText(_ sender: Any?) { toolbarsMask ^= 1; reloadToolbars() }    // IDM_VIEW_TOOLBARS_SHOW_BUTTONS_TEXT 753
 
     @objc func viewTimestampLevel(_ sender: Any?) {                                         // IDM_VIEW_TIME + k
@@ -584,6 +637,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         case #selector(MenuActions.fileSplit(_:)), #selector(MenuActions.fileCombine(_:)),
              #selector(MenuActions.fileLink(_:)):
             return windowActionIsEnabled(item.action)
+        // IDM_VER_EDIT 580 .. IDM_VER_DIFF 583: appended only when the rule holds (MyLoadMenu.cpp:697-732).
+        case #selector(fileVerEdit(_:)), #selector(fileVerCommit(_:)), #selector(fileVerRevert(_:)),
+             #selector(fileVerDiff(_:)):
+            let command: VersionControl.Command
+            switch item.action {
+            case #selector(fileVerEdit(_:)): command = .edit
+            case #selector(fileVerCommit(_:)): command = .commit
+            case #selector(fileVerRevert(_:)): command = .revert
+            default: command = .diff
+            }
+            let shown = verCtrlItemIsShown(command)
+            item.isHidden = !shown
+            return shown
         case #selector(viewTwoPanels(_:)): item.state = numPanels == 2 ? .on : .off
         case #selector(viewAutoRefresh(_:)): item.state = autoRefresh ? .on : .off
         case #selector(viewArchiveToolbar(_:)): item.state = (toolbarsMask & 8) != 0 ? .on : .off
@@ -630,4 +696,14 @@ extension NSToolbarItem.Identifier {
     static let szMove = NSToolbarItem.Identifier("sz.move")
     static let szDelete = NSToolbarItem.Identifier("sz.delete")
     static let szInfo = NSToolbarItem.Identifier("sz.info")
+}
+
+/// The two-panel splitter: kSplitterWidth = 4 (FM.cpp, 01 §1.2) instead of AppKit's 9 pt thick
+/// divider, drawn as a plain separator line in its middle.
+final class PanelSplitView: NSSplitView {
+    override var dividerThickness: CGFloat { 4 }
+    override func drawDivider(in rect: NSRect) {
+        NSColor.separatorColor.setFill()
+        NSRect(x: rect.midX - 0.5, y: rect.minY, width: 1, height: rect.height).fill()
+    }
 }

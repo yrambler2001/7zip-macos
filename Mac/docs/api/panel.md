@@ -354,3 +354,40 @@ Supersedes parts of §3 and §7.9; the text above still describes what `mac/pane
 * `SZTempOpen.updateItem(at:of:fromFilePath:progress:)` now hands `CopyFromFile` the update callback
   adapter (`CSZUpdateCallbackAdapter`) instead of a bare `IProgress`: Cancel, progress and the
   re-open password reach it.
+
+## Note — 2026-10-03 (`mac/navgaps`)
+
+* **Opening an archive** (`Panel/PanelArchiveOpen.swift`). `panel.runArchiveOpen(name:_:)` runs an
+  open under 7zFM's "Opening" progress (IDS_OPENNING 3303, WaitMode 500 ms, Cancel = E_ABORT,
+  silent). Call it on the panel queue; it hops to the main thread with
+  `PanelViewController.performOnMainRunLoop(_:)` (never `DispatchQueue.main.sync`, see requests.md)
+  and the worker gets the runner as its progress. `ArchiveOpenFailure(error)` classifies a failure
+  the way OpenAsArc_Msg does: `.panelMessage(virtualPath:)` (3006 for an encrypted archive, the
+  HRESULT text for a real error, nothing for "not an archive" or cancel) and
+  `.launchMessage(fullPath:)` (FM.cpp's "Error" box: 3005/3006 plus the level text).
+* **Bridge additions.** `SZArchiveOpener.openArchive(atPath:|in:..., progress:)`,
+  `SZFolder.folder(forPath:formatHint:passwordDelegate:progress:)`,
+  `SZFolder.bindToPath(_:passwordDelegate:progress:)`: Open_SetTotal / Open_SetCompleted /
+  Open_CheckBreak reach the `SZProgressDelegate`, and so does the copy of a nested archive to its
+  `7zO<8 hex>` folder. `SZArchive.openErrorMessage` (CFfpOpen::ErrorMessage, the non-open level's
+  text) and `SZArchive.password` (CFolderLink::Password, atomic). A failed open (`notArchive`)
+  carries `SZArchiveOpenEncryptedKey`, `SZArchiveOpenErrorMessageKey`, `SZArchiveOpenPathKey`, and
+  its description is already FM.cpp's text. `SZFolder.volumeIsCaseSensitive(atPath:)`,
+  `SZFolder.volumeIsRemovable(atPath:)`.
+* **Passwords are per archive level.** `panel.rememberedPassword` is the innermost level's
+  `SZArchive.password` (`panel.archiveLevel`), readable on the main thread. The delegate no longer
+  hands one level's password to another archive; re-binding a path inside the same archive gives
+  the re-opened levels their passwords back. Operations store a password they asked for on the level
+  (`PanelViewController.rememberPassword(of:in:)`), and the nested write-back uses the parent level's.
+* **Binding.** `navigate(to:)` binds the folder of a file that is not an archive, silently
+  (BindToPath); a cancelled open leaves the panel as it was; the text of a newly opened non-open
+  level is shown after entering. `panel.openLaunchArchive(_:formatHint:completion:)` and
+  `MainWindowController.openStartupPath(_:formatHint:closesWindowOnFailure:)` are the command-line
+  open (FM.cpp:975-1014).
+* **Window chrome.** Four status-bar parts (`statusBarTexts`, `PanelViewController.statusSectionEdges`
+  = 220/320/420); toolbar bitmaps `MainWindowController.toolbarBitmap(_:large:)`; the toolbar is
+  hidden when both toolbars are off; `PanelSplitView` (4 pt divider).
+* **Case.** `PanelSnapshot.isCaseSensitive` (file-system folders on a case-sensitive volume);
+  `PanelMask.matches(mask:name:caseSensitive:)`.
+* **Ver\*.** `Commands/PanelVerCtrl.swift`: `VersionControl` (Foundation only) and the four
+  `fileVer*` actions on `MainWindowController`.

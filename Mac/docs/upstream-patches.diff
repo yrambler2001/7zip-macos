@@ -467,3 +467,31 @@
          RINOK(arc.Archive->GetProperty(i, kpidName, &prop))
          if (prop.vt == VT_BSTR)
            s = prop.bstrVal;
+--- a/CPP/7zip/UI/Common/WorkDir.cpp
++++ b/CPP/7zip/UI/Common/WorkDir.cpp
+@@ -11,6 +11,11 @@ using namespace NWindows;
+ using namespace NFile;
+ using namespace NDir;
+ 
++#ifdef __APPLE__
++// Mac/Core/Platform/MacVolume.cpp: the volume's removable-media / ejectable flag.
++bool MacPath_IsOnRemovableVolume(const FString &path);
++#endif
++
+ FString GetWorkDir(const NWorkDir::CInfo &workDirInfo, const FString &path, FString &fileName)
+ {
+   NWorkDir::NMode::EEnum mode = workDirInfo.Mode;
+@@ -34,6 +39,13 @@ FString GetWorkDir(const NWorkDir::CInfo &workDirInfo, const FString &path, FStr
+       mode = NZipSettings::NWorkDir::NMode::kCurrent;
+     */
+   }
++  #elif defined(__APPLE__)
++  if (workDirInfo.ForRemovableOnly)
++  {
++    mode = NWorkDir::NMode::kCurrent;
++    if (MacPath_IsOnRemovableVolume(path))
++      mode = workDirInfo.Mode;
++  }
+   #endif
+   
+   const int pos = path.ReverseFind_PathSepar() + 1;

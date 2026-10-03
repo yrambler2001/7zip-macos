@@ -11,6 +11,11 @@ using namespace NWindows;
 using namespace NFile;
 using namespace NDir;
 
+#ifdef __APPLE__
+// Mac/Core/Platform/MacVolume.cpp: the volume's removable-media / ejectable flag.
+bool MacPath_IsOnRemovableVolume(const FString &path);
+#endif
+
 FString GetWorkDir(const NWorkDir::CInfo &workDirInfo, const FString &path, FString &fileName)
 {
   NWorkDir::NMode::EEnum mode = workDirInfo.Mode;
@@ -33,6 +38,13 @@ FString GetWorkDir(const NWorkDir::CInfo &workDirInfo, const FString &path, FStr
     if ((driveType != DRIVE_CDROM) && (driveType != DRIVE_REMOVABLE))
       mode = NZipSettings::NWorkDir::NMode::kCurrent;
     */
+  }
+  #elif defined(__APPLE__)
+  if (workDirInfo.ForRemovableOnly)
+  {
+    mode = NWorkDir::NMode::kCurrent;
+    if (MacPath_IsOnRemovableVolume(path))
+      mode = workDirInfo.Mode;
   }
   #endif
   

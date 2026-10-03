@@ -46,9 +46,8 @@ extension PanelViewController {
         for archive in leaving where !staying.contains(where: { $0 === archive }) {
             if closeNestedLevel(archive) { wroteBack = true }
         }
-        // CFolderLink::Password dies with the last link: once the panel is out of every archive,
-        // the next archive must ask for its own password instead of silently getting this one.
-        if staying.isEmpty && !leaving.isEmpty { rememberedPassword = nil }
+        // CFolderLink::Password dies with its link: each level carries its own password
+        // (SZArchive.password), so nothing has to be forgotten here.
         return wroteBack
     }
 
@@ -82,7 +81,9 @@ extension PanelViewController {
             options.initialStatus = .update
             options.parentWindow = hostWindow
             options.titleFileName = name
-            options.password = rememberedPassword      // CFolderLink::Password of the parent level
+            // folderLinkPrev.UsePassword / Password: the level that holds the nested archive
+            // (PanelItemOpen.cpp:614-615).
+            options.password = archive.outerFolder?.archive?.password
             let result = OperationRunner.run(options) { runner -> Void in
                 try archive.writeBackIntoOuterFolder(progress: runner)
             }
@@ -122,7 +123,9 @@ extension PanelViewController {
         alert.runModal()
     }
 
-    private static func onMain(_ body: () -> Void) {
-        if Thread.isMainThread { body() } else { DispatchQueue.main.sync(execute: body) }
+    /// Through the main run loop, not the main queue: the body runs OperationRunner, whose worker
+    /// may need `DispatchQueue.main.sync` for a question (PanelArchiveOpen.performOnMainRunLoop).
+    private static func onMain(_ body: @escaping () -> Void) {
+        performOnMainRunLoop(body)
     }
 }

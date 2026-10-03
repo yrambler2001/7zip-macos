@@ -282,17 +282,19 @@ final class ArchGapsTests: AppHostTestCase {
 
     // MARK: - smaller gaps found by the audit
 
-    /// PROGRESS §2.3: the chain's password dies with the last archive level.
-    func testRememberedPasswordIsForgottenOutsideArchives() throws {
+    /// PROGRESS §2.3 (168): CFolderLink::Password is per archive level (`mac/navgaps`). A level
+    /// keeps its own password while the panel moves inside it, a nested level starts without one,
+    /// and the file system has none.
+    func testRememberedPasswordIsPerArchiveLevel() throws {
         let panel = makePanel()
         navigate(panel, to: scratch + "/nested.zip")
-        panel.rememberedPassword = "stale"
+        panel.rememberedPassword = "outer"
         navigate(panel, to: scratch + "/nested.zip/test.7z")     // a new chain: closed and reopened
-        XCTAssertNil(panel.rememberedPassword)
-        panel.rememberedPassword = "kept"
+        XCTAssertNil(panel.rememberedPassword, "the nested level has its own (no) password")
+        panel.rememberedPassword = "inner"
         panel.goUp()                                              // still inside nested.zip
         XCTAssertTrue(wait(for: "back in nested.zip") { panel.snapshot?.fullPath.hasSuffix("nested.zip/") ?? false })
-        XCTAssertEqual(panel.rememberedPassword, "kept")
+        XCTAssertEqual(panel.rememberedPassword, "outer", "the re-bound outer level kept its password")
         panel.goUp()                                              // out of every archive
         XCTAssertTrue(wait(for: "in the scratch folder") { panel.snapshot?.isFileSystem ?? false })
         XCTAssertNil(panel.rememberedPassword)

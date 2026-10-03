@@ -110,9 +110,11 @@ enum PanelSorting {
 enum PanelMask {
 
     /// DoesWildcardMatchName: `*` any sequence, `?` any single character, case-insensitive.
-    static func matches(mask: String, name: String) -> Bool {
-        let m = Array(mask.lowercased())
-        let n = Array(name.lowercased())
+    /// DoesWildcardMatchName with g_CaseSensitive: Windows never tells case apart; here a
+    /// file-system folder on a case-sensitive volume does (01 §9 #24).
+    static func matches(mask: String, name: String, caseSensitive: Bool = false) -> Bool {
+        let m = Array(caseSensitive ? mask : mask.lowercased())
+        let n = Array(caseSensitive ? name : name.lowercased())
         return test(m, 0, n, 0)
     }
 
@@ -192,6 +194,21 @@ struct PanelColumnsModel {
     static let nameWidth = 160        // PanelItems.cpp:96+ (96 dpi pixels == points here)
     static let otherWidth = 100
 
+    /// Default width of a new column. 7zFM gives every column but Name 100 px (PanelItems.cpp
+    /// InitColumns); a raw-property column of hex digits (WIM SHA-1, XAR / RAR5 checksum, SHA-256)
+    /// is then cut to its first dozen digits, so those start wide enough for their usual value at
+    /// the list font (about 7 pt per hex digit plus the cell margins). A user's width still wins.
+    static func defaultWidth(for info: SZPropertyInfo) -> Int {
+        if info.propID == .name { return nameWidth }
+        guard info.isRawProperty else { return otherWidth }
+        switch info.propID {
+        case .sha1, .checksum: return 300          // 40 hex digits
+        case .sha256: return 470                   // 64 hex digits
+        case .ntReparse: return 200                // a decoded link target
+        default: return 160
+        }
+    }
+
     var columns: [PanelColumn]
     var sortID: SZPropID
     var ascending: Bool
@@ -209,7 +226,7 @@ struct PanelColumnsModel {
         var built: [PanelColumn] = infos.map { info in
             PanelColumn(propID: info.propID, varType: info.varType, title: info.localizedName,
                         visible: info.propID == .name || !hiddenByDefault.contains(info.propID.rawValue),
-                        width: info.propID == .name ? Self.nameWidth : Self.otherWidth)
+                        width: Self.defaultWidth(for: info))
         }
         // Default sort: kpidName ascending for file-system and archive folders, native order
         // (kpidNoProperty) for the root and the volumes list (PanelItems.cpp:96+).

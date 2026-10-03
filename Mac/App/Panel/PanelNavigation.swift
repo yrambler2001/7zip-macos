@@ -56,21 +56,62 @@ extension PanelViewController {
             // modified one written back into its parent -- before the new chain is opened, so the
             // new chain sees the updated parent (PanelNestedArchives.swift, 01 §3.8).
             self.leaveNestedArchives(from: self.folder, to: nil)
+            let leavingChain = Self.archiveChain(of: self.folder)
             var folderObject: SZFolder? = nil
             var failure: NSError? = nil
-            do {
-                folderObject = try SZFolder.folder(forPath: expanded, formatHint: formatHint,
-                                                   passwordDelegate: self)
-                if let folderObject, folderObject.supportsFlatMode {
-                    let flat = folderObject.isArchive ? self.flatModeForArc : self.flatModeForDisk
+            var levelErrors: String? = nil
+            let bind: (SZProgressDelegate?) throws -> SZFolder = { [self] progress in
+                let bound = try SZFolder.folder(forPath: expanded, formatHint: formatHint,
+                                                passwordDelegate: self, progress: progress)
+                if bound.supportsFlatMode {
+                    let flat = bound.isArchive ? self.flatModeForArc : self.flatModeForDisk
                     if flat {
-                        folderObject.flatMode = true
-                        try folderObject.loadItems()
+                        bound.flatMode = true
+                        try bound.loadItems()
                     }
                 }
-            } catch let error as NSError {
-                failure = error
-                if fallbackToRoot { folderObject = SZRootFolder.makeRootFolder() }
+                return bound
+            }
+            let outcome: Result<SZFolder, Error>
+            if Self.bindNeedsNoArchiveOpen(expanded) {
+                outcome = Result { try bind(nil) }
+            } else {
+                // An archive on the path: CFfpOpen's "Opening" progress (PanelArchiveOpen.swift).
+                outcome = self.runArchiveOpen(name: (expanded as NSString).lastPathComponent) { try bind($0) }
+            }
+            switch outcome {
+            case .success(let bound):
+                folderObject = bound
+                // BindToPath keeps the CFolderLinks the new path is still inside, passwords
+                // included (PanelFolderChange.cpp:88-125); this port re-opened them, so the
+                // re-opened levels take the passwords back.
+                for level in Self.archiveChain(of: bound) where level.password == nil {
+                    level.password = leavingChain.first { $0.path == level.path && $0.password != nil }?.password
+                }
+                // CPanel::OpenAsArc shows ffp.ErrorMessage once the archive is entered.
+                // Only for a level newly opened here: a re-bound level was entered before.
+                levelErrors = Self.archiveChain(of: bound)
+                    .filter { level in !leavingChain.contains { $0.path == level.path } }
+                    .compactMap { $0.openErrorMessage }.first
+            case .failure(let error as NSError):
+                switch ArchiveOpenFailure(error) {
+                case .cancelled:
+                    // E_ABORT: silent, and the panel keeps what it showed.
+                    failure = error
+                case .notArchive(let file, _, _, _) where !file.isEmpty && !Self.isInsideArchivePath(file):
+                    // BindToPath (PanelFolderChange.cpp:236-262): a file on the way that is not an
+                    // archive binds its folder instead -- OpenAsArc without _Msg, so silently.
+                    let directory = (file as NSString).deletingLastPathComponent
+                    folderObject = try? SZFolder.folder(forPath: directory.isEmpty ? "/" : directory,
+                                                        passwordDelegate: nil)
+                    if folderObject == nil {
+                        failure = error
+                        if fallbackToRoot { folderObject = SZRootFolder.makeRootFolder() }
+                    }
+                default:
+                    failure = error
+                    if fallbackToRoot { folderObject = SZRootFolder.makeRootFolder() }
+                }
             }
             if let folderObject { self.folder = folderObject }
             let snap = folderObject.map { self.makeSnapshot($0) }
@@ -89,9 +130,23 @@ extension PanelViewController {
                     self.apply(snap, selectNames: name.map { [$0] } ?? [])
                     if focusListOnSuccess && failure == nil { self.focusList() }
                 }
+                if let levelErrors, reportErrors { self.showError(message: levelErrors) }
                 completion?(failure == nil)
             }
         }
+    }
+
+    /// The path of an item inside an archive ("/a.zip/b.7z"): some ancestor is a file.
+    static func isInsideArchivePath(_ path: String) -> Bool {
+        var parent = (path as NSString).deletingLastPathComponent
+        var isDirectory: ObjCBool = false
+        while !parent.isEmpty && parent != "/" {
+            if FileManager.default.fileExists(atPath: parent, isDirectory: &isDirectory) {
+                return !isDirectory.boolValue
+            }
+            parent = (parent as NSString).deletingLastPathComponent
+        }
+        return false
     }
 
     /// OpenParentFolder (PanelFolderChange.cpp:917): CloseOneLevel at an archive root, else
@@ -248,28 +303,42 @@ extension PanelViewController {
                     self.openExternally(row)
                     return
                 }
-                // try the file as an archive (CPanel::OpenItemAsArchive)
-                do {
+                // try the file as an archive: OpenAsArc_Index / OpenItemInArchive's tryAsArchive
+                // half, under the "Opening" progress (PanelArchiveOpen.swift).
+                let virtualPath = isFS && !row.fullPath.isEmpty ? row.fullPath : folder.fullPath + row.name
+                let opened = self.runArchiveOpen(name: row.name) { progress -> SZFolder in
                     let archive = try SZArchiveOpener.openArchive(in: folder, itemIndex: engineIndex,
                                                                   formatHint: formatHint,
-                                                                  passwordDelegate: self)
+                                                                  passwordDelegate: self, progress: progress)
                     let root = try archive.rootFolder()
-                    self.folder = root
                     if root.supportsFlatMode, self.flatModeForArc {
                         root.flatMode = true
                         try root.loadItems()
                     }
+                    return root
+                }
+                switch opened {
+                case .success(let root):
+                    self.folder = root
                     let snap = self.makeSnapshot(root)
-                    DispatchQueue.main.async { self.apply(snap, selectNames: []) }
-                } catch {
-                    let code = (error as NSError).code
-                    // Not an archive: start it externally -- straight from disk in a file-system
-                    // folder, through a 7zO temp copy inside an archive (OpenItemInArchive with
-                    // tryExternal, PanelItemOpen.cpp).
-                    if !insideOnly && code == SZError.Code.notArchive.rawValue {
+                    let levelErrors = root.archive?.openErrorMessage
+                    DispatchQueue.main.async {
+                        self.apply(snap, selectNames: [])
+                        // CPanel::OpenAsArc: MessageBox_Error(ErrorMessage) after entering.
+                        if let levelErrors { self.showError(message: levelErrors) }
+                    }
+                case .failure(let error):
+                    let failure = ArchiveOpenFailure(error)
+                    // OpenAsArc_Msg: a box for an encrypted archive or a real error, nothing for a
+                    // plain "not an archive" or a cancel.
+                    if let message = failure.panelMessage(virtualPath: virtualPath) {
+                        DispatchQueue.main.async { self.showError(message: message) }
+                    }
+                    // OpenItem / OpenItemInArchive: only S_FALSE goes on to start the file
+                    // externally (straight from disk in a file-system folder, through a 7zO temp
+                    // copy inside an archive) -- and only when the command allows it.
+                    if case .notArchive = failure, !insideOnly {
                         self.openExternally(row)
-                    } else if code != SZError.Code.cancelled.rawValue {
-                        throw error
                     }
                 }
             } catch {
@@ -400,14 +469,18 @@ extension PanelViewController {
 
 extension PanelViewController: SZPasswordDelegate {
 
+    /// COpenArchiveCallback::Open_CryptoGetTextPassword (OpenCallback.cpp:63-80): a fresh CFfpOpen
+    /// asks for each archive level (Encrypted starts false, FileFolderPluginOpen.h); the answer is
+    /// kept on that level by the bridge (`SZArchive.password`). The one exception is a level of the
+    /// chain being left that is opened again (`reusablePassword`). The level whose item is being
+    /// copied out pre-seeds its own password in the bridge, so this is not asked for it.
     func passwordForArchive(atPath path: String) -> String? {
-        if let remembered = rememberedPassword { return remembered }
+        if let reused = reusablePassword(forArchivePath: path) { return reused }
         var result: String?
         let ask = { [self] in
-            result = PasswordDialog.askPassword(forPath: path, parent: self.view.window)
+            result = PasswordDialog.askPassword(forPath: path, parent: self.hostWindow)
         }
         if Thread.isMainThread { ask() } else { DispatchQueue.main.sync(execute: ask) }
-        if let result { rememberedPassword = result }      // CFolderLink remembers it
         return result
     }
 }

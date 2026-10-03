@@ -66,7 +66,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] `SZLang.string(id)` / `string(id, fallback)` with binary-search lookup; missing IDs fall back to the built-in string; language switch reloads (01 §7.1, architecture)
 - [x] Default language: `Lang` empty → candidates from `Locale.preferredLanguages` mapped to the same short names as `kLangs` (`en`, `de`, `fr`, `pt-br`, `zh-cn`, …), try sub-language then primary; `"-"` → built-in English; value with a path separator ignored; `.txt` appended only when the value has no dot (01 §7.1, §9 #18)
 - [x] `SZSettings`: `ZipRegistry` accessors backed by `CFPreferences` in the app domain with the Windows value names as keys, so engine defaults and the Swift settings UI read the same values (architecture; 01b §5.7)
-- [ ] `SZTempFiles` / `SZWorkDir`: temp-folder naming `7zO<8 hex>` / `7zE<8 hex>` under `NSTemporaryDirectory()`, work-dir policy object (system / current / specified / removable-only) (01 §3.9, §3.10, 01b §4.3, §4.8)
+- [x] `SZTempFiles` / `SZWorkDir`: temp-folder naming `7zO<8 hex>` / `7zE<8 hex>` under `NSTemporaryDirectory()`, work-dir policy object (system / current / specified / removable-only) (01 §3.9, §3.10, 01b §4.3, §4.8)
 - [x] `SZArchiveOpener` skeleton: open a file with format hint and `SZPasswordDelegate`, returning an `SZFolder`; `reopen` (architecture)
 - [x] `SevenZipKitTests` target with fixture archives in `Mac/Tests/Fixtures/` produced by `make-fixtures.sh` (architecture "Verification")
 
@@ -75,12 +75,12 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] `AppDelegate`, `MainWindowController`, `PanelViewController`, `Support/Lang`, `Support/Settings`, `Support/Icons`, `Support/Formatting`, `Support/TempFiles` files exist with the responsibilities in architecture "App structure"
 - [x] Main window title = focused panel's full path, `"7-Zip"` when the path is empty; refreshed on focus change (01 §1.1 "Window title")
 - [ ] Every launch opens a new window; no single-instance restriction (01 §1.1 "Single instance")
-- [ ] Launch arguments `[path] [-t<arcType>]`: first token = start path (relative made absolute), `-t` remainder = format hint; an existing **file** is opened as an archive in panel 0 and a failed open shows an "Error" box and closes the window; also reachable through `application(_:open:)` (01 §1.1 "Command line", §9 #32)
+- [x] Launch arguments `[path] [-t<arcType>]`: first token = start path (relative made absolute), `-t` remainder = format hint; an existing **file** is opened as an archive in panel 0 and a failed open shows an "Error" box and closes the window; also reachable through `application(_:open:)` (01 §1.1 "Command line", §9 #32)
 - [ ] Startup order: RAM size, `LoadLangOneTime`, symlink support flag, `ReloadLangItems`, window info restore (frame, maximized, panels, splitter) (01 §1.1 "Startup actions", §1.5)
 - [ ] Shutdown order: wait for temp-file watcher threads, save per-panel path / list mode / flat flag + folder history, save window info, release app, free codecs (01 §1.1 "Shutdown")
-- [ ] Layout top to bottom: toolbar (only when at least one logical toolbar is visible), panel area with 1 or 2 panels in an `NSSplitView`, splitter width 4, `kPanelSizeMin = 120`, splitter position stored as a 16-bit ratio; each panel owns its own status bar (01 §1.2)
+- [x] Layout top to bottom: toolbar (only when at least one logical toolbar is visible), panel area with 1 or 2 panels in an `NSSplitView`, splitter width 4, `kPanelSizeMin = 120`, splitter position stored as a 16-bit ratio; each panel owns its own status bar (01 §1.2)
 - [x] `NSToolbar` with the archive group Add / Extract / Test (`kMenuCmdID_Toolbar_Add 1070` `IDS_ADD 7200`, `1071` `IDS_EXTRACT 7201`, `1072` `IDS_TEST 7202`) then the standard group Copy / Move / Delete / Info (`IDM_COPY_TO 546` `IDS_BUTTON_COPY 7203`, `IDM_MOVE_TO 547` `7204`, `IDM_DELETE 548` `7205`, `IDM_PROPERTIES 551` `IDS_BUTTON_INFO 7206`) with tooltips from the same strings (01 §1.3)
-- [ ] Toolbar images: large 48×36 / small 24×24 bitmaps (`IDB_ADD 100`…`IDB_INFO 106`, `IDB_*2 150`…`156`) or SF Symbol equivalents; "Large Buttons" and "Show Buttons Text" switch size and labels (01 §1.3, §9 #15)
+- [x] Toolbar images: large 48×36 / small 24×24 bitmaps (`IDB_ADD 100`…`IDB_INFO 106`, `IDB_*2 150`…`156`) or SF Symbol equivalents; "Large Buttons" and "Show Buttons Text" switch size and labels (01 §1.3, §9 #15)
 - [x] `Toolbars` mask persistence: bit0 labels, bit1 large, bit2 standard, bit3 archive, bit31 "never saved → defaults" = labels on, small buttons, both toolbars (`kDefaultToolbarMask = bit31|8|4|1`) (01 §1.3, 01b §5.2)
 - [x] Toolbar clicks Add / Extract / Test forward to the focused panel with panel timers disabled; standard buttons dispatch the ordinary menu IDs (01 §1.3, §2.7)
 - [x] `CApp::ReloadToolbars` / `SaveToolbarChanges` equivalents rebuild after Options / language changes (01 §1.3)
@@ -91,7 +91,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 ### 1.5 Menu bar (built in code, every item with its `IDM_*` comment; unimplemented actions auto-disabled)
 
 - [x] Top-level popups `File` `IDM_FILE 500`, `Edit` `IDM_EDIT 501`, `View` `IDM_VIEW 502`, `Favorites` `IDM_FAVORITES 503`, `Tools` `IDM_TOOLS 504`, `Help` `IDM_HELP 505` plus the standard macOS app menu (01 §2)
-- [ ] File menu items in order: Open `IDM_OPEN 540` (Enter), Open Inside `541` (Ctrl+PgDn), Open Inside * `590`, Open Inside # `591`, Open Outside `542` (Shift+Enter), View `IDM_FILE_VIEW 543` (F3), Edit `544` (F4), sep, Rename `545` (F2), Copy To… `546` (F5), Move To… `547` (F6), Delete `548` (Del), sep, Split file… `549`, Combine files… `550`, sep, Properties `551` (Alt+Enter), Comment… `552` (Ctrl+Z), CRC submenu (popup id 0) with CRC-32 `102`, CRC-64 `103`, XXH64 `120`, MD5 `122`, SHA-1 `104`, SHA-256 `105`, SHA-384 `106`, SHA-512 `107`, SHA3-256 `108`, BLAKE2sp `121`, `*` `IDM_HASH_ALL 101`, Diff `554`, sep, Create Folder `555` (F7), Create File `556` (Ctrl+N), sep, Link… `558`, [Alternate streams `559` omitted — see final section], Ver Edit/Commit/Revert/Diff `580-583` (only when the 7vc / Diff conditions hold), sep, Exit `IDCLOSE 8` (lang id 557) (01 §2.1)
+- [x] File menu items in order: Open `IDM_OPEN 540` (Enter), Open Inside `541` (Ctrl+PgDn), Open Inside * `590`, Open Inside # `591`, Open Outside `542` (Shift+Enter), View `IDM_FILE_VIEW 543` (F3), Edit `544` (F4), sep, Rename `545` (F2), Copy To… `546` (F5), Move To… `547` (F6), Delete `548` (Del), sep, Split file… `549`, Combine files… `550`, sep, Properties `551` (Alt+Enter), Comment… `552` (Ctrl+Z), CRC submenu (popup id 0) with CRC-32 `102`, CRC-64 `103`, XXH64 `120`, MD5 `122`, SHA-1 `104`, SHA-256 `105`, SHA-384 `106`, SHA-512 `107`, SHA3-256 `108`, BLAKE2sp `121`, `*` `IDM_HASH_ALL 101`, Diff `554`, sep, Create Folder `555` (F7), Create File `556` (Ctrl+N), sep, Link… `558`, [Alternate streams `559` omitted — see final section], Ver Edit/Commit/Revert/Diff `580-583` (only when the 7vc / Diff conditions hold), sep, Exit `IDCLOSE 8` (lang id 557) (01 §2.1)
 - [x] Edit menu: Select All `600`, Deselect All `601`, Invert Selection `602`, Select… `603`, Deselect… `604`, column break, Select by Type `605`, Deselect by Type `606` (01 §2.2)
 - [x] View menu: Large Icons `700` … Details `703` (Ctrl+1..4, radio, Details default), sep, Name `710` / Type `711` / Date `712` / Size `713` / Unsorted `730` (Ctrl+F3..F7, radio), sep, Flat View `731` (check), 2 Panels `732` (F9, check), time popup `IDM_VIEW_TIME_POPUP 760` (items `761+k`, UTC `799`), Toolbars popup `733` with Archive Toolbar `750`, Standard Toolbar `751`, sep, Large Buttons `752`, Show Buttons Text `753`, Open Root Folder `734` (`\`), Up One Level `735` (Backspace), Folders History… `736` (Alt+F12), Refresh `737` (Ctrl+R), Auto Refresh `738` (check) (01 §2.3)
 - [x] Favorites menu skeleton: popup "Add folder to Favorites as" `IDM_ADD_TO_FAVORITES 800` (10 items `810+i`, Alt+Shift+i) + separator + 10 bookmark items `830+i` (Alt+i), rebuilt when the menu opens (01 §2.4)
@@ -105,7 +105,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 
 - [x] Panel header: "Up one level" button (`kParentFolderID 100`) + editable address `NSComboBox` / `NSPathControl` with the folder icon (01 §1.2 "Header toolbar", "Address bar")
 - [x] Details view (`NSTableView`) with columns from the folder's property list, Name first, item icons; default sort Name ascending for FS / archive folders (01 §1.2 "List view", §3.2)
-- [ ] Per-panel status bar with 4 sections, right edges `{220, 320, 420, rest}` (01 §1.2 "Status bar", §3.12)
+- [x] Per-panel status bar with 4 sections, right edges `{220, 320, 420, rest}` (01 §1.2 "Status bar", §3.12)
 - [x] Per-panel 1 s timer calling `WasChanged` when auto-refresh is on and no operation is running (01 §1.2, §3.17)
 - [ ] Panel start path: launch path for panel 0, else `PanelPath<i>`, else the root folder; unbindable stored path falls back to the root folder (01 §1.4)
 - [x] Root folder (`SZRootFolder`) listing Computer → volumes and Documents → `~/Documents` so the shell shows real data before `fsfolder` lands (01 §6.2, §9 #5)
@@ -137,7 +137,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] `CalcItemFullSize(index)`: recursive enumeration storing `Size` / `NumSubDirs` / `NumSubFiles` on the item with progress (01 §3.11 "View / Edit", §6.4)
 - [x] `Clone()` → new folder with the same path (01 §6.4)
 - [x] Trash: `NSFileManager.trashItem(at:)` for Delete without Shift; Shift+Delete = permanent delete; both after the confirmation strings `IDS_CONFIRM_FILE_DELETE 6100` / `IDS_CONFIRM_FOLDER_DELETE 6101` / `IDS_CONFIRM_ITEMS_DELETE 6102`, `IDS_WANT_TO_DELETE_FILE 6103` / `_FOLDER 6104` / `_ITEMS 6105` (permanent delete only); progress `IDS_DELETING 6106`; errors `IDS_ERROR_DELETING 6107` (01 §3.11 "Delete", §9 #9)
-- [ ] Path rules: `/` separators, case sensitivity per volume (`volumeSupportsCaseSensitiveNames`), `IsCorrectFsName` rejects only a last component `.` / `..`, `CorrectFsPath` resolves typed names against the folder (01 §3.11, §9 #24)
+- [x] Path rules: `/` separators, case sensitivity per volume (`volumeSupportsCaseSensitiveNames`), `IsCorrectFsName` rejects only a last component `.` / `..`, `CorrectFsPath` resolves typed names against the folder (01 §3.11, §9 #24)
 - [x] `CompareFileNames_ForFolderList` provided by the platform layer: case-insensitive, numeric-aware digit runs compared by value then length, tie by `MyStringCompareNoCase` (01 §3.3)
 
 ### 2.2 Root and volumes folders
@@ -150,9 +150,9 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 
 ### 2.3 Opening archives inside a panel
 
-- [ ] `SZArchiveOpener` = `CFfpOpen::OpenFileFolderPlugin`: manager + open callback with password pre-seeded from the parent chain (`Encrypted` in/out), run on a worker under a progress titled `IDS_OPENNING` in `WaitMode` (dialog only after 500 ms), `Open_SetTotal/SetCompleted` for multi-volume / solid scanning, `PasswordWasAsked` flag (01 §6.7 "Opening")
+- [x] `SZArchiveOpener` = `CFfpOpen::OpenFileFolderPlugin`: manager + open callback with password pre-seeded from the parent chain (`Encrypted` in/out), run on a worker under a progress titled `IDS_OPENNING` in `WaitMode` (dialog only after 500 ms), `Open_SetTotal/SetCompleted` for multi-volume / solid scanning, `PasswordWasAsked` flag (01 §6.7 "Opening")
 - [x] `ParseOpenTypes(arcFormat)`: `*`, `#`, `#:e`, `type:subtype`, nested `7z:tar`; `CArchiveLink::Open` by signature / extension, nested archives auto-opened for parser requests, `NonOpen_ErrorInfo` per failing level; `ArchiveType`, `_isHashHandler` (01 §6.7, 03 §1.4 A2)
-- [ ] Open error message composed per level: `IDS_CANT_OPEN_AS_TYPE` "Cannot open the file as {0} archive", `IDS_IS_OPEN_AS_TYPE`, `IDS_IS_OPEN_WITH_OFFSET`, `kpidError`, `kpidErrorFlags` texts (`IDS_EXTRACT_MSG_IS_NOT_ARC`, `_HEADERS_ERROR`, `_UNAVAILABLE_DATA`, `_UEXPECTED_END`, `_DATA_AFTER_END`, `IDS_OPEN_MSG_UNSUPPORTED_FEATURE`, `_UNAVAILABLE_START`, `_UNCONFIRMED_START`), warnings; the panel still enters an archive returned with warnings (01 §6.7)
+- [x] Open error message composed per level: `IDS_CANT_OPEN_AS_TYPE` "Cannot open the file as {0} archive", `IDS_IS_OPEN_AS_TYPE`, `IDS_IS_OPEN_WITH_OFFSET`, `kpidError`, `kpidErrorFlags` texts (`IDS_EXTRACT_MSG_IS_NOT_ARC`, `_HEADERS_ERROR`, `_UNAVAILABLE_DATA`, `_UEXPECTED_END`, `_DATA_AFTER_END`, `IDS_OPEN_MSG_UNSUPPORTED_FEATURE`, `_UNAVAILABLE_START`, `_UNCONFIRMED_START`), warnings; the panel still enters an archive returned with warnings (01 §6.7)
 - [x] Archive folder (`CAgentFolder`) as `SZFolder`: type `"7-Zip.<ArchiveType>"`, `kpidPath` = archive path + inner path, `kpidReadOnly` = changed long paths ‖ read-only file ‖ `!CanUpdate()` (single level, not a device file, no tail data), `kpidIsHash`, folder props `kpidSize`, `kpidPackSize`, `kpidNumSubDirs`, `kpidNumSubFiles`, `kpidCRC` (01 §6.7 "CAgentFolder")
 - [x] Archive item properties: handler properties with `kpidPath` renamed to `kpidName`, implicit directories from the proxy tree, `kpidNumSubDirs` / `kpidNumSubFiles` for dirs, `kpidPrefix` in flat mode, raw properties when `IArchiveGetRawProps`; `GetRealIndex` / `GetRealIndices(indices, includeAltStreams, includeFolderSubItemsInFlatMode)` (01 §3.2, §6.7)
 - [x] Archive `BindToFolder` / `BindToParentFolder` without I/O; `IFolderCompare::CompareItems`, `IFolderGetItemName`, `IFolderSetFlatMode` (flat lists whole subtree, folder rows kept), `IFolderProperties`, `IGetFolderArcProps` (levels, `GetArcProp`, `GetArcProp2`) (01 §3.4, §6.1, §6.7)
@@ -165,8 +165,8 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] `CopyFromFile` (`UpdateOneFile`) replaces exactly one item's data with a disk file keeping the original name (01 §6.7)
 - [x] `CopyFrom` (`DoOperation`): enumerate disk items with `IFolderScanProgress`, enumerate archive items, `k_ActionSet_Add`, `UpdateItems` with `CUpdateCallbackAgent` → `IFolderArchiveUpdateCallback(2)` (`CompressOperation`, `DeleteOperation`, `OperationResult`, `UpdateErrorMessage`, `SetNumFiles`, `OpenFileError`, `ReadingFileError`, `ReportExtractResult`, `ReportUpdateOperation`); `moveMode` deletes processed sources and now-empty source directories (01 §6.1, §6.7)
 - [x] `KeepModeForNextOpen()` so nested archives reopen with the same handler (01 §6.7)
-- [ ] Password remembered per folder chain (`CFolderLink::UsePassword/Password`) and pre-seeded for nested opens, re-open after update, Copy / Test (01 §8.7, 01b §4.16)
-- [ ] Work dir policy (`GetWorkDir`): system temp / archive folder / specified path, "for removable volumes only" flag, `kSpecified` without a path falls back to system (01b §4.8, §5.5)
+- [x] Password remembered per folder chain (`CFolderLink::UsePassword/Password`) and pre-seeded for nested opens, re-open after update, Copy / Test (01 §8.7, 01b §4.16)
+- [x] Work dir policy (`GetWorkDir`): system temp / archive folder / specified path, "for removable volumes only" flag, `kSpecified` without a path falls back to system (01b §4.8, §5.5)
 
 ### 2.4 Temp-file open / edit with watcher and archive re-update
 
@@ -639,7 +639,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
   - **[packaging audit] unticked:** only the five `Options.*` values travel. `URLCommands.snapshot()` (`:74-87`) copies `cascadedMenu`, `menuIcons`, `eliminateDuplicateRoot`, `writeZoneIdExtract` and the `ContextMenu` flag mask plus the eleven localized menu titles, and nothing else; no `Compression.*` or `Extraction.*` key reaches an extension container.
 - [x] `SZSettings` and the Swift `Settings` facade read / write the same keys so engine-side defaults (`ZipRegistry` accessors) and the UI never disagree; all writes serialised (01b §5, architecture)
   - **[packaging audit]:** the shared-key half is correct; "all writes serialised" is not — `Mac/Core/Platform/MacPrefs.cpp:84-89` writes straight through CFPreferences with no lock or queue.
-- [ ] Not persisted, as on Windows: `AutoRefresh_Mode`, `ShowDeleted`, `Underline`; benchmark and hash operations have no stored settings (01 §3.17, 01b §5, §5.2)
+- [x] Not persisted, as on Windows: `AutoRefresh_Mode`, `ShowDeleted`, `Underline`; benchmark and hash operations have no stored settings (01 §3.17, 01b §5, §5.2)
 
 ## 8. finder — Finder Sync extension, Services / Quick Actions, document types, `sevenzip://` commands, 7zG grammar
 

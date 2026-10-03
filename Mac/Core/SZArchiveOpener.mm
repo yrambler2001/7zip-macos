@@ -30,31 +30,62 @@ class CSZOpenCallbackUI Z7_final: public IOpenCallbackUI
 {
 public:
   id<SZPasswordDelegate> Delegate;
+  /// COpenArchiveCallback's ProgressDialog half (OpenCallback.cpp:20-60): only set while the
+  /// open runs, cleared afterwards so a later ReOpen does not report to a finished operation.
+  id<SZProgressDelegate> Progress;
   NSString *Path;
   UString Password;
   bool PasswordIsDefined;
   bool PasswordWasAsked;
   bool Cancelled;
 
-  CSZOpenCallbackUI(): Delegate(nil), Path(nil), PasswordIsDefined(false),
+  CSZOpenCallbackUI(): Delegate(nil), Progress(nil), Path(nil), PasswordIsDefined(false),
       PasswordWasAsked(false), Cancelled(false) {}
+
+  /// ProgressDialog.Sync.CheckStop(): the Cancel button of the "Opening" progress.
+  HRESULT CheckStop()
+  {
+    if (Progress && [Progress progressCheckBreak])
+    {
+      Cancelled = true;
+      return E_ABORT;
+    }
+    return S_OK;
+  }
 
   Z7_IFACE_IMP(IOpenCallbackUI)
 };
 
-HRESULT CSZOpenCallbackUI::Open_CheckBreak() { return S_OK; }
+HRESULT CSZOpenCallbackUI::Open_CheckBreak() { return CheckStop(); }
 
-HRESULT CSZOpenCallbackUI::Open_SetTotal(const UInt64 * /* files */, const UInt64 * /* bytes */)
+// COpenArchiveCallback::Open_SetTotal: Set_NumFilesTotal + Set_NumBytesTotal, after CheckStop.
+HRESULT CSZOpenCallbackUI::Open_SetTotal(const UInt64 *files, const UInt64 *bytes)
 {
+  RINOK(CheckStop())
+  if (Progress)
+  {
+    if (files && [Progress respondsToSelector:@selector(progressSetTotalFiles:)])
+      [Progress progressSetTotalFiles:*files];
+    if (bytes)
+      [Progress progressSetTotal:*bytes];
+  }
   return S_OK;
 }
 
-HRESULT CSZOpenCallbackUI::Open_SetCompleted(const UInt64 * /* files */, const UInt64 * /* bytes */)
+// COpenArchiveCallback::Open_SetCompleted: Set_NumFilesCur + Set_NumBytesCur, then CheckStop.
+HRESULT CSZOpenCallbackUI::Open_SetCompleted(const UInt64 *files, const UInt64 *bytes)
 {
-  return S_OK;
+  if (Progress)
+  {
+    if (files)
+      [Progress progressSetNumFilesProcessed:*files];
+    if (bytes)
+      [Progress progressSetCompleted:*bytes];
+  }
+  return CheckStop();
 }
 
-HRESULT CSZOpenCallbackUI::Open_Finished() { return S_OK; }
+HRESULT CSZOpenCallbackUI::Open_Finished() { return CheckStop(); }
 
 HRESULT CSZOpenCallbackUI::Open_CryptoGetTextPassword(BSTR *password)
 {
@@ -90,6 +121,9 @@ class CExtractToTempCallback Z7_final:
   Z7_IFACE_COM7_IMP(ICryptoGetTextPassword)
 public:
   id<SZPasswordDelegate> Delegate;
+  /// The open's progress: the copy of a nested archive is part of opening it (7zFM runs it
+  /// under its own progress dialog, PanelItemOpen.cpp:1650-1666).
+  id<SZProgressDelegate> Progress;
   NSString *Path;
   UString Password;
   bool PasswordIsDefined;
@@ -98,12 +132,33 @@ public:
   Int32 FirstBadOpRes;
   NSString *ErrorMessage;
 
-  CExtractToTempCallback(): Delegate(nil), Path(nil), PasswordIsDefined(false), PasswordWasAsked(false),
+  CExtractToTempCallback(): Delegate(nil), Progress(nil), Path(nil), PasswordIsDefined(false), PasswordWasAsked(false),
       Cancelled(false), FirstBadOpRes(NArchive::NExtract::NOperationResult::kOK), ErrorMessage(nil) {}
+
+  HRESULT CheckStop()
+  {
+    if (Progress && [Progress progressCheckBreak])
+    {
+      Cancelled = true;
+      return E_ABORT;
+    }
+    return S_OK;
+  }
 };
 
-Z7_COM7F_IMF(CExtractToTempCallback::SetTotal(UInt64 /* total */)) { return S_OK; }
-Z7_COM7F_IMF(CExtractToTempCallback::SetCompleted(const UInt64 * /* completeValue */)) { return S_OK; }
+Z7_COM7F_IMF(CExtractToTempCallback::SetTotal(UInt64 total))
+{
+  if (Progress)
+    [Progress progressSetTotal:total];
+  return CheckStop();
+}
+
+Z7_COM7F_IMF(CExtractToTempCallback::SetCompleted(const UInt64 *completeValue))
+{
+  if (Progress && completeValue)
+    [Progress progressSetCompleted:*completeValue];
+  return CheckStop();
+}
 
 Z7_COM7F_IMF(CExtractToTempCallback::AskOverwrite(
     const wchar_t * /* existName */, const FILETIME * /* existTime */, const UInt64 * /* existSize */,
@@ -116,7 +171,7 @@ Z7_COM7F_IMF(CExtractToTempCallback::AskOverwrite(
 
 Z7_COM7F_IMF(CExtractToTempCallback::PrepareOperation(const wchar_t * /* name */, Int32 /* isFolder */, Int32 /* askExtractMode */, const UInt64 * /* position */))
 {
-  return S_OK;
+  return CheckStop();
 }
 
 Z7_COM7F_IMF(CExtractToTempCallback::MessageError(const wchar_t *message))
@@ -162,11 +217,178 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
 }
 
 // ---------------------------------------------------------------------------
+// The per-level open error text: GetFolderLevels + GetFolderError (FileFolderPluginOpen.cpp:
+// 96-217), read through the agent's IFolderArcProps exactly as 7zFM reads it through the
+// folder's IGetFolderArcProps. Level `numLevels` is the level that could not be opened
+// (CAgent::GetArcProp answers NonOpen_ArcPath / NonOpen_ErrorInfo for it).
+
+NSErrorUserInfoKey const SZArchiveOpenEncryptedKey = @"SZArchiveOpenEncrypted";
+NSErrorUserInfoKey const SZArchiveOpenErrorMessageKey = @"SZArchiveOpenErrorMessage";
+NSErrorUserInfoKey const SZArchiveOpenPathKey = @"SZArchiveOpenPath";
+
+static const UInt32 kLangID_CantOpenArchive_Open = 3005;     // IDS_CANT_OPEN_ARCHIVE
+static const UInt32 kLangID_CantOpenEncrypted_Open = 3006;   // IDS_CANT_OPEN_ENCRYPTED_ARCHIVE
+static const UInt32 kLangID_CantOpenAsType_Open = 3017;      // IDS_CANT_OPEN_AS_TYPE
+static const UInt32 kLangID_IsOpenAsType_Open = 3018;        // IDS_IS_OPEN_AS_TYPE
+static const UInt32 kLangID_WrongPswGuess_Open = 3710;       // IDS_EXTRACT_MSG_WRONG_PSW_GUESS
+
+/// k_ErrorFlagsIds (FileManager/ExtractCallback.cpp:452-465), by kpv_ErrorFlags_* bit position.
+static const UInt32 k_OpenErrorFlagsLangIDs[] = {
+  3727,  // IDS_EXTRACT_MSG_IS_NOT_ARC
+  3728,  // IDS_EXTRACT_MSG_HEADERS_ERROR
+  3728,  // IDS_EXTRACT_MSG_HEADERS_ERROR (encrypted headers)
+  3763,  // IDS_OPEN_MSG_UNAVAILABLE_START
+  3764,  // IDS_OPEN_MSG_UNCONFIRMED_START
+  3725,  // IDS_EXTRACT_MSG_UEXPECTED_END
+  3726,  // IDS_EXTRACT_MSG_DATA_AFTER_END
+  3721,  // IDS_EXTRACT_MSG_UNSUPPORTED_METHOD
+  3768,  // IDS_OPEN_MSG_UNSUPPORTED_FEATURE
+  3722,  // IDS_EXTRACT_MSG_DATA_ERROR
+  3723   // IDS_EXTRACT_MSG_CRC_ERROR
+};
+
+static UString SZFormatLangOpen(UInt32 langID, const UString &argument)
+{
+  UString s = NWindows::MyLoadString(langID);
+  s.Replace(UString("{0}"), argument);
+  return s;
+}
+
+/// GetOpenArcErrorMessage (FileManager/ExtractCallback.cpp:474-509).
+static UString SZOpenArcErrorFlagsMessage(UInt32 errorFlags)
+{
+  UString s;
+  for (unsigned i = 0; i < Z7_ARRAY_SIZE(k_OpenErrorFlagsLangIDs); i++)
+  {
+    const UInt32 f = (UInt32)1 << i;
+    if ((errorFlags & f) == 0)
+      continue;
+    UString m = NWindows::MyLoadString(k_OpenErrorFlagsLangIDs[i]);
+    if (m.IsEmpty())
+      continue;
+    if (f == kpv_ErrorFlags_EncryptedHeadersError)
+    {
+      m += " : ";
+      m += NWindows::MyLoadString(kLangID_WrongPswGuess_Open);
+    }
+    if (!s.IsEmpty())
+      s.Add_LF();
+    s += m;
+    errorFlags &= ~f;
+  }
+  if (errorFlags != 0)
+  {
+    char sz[16];
+    sz[0] = '0';
+    sz[1] = 'x';
+    ConvertUInt32ToHex(errorFlags, sz + 2);
+    if (!s.IsEmpty())
+      s.Add_LF();
+    s += sz;
+  }
+  return s;
+}
+
+static UString SZBracedTypeOpen(const UString &type)
+{
+  UString s ('[');
+  s += type;
+  s.Add_Char(']');
+  return s;
+}
+
+/// GetFolderError: `nonOpenErrors` is the text of the level that failed to open (what 7zFM
+/// shows), `openErrors` that of the levels that opened (computed by 7zFM and not shown).
+static void SZGetFolderError(IFolderArcProps *arcProps, UString &openErrors, UString &nonOpenErrors)
+{
+  openErrors.Empty();
+  nonOpenErrors.Empty();
+  if (!arcProps)
+    return;
+  UInt32 numLevels = 0;
+  if (arcProps->GetArcNumLevels(&numLevels) != S_OK)
+    numLevels = 0;
+  // GetFolderLevels: levels 0 .. numLevels, the last one being the non-open level.
+  for (Int32 level = (Int32)numLevels; level >= 0; level--)
+  {
+    const bool isNonOpenLevel = (level == (Int32)numLevels);
+    UString error, path, type, errorType, errorFlags;
+    const PROPID propIDs[] = { kpidError, kpidPath, kpidType, kpidErrorType };
+    UString *targets[] = { &error, &path, &type, &errorType };
+    for (unsigned i = 0; i < 4; i++)
+    {
+      NWindows::NCOM::CPropVariant prop;
+      if (arcProps->GetArcProp((UInt32)level, propIDs[i], &prop) != S_OK)
+        continue;
+      if (prop.vt != VT_EMPTY)
+        *targets[i] = (prop.vt == VT_BSTR) ? UString(prop.bstrVal) : UString("?");
+    }
+    {
+      NWindows::NCOM::CPropVariant prop;
+      if (arcProps->GetArcProp((UInt32)level, kpidErrorFlags, &prop) == S_OK)
+      {
+        const UInt32 flags = GetOpenArcErrorFlags(prop);
+        if (flags != 0)
+          errorFlags = SZOpenArcErrorFlagsMessage(flags);
+      }
+    }
+
+    UString m;
+    if (!errorType.IsEmpty())
+    {
+      m = SZFormatLangOpen(kLangID_CantOpenAsType_Open, SZBracedTypeOpen(errorType));
+      if (!isNonOpenLevel)
+      {
+        m.Add_LF();
+        m += SZFormatLangOpen(kLangID_IsOpenAsType_Open, SZBracedTypeOpen(type));
+      }
+    }
+    if (!error.IsEmpty())
+    {
+      if (!m.IsEmpty())
+        m.Add_LF();
+      m += SZBracedTypeOpen(type);
+      m += " : ";
+      m += GetNameOfProperty(kpidError, L"Error");
+      m += " : ";
+      m += error;
+    }
+    if (!errorFlags.IsEmpty())
+    {
+      if (!m.IsEmpty())
+        m.Add_LF();
+      m += GetNameOfProperty(kpidErrorFlags, L"Errors");
+      m += ": ";
+      m += errorFlags;
+    }
+    if (m.IsEmpty())
+      continue;
+    UString &target = isNonOpenLevel ? nonOpenErrors : openErrors;
+    if (!isNonOpenLevel && !target.IsEmpty())
+      target += "--------------------\n";
+    target += path;
+    target.Add_LF();
+    target += m;
+  }
+}
+
+/// The non-open level's text for an agent, or nil.
+static NSString *SZNonOpenErrors(IInFolderArchive *agent)
+{
+  CMyComPtr<IFolderArcProps> props;
+  if (agent)
+    agent->QueryInterface(IID_IFolderArcProps, (void **)&props);
+  UString openErrors, nonOpenErrors;
+  SZGetFolderError(props, openErrors, nonOpenErrors);
+  return nonOpenErrors.IsEmpty() ? nil : SZStringFromUString(nonOpenErrors);
+}
+
 /// The open-callback pair is private to this file, so it is declared here rather than in the
 /// shared Internal/SZFolder+Internal.h (which the other bridge files include).
 @interface SZArchive ()
 - (void)adoptOpenCallbackImp:(COpenCallbackImp *)spec ui:(CSZOpenCallbackUI *)ui;
 - (void)recordTempFile:(NSString *)path;
+@property (nonatomic, readwrite, copy, nullable) NSString *openErrorMessage;
 @end
 
 /// Size and modification time of a file (CTempFileInfo::FileInfo); NO when it cannot be read.
@@ -421,6 +643,7 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
                        of:(SZFolder *)folder
                     named:(NSString *)name
          passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                 progress:(id<SZProgressDelegate>)progress
             tempDirectory:(NSString **)tempDirectory
                     error:(NSError **)error
 {
@@ -432,23 +655,25 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
       *error = [SZErrors errorWithCode:SZErrorCodeUnsupported message:@"The folder cannot extract items"];
     return nil;
   }
-  NSString *base = [SZSettings.temporaryDirectory stringByAppendingPathComponent:@"7zO-XXXXXX"];
-  char *templ = strdup(base.fileSystemRepresentation);
-  const char *made = mkdtemp(templ);
-  if (!made)
-  {
-    free(templ);
-    if (error)
-      *error = [SZErrors errorWithHRESULT:(uint32_t)HRESULT_FROM_WIN32((DWORD)errno) message:@"Cannot create a temp folder"];
+  // 7zO<8 hex> (kTempDirPrefix, PanelItemOpen.cpp:1490), like every other temp folder.
+  NSString *tempDir = [SZTempOpen createTemporaryDirectoryWithPrefix:[SZTempOpen openDirectoryPrefix] error:error];
+  if (!tempDir)
     return nil;
-  }
-  NSString *tempDir = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:made length:strlen(made)];
-  free(templ);
 
   CExtractToTempCallback *cbSpec = new CExtractToTempCallback;
   CMyComPtr<IFolderArchiveExtractCallback> callback = cbSpec;
   cbSpec->Delegate = passwordDelegate;
+  cbSpec->Progress = progress;
   cbSpec->Path = [folder.fullPath stringByAppendingString:name];
+  // OpenItemInArchive (PanelItemOpen.cpp:1566-1571, 1653-1658): the copy uses the password of
+  // the level it comes from, and a password asked for during the copy is remembered there.
+  SZArchive *level = folder.archive;
+  NSString *levelPassword = level.password;
+  if (levelPassword)
+  {
+    cbSpec->Password = SZUStringFromNSString(levelPassword);
+    cbSpec->PasswordIsDefined = true;
+  }
 
   const UString uTemp = MultiByteToUnicodeString(SZFStringFromNSString(tempDir), CP_UTF8);
   const UInt32 idx = (UInt32)index;
@@ -480,6 +705,9 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
     }
     return nil;
   }
+  // CFolderLink::Password of the level the copy came from (OpenItemInArchive writes it back).
+  if (cbSpec->PasswordIsDefined && level)
+    level.password = SZStringFromUString(cbSpec->Password);
   *tempDirectory = tempDir;
   return file;
 }
@@ -489,6 +717,7 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
                   displayPath:(NSString *)displayPath
                    formatHint:(NSString *)formatHint
              passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                     progress:(id<SZProgressDelegate>)progress
                   outerFolder:(SZFolder *)outerFolder
                outerItemIndex:(NSInteger)outerItemIndex
                 tempDirectory:(NSString *)tempDirectory
@@ -506,7 +735,16 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
   // SetSubArchiveName for an archive opened from a stream inside another archive.
   CSZOpenCallbackUI *uiSpec = new CSZOpenCallbackUI;
   uiSpec->Delegate = passwordDelegate;
+  uiSpec->Progress = progress;
   uiSpec->Path = displayPath;
+  if (progress)
+  {
+    // CFfpOpen: the progress is titled IDS_OPENNING and names the archive.
+    if ([progress respondsToSelector:@selector(progressSetStatus:)])
+      [progress progressSetStatus:SZProgressStatusOpening];
+    if ([progress respondsToSelector:@selector(progressSetTitleFileName:)])
+      [progress progressSetTitleFileName:displayPath.lastPathComponent];
+  }
   COpenCallbackImp *cbSpec = new COpenCallbackImp;
   CMyComPtr<IArchiveOpenCallback> callback = cbSpec;
   cbSpec->Callback = uiSpec;
@@ -549,6 +787,8 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
     return agentPtr->Open(inStream, uPath.Ptr(), uHint.Ptr(), &type, cbPtr);
   });
 
+  uiSpec->Progress = nil;            // the open stage is over; a ReOpen reports nowhere
+
   if (hr != S_OK)
   {
     NSString *engineMsg = msg;
@@ -557,6 +797,10 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
       engineMsg = SZStringFromUString(em);
     const bool passwordWasAsked = uiSpec->PasswordWasAsked;
     const bool cancelled = uiSpec->Cancelled;
+    // CFfpOpen::Encrypted is PasswordIsDefined after an S_FALSE (FileFolderPluginOpen.cpp:358-362).
+    const bool encrypted = (hr == S_FALSE) && uiSpec->PasswordIsDefined;
+    // 20.01: the agent keeps NonOpen_ErrorInfo for an S_FALSE; GetFolderError reads it.
+    NSString *nonOpenErrors = (hr == S_FALSE) ? SZNonOpenErrors(agent) : nil;
     cbSpec->Callback = NULL;
     delete uiSpec;
     if (error)
@@ -564,11 +808,29 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
       if (passwordWasAsked && !passwordDelegate)
         *error = [SZErrors errorWithCode:SZErrorCodePasswordRequired
                                 message:[NSString stringWithFormat:@"A password is required to open %@", displayPath]];
-      else if (cancelled)
+      else if (cancelled || hr == E_ABORT)
         *error = [SZErrors errorWithCode:SZErrorCodeCancelled message:@"Cancelled"];
       else if (hr == S_FALSE)
-        *error = [SZErrors errorWithCode:SZErrorCodeNotArchive
-                                message:engineMsg.length ? engineMsg : [NSString stringWithFormat:@"Cannot open %@ as archive", displayPath]];
+      {
+        // OpenAsArc_Msg / FM.cpp:999-1013: IDS_CANT_OPEN_ARCHIVE or, with a password in use,
+        // IDS_CANT_OPEN_ENCRYPTED_ARCHIVE, then the non-open level's text on the next line.
+        const UString path = SZUStringFromNSString(displayPath);
+        UString m = SZFormatLangOpen(encrypted ? kLangID_CantOpenEncrypted_Open : kLangID_CantOpenArchive_Open, path);
+        if (m.IsEmpty())
+          m = SZUStringFromNSString([NSString stringWithFormat:@"Cannot open %@ as archive", displayPath]);
+        NSString *text = SZStringFromUString(m);
+        if (nonOpenErrors.length)
+          text = [text stringByAppendingFormat:@"\n%@", nonOpenErrors];
+        NSMutableDictionary *info = [NSMutableDictionary dictionary];
+        info[NSLocalizedDescriptionKey] = text;
+        info[SZArchiveOpenEncryptedKey] = @(encrypted);
+        info[SZArchiveOpenPathKey] = displayPath;
+        if (nonOpenErrors.length)
+          info[SZArchiveOpenErrorMessageKey] = nonOpenErrors;
+        if (engineMsg.length)
+          info[SZErrorEngineMessageKey] = engineMsg;
+        *error = [NSError errorWithDomain:SZErrorDomain code:SZErrorCodeNotArchive userInfo:info];
+      }
       else
         *error = [SZErrors errorWithHRESULT:(uint32_t)hr message:engineMsg];
     }
@@ -585,12 +847,26 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
   // The open callback survives the open stage for a multi-volume set, and it holds a raw pointer
   // to the IOpenCallbackUI, so the archive takes ownership of both.
   [archive adoptOpenCallbackImp:cbSpec ui:uiSpec];
+  // folderLink.Password / UsePassword = ffp.Password / ffp.Encrypted (PanelItemOpen.cpp:489-490).
+  if (uiSpec->PasswordIsDefined)
+    archive.password = SZStringFromUString(uiSpec->Password);
+  // ffp.ErrorMessage: a level that could not be opened inside an archive that did open.
+  archive.openErrorMessage = SZNonOpenErrors(agent);
   return archive;
 }
 
 + (SZArchive *)openArchiveAtPath:(NSString *)path
                       formatHint:(NSString *)formatHint
                 passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                           error:(NSError **)error
+{
+  return [self openArchiveAtPath:path formatHint:formatHint passwordDelegate:passwordDelegate progress:nil error:error];
+}
+
++ (SZArchive *)openArchiveAtPath:(NSString *)path
+                      formatHint:(NSString *)formatHint
+                passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                        progress:(id<SZProgressDelegate>)progress
                            error:(NSError **)error
 {
   NSString *p = [[path stringByExpandingTildeInPath] stringByStandardizingPath];
@@ -617,13 +893,24 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
       if ([[outer nameOfItemAtIndex:i] isEqualToString:name]) { outerIndex = i; break; }
   }
   return [self openWithStream:NULL openPath:p displayPath:p formatHint:formatHint passwordDelegate:passwordDelegate
-                  outerFolder:outer outerItemIndex:outerIndex tempDirectory:nil error:error];
+                     progress:progress outerFolder:outer outerItemIndex:outerIndex tempDirectory:nil error:error];
 }
 
 + (SZArchive *)openArchiveInFolder:(SZFolder *)folder
                          itemIndex:(NSInteger)index
                         formatHint:(NSString *)formatHint
                   passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                             error:(NSError **)error
+{
+  return [self openArchiveInFolder:folder itemIndex:index formatHint:formatHint
+                  passwordDelegate:passwordDelegate progress:nil error:error];
+}
+
++ (SZArchive *)openArchiveInFolder:(SZFolder *)folder
+                         itemIndex:(NSInteger)index
+                        formatHint:(NSString *)formatHint
+                  passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                          progress:(id<SZProgressDelegate>)progress
                              error:(NSError **)error
 {
   if (index >= folder.itemCount)
@@ -639,7 +926,7 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
         ? [(SZFileSystemFolder *)folder fullPathOfItemAtIndex:index]
         : [folder.fullPath stringByAppendingString:[folder nameOfItemAtIndex:index]];
     return [self openWithStream:NULL openPath:path displayPath:path formatHint:formatHint passwordDelegate:passwordDelegate
-                    outerFolder:folder outerItemIndex:index tempDirectory:nil error:error];
+                       progress:progress outerFolder:folder outerItemIndex:index tempDirectory:nil error:error];
   }
 
   // Inside an archive: use the item's stream (PanelItemOpen.cpp:1526-1541).
@@ -660,16 +947,19 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
   NSString *virtualPath = [folder.fullPath stringByAppendingString:name];
   if (inStream)
     return [self openWithStream:inStream openPath:virtualPath displayPath:virtualPath formatHint:formatHint
-               passwordDelegate:passwordDelegate outerFolder:folder outerItemIndex:index tempDirectory:nil error:error];
+               passwordDelegate:passwordDelegate progress:progress outerFolder:folder outerItemIndex:index
+                  tempDirectory:nil error:error];
 
   // No seekable stream: extract the item to a temp folder and open the copy (7zFM does the
   // same through CPanel::OpenItemAsArchive with a 7zO temp dir).
   NSString *tempDir = nil;
-  NSString *tempFile = [self extractItem:index of:folder named:name passwordDelegate:passwordDelegate tempDirectory:&tempDir error:error];
+  NSString *tempFile = [self extractItem:index of:folder named:name passwordDelegate:passwordDelegate progress:progress
+                           tempDirectory:&tempDir error:error];
   if (!tempFile)
     return nil;
   SZArchive *archive = [self openWithStream:NULL openPath:tempFile displayPath:virtualPath formatHint:formatHint
-                           passwordDelegate:passwordDelegate outerFolder:folder outerItemIndex:index tempDirectory:tempDir error:error];
+                           passwordDelegate:passwordDelegate progress:progress outerFolder:folder outerItemIndex:index
+                              tempDirectory:tempDir error:error];
   if (!archive)
     [[NSFileManager defaultManager] removeItemAtPath:tempDir error:NULL];
   else

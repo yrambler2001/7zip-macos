@@ -105,6 +105,10 @@ struct PanelSnapshot {
     let supportsCompare: Bool
     /// (sortID, ascending, flatMode) the rows were sorted with.
     let sortParams: PanelSortParams
+    /// A file-system folder on a volume that tells "A" from "a" (01 §9 #24). Windows matches masks
+    /// and compares paths without case; on macOS that depends on the volume. Archives follow the
+    /// engine (g_CaseSensitive is false on macOS), so this is false for them.
+    var isCaseSensitive = false
 
     /// Number of items excluding the ".." row (the Windows "total" of the status bar).
     var itemCount: Int { rows.reduce(0) { $1.isParentRow ? $0 : $0 + 1 } }
