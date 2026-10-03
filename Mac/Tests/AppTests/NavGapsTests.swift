@@ -348,4 +348,53 @@ final class NavGapsTests: AppHostTestCase {
         XCTAssertTrue(toolbar.isVisible)
         XCTAssertEqual(PanelSplitView().dividerThickness, 4)
     }
+
+    // MARK: - Ver Edit / Commit / Revert / Diff (PROGRESS 94, 01 §2.1 rows 22-25)
+
+    func testVersionControlCycle() throws {
+        let fm = FileManager.default
+        let store = scratch + "/vc"
+        let dir = scratch + "/work"
+        try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let file = dir + "/a.txt"
+        try Data("one\n".utf8).write(to: URL(fileURLWithPath: file))
+        try fm.setAttributes([.posixPermissions: 0o444,
+                              .modificationDate: Date(timeIntervalSince1970: 1_577_836_800)], ofItemAtPath: file)  // 2020
+        let stored = VersionControl.storedPath(of: file, store: store)
+        XCTAssertEqual(stored, store + dir + "/a.txt")
+
+        XCTAssertEqual(VersionControl.menuCommands(forFile: file, diffPath: "", store: store), [], "no Diff tool, no items")
+        XCTAssertEqual(VersionControl.menuCommands(forFile: file, diffPath: "/usr/bin/opendiff", store: store), [.edit])
+        let never: (VersionControl.FileState, VersionControl.FileState, String) -> Bool = { _, _, _ in XCTFail("no question"); return false }
+
+        // Edit: the file is stored and becomes writable
+        XCTAssertEqual(VersionControl.run(.commit, path: file, store: store, askRevert: never), .error("File is read-only"))
+        XCTAssertEqual(VersionControl.run(.edit, path: file, store: store, askRevert: never), .done)
+        XCTAssertEqual(fm.contents(atPath: stored), Data("one\n".utf8))
+        XCTAssertEqual(VersionControl.menuCommands(forFile: file, diffPath: "x", store: store), [.commit, .revert, .diff])
+
+        // Commit: read-only again, the time rounded to a whole step
+        try Data("two\n".utf8).write(to: URL(fileURLWithPath: file))
+        XCTAssertEqual(VersionControl.run(.diff, path: file, store: store, askRevert: never), .diff(stored: stored, current: file))
+        XCTAssertEqual(VersionControl.run(.commit, path: file, store: store, askRevert: never), .done)
+        let committed = try XCTUnwrap(fm.attributesOfItem(atPath: file)[.modificationDate] as? Date).timeIntervalSince1970
+        XCTAssertEqual(committed.truncatingRemainder(dividingBy: 3600), 0, "rounded down to the hour: still newer than 2020")
+        XCTAssertEqual(VersionControl.menuCommands(forFile: file, diffPath: "x", store: store), [.edit])
+
+        // Edit again: the old stored version moves to _7vc/a.txt/001
+        XCTAssertEqual(VersionControl.run(.edit, path: file, store: store, askRevert: never), .done)
+        let history = (stored as NSString).deletingLastPathComponent + "/_7vc/a.txt/001"
+        XCTAssertEqual(fm.contents(atPath: history), Data("one\n".utf8))
+        XCTAssertEqual(fm.contents(atPath: stored), Data("two\n".utf8))
+
+        // Revert after a change: asked, then the stored version is back, read-only
+        try Data("three\n".utf8).write(to: URL(fileURLWithPath: file))
+        var asked = 0
+        XCTAssertEqual(VersionControl.run(.revert, path: file, store: store) { _, _, _ in asked += 1; return false }, .declined)
+        XCTAssertEqual(VersionControl.run(.revert, path: file, store: store) { _, _, _ in asked += 1; return true }, .done)
+        XCTAssertEqual(asked, 2)
+        XCTAssertEqual(fm.contents(atPath: file), Data("two\n".utf8))
+        XCTAssertEqual(VersionControl.menuCommands(forFile: file, diffPath: "x", store: store), [.edit])
+        try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file)
+    }
 }

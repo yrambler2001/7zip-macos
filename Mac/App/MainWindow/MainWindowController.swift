@@ -629,6 +629,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         case #selector(MenuActions.fileSplit(_:)), #selector(MenuActions.fileCombine(_:)),
              #selector(MenuActions.fileLink(_:)):
             return windowActionIsEnabled(item.action)
+        // IDM_VER_EDIT 580 .. IDM_VER_DIFF 583: appended only when the rule holds (MyLoadMenu.cpp:697-732).
+        case #selector(fileVerEdit(_:)), #selector(fileVerCommit(_:)), #selector(fileVerRevert(_:)),
+             #selector(fileVerDiff(_:)):
+            let command: VersionControl.Command
+            switch item.action {
+            case #selector(fileVerEdit(_:)): command = .edit
+            case #selector(fileVerCommit(_:)): command = .commit
+            case #selector(fileVerRevert(_:)): command = .revert
+            default: command = .diff
+            }
+            let shown = verCtrlItemIsShown(command)
+            item.isHidden = !shown
+            return shown
         case #selector(viewTwoPanels(_:)): item.state = numPanels == 2 ? .on : .off
         case #selector(viewAutoRefresh(_:)): item.state = autoRefresh ? .on : .off
         case #selector(viewArchiveToolbar(_:)): item.state = (toolbarsMask & 8) != 0 ? .on : .off
