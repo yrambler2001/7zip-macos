@@ -297,6 +297,66 @@ final class DialogWindow: NSWindow {
     func centerOnScreen() {
         super.center()
     }
+
+    // MARK: closing a modal dialog (Mac/docs/reports/infohang.md)
+    //
+    // Every dialog here is run with `NSApp.runModal(for:)` and ends its session from its own
+    // buttons. The title-bar close button (and Cmd+W) did not: AppKit closed the window and left
+    // the modal session running for a window nobody could see, so every click on the main window
+    // was refused and the menus stayed disabled -- the app looked hung ("I clicked Info, closed it
+    // and the app became unresponsive"). On Windows the close box of a dialog is WM_CLOSE, which
+    // DefDlgProc turns into WM_COMMAND IDCANCEL, i.e. the dialog's own Cancel path.
+
+    /// The close box / Cmd+W of a modal dialog: IDCANCEL. A delegate's `windowShouldClose` still
+    /// decides first (the progress and benchmark windows answer it with their own Cancel).
+    override func performClose(_ sender: Any?) {
+        guard NSApp.modalWindow === self else { super.performClose(sender); return }
+        if let delegate, delegate.windowShouldClose?(self) == false { return }
+        if let cancel = Self.cancelButton(in: contentView) {
+            cancel.performClick(sender)             // the dialog's own OnCancel
+        } else {
+            NSApp.stopModal(withCode: .cancel)      // CModalDialog::OnCancel -> EndDialog(IDCANCEL)
+        }
+        if isVisible, NSApp.modalWindow === self { orderOut(nil) }
+    }
+
+    /// Cmd+W in a modal dialog closes the dialog, as Alt+F4 (WM_CLOSE -> IDCANCEL) does on Windows.
+    /// The menu's Cmd+W is File > Exit (IDCLOSE), which targets the main window and is disabled
+    /// while a dialog is modal, so without this the key did nothing at all.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, NSApp.modalWindow === self,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "w" {
+            performClose(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    /// Whatever closed it, a dialog that is gone must not keep its modal session: once the window
+    /// is off screen and the session is still its own on the next run-loop pass, end it.
+    override func close() {
+        let wasModal = NSApp.modalWindow === self
+        super.close()
+        guard wasModal else { return }
+        RunLoop.main.perform(inModes: [.default, .modalPanel]) { [weak self] in
+            guard let self, NSApp.modalWindow === self, !self.isVisible else { return }
+            NSApp.stopModal(withCode: .abort)
+        }
+    }
+
+    /// The button that answers Escape (`DialogKit.button(..., key: "\u{1b}")`): IDCANCEL.
+    static func cancelButton(in view: NSView?) -> NSButton? {
+        guard let view else { return nil }
+        if let button = view as? NSButton, button.keyEquivalent == "\u{1b}", button.isEnabled,
+           !button.isHiddenOrHasHiddenAncestor {
+            return button
+        }
+        for subview in view.subviews {
+            if let found = cancelButton(in: subview) { return found }
+        }
+        return nil
+    }
 }
 
 // MARK: - control factories
