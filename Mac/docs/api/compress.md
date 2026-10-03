@@ -294,3 +294,12 @@ and `archive.arcProps?.levelCount >= 2` is what shows the Split level.
 `UpdaterOptionsTests.testSplitVolumes` can drop its "concatenate the volumes first" workaround; the
 new `MultiVolumeOpenTests` opens a `7zz a -v40k` set and an `SZUpdater` set directly. See
 `Mac/docs/reports/cleanup.md`.
+
+## Note — 2026-10-03 (`mac/optgaps`)
+
+* `CompressDialogInput.sfxModulePath` / `CompressDialogResult.sfxModulePath`: a resolved
+  `-sfx<module>` travels through the dialog; `updateOptions()` sets `SZUpdateOptions.sfxModulePath`
+  when `sfxMode` is on. `CommandExecutor` fills both.
+* `CompressBrowseFilter` (`Mac/App/Dialogs/CompressBrowseFilter.swift`): `filters(formats:selectedFormat:sfx:archiveLabel:allFilesLabel:)`
+  and `resolvedPath(_:filter:sfx:mainExtension:)` are OnButtonSetArchive's filter list and path rules;
+  `CompressBrowseFilterChooser` puts them on an `NSSavePanel` as an accessory pop-up.

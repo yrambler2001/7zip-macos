@@ -315,3 +315,14 @@ Supersedes parts of §3 and §7.9; the text above still describes what `mac/pane
   closes. A test that points panels at scratch folders and deletes them must restore those two keys,
   or the next class's window greets its test with a bind-error sheet that queues every later sheet
   (it made `PanelWindowlessErrorTests` fail after `PanelGapsTests` until restored).
+
+## Note — 2026-10-03 (`mac/optgaps`)
+
+* `ListViewDialog` (IDD_LISTVIEW 99) is view-based: each cell is an `NSTableCellView` whose label is
+  the accessibility value, as in `HashListDialogView`.
+* Right-to-left: `Bidi` (`Mac/App/Support/Bidi+OptGaps.swift`) — `isolate`, `join`, `labelValue`,
+  `stripped`, `makeLeftToRight`. The status line text and `PanelFormat.itemsInfo` now contain
+  U+2068 / U+2069 around each segment; compare with `Bidi.stripped` when asserting exact text
+  (`contains` on a whole segment still works).
+* `copyItemsOut` passes the outermost archive (`snapshot.archivePath`) as the zone source of a copy
+  out of an archive (`Get_ZoneId_Stream_from_ParentFolders`).

@@ -324,3 +324,14 @@ Appended; the sections above still describe what `opsinfra` shipped, except wher
   same two parameters (`extractItems(at:toPath:pathMode:overwriteMode:testMode:zoneMode:zoneSourcePath:progress:)`);
   the old spelling passes None, as drag-out and temp-open must. `SZFolder.registryZoneMode` is the
   setting as an `SZZoneIDMode`. `SZFolderOperations.h` now imports `SZExtractor.h` for that type.
+
+## Note — 2026-10-03 (`mac/optgaps`)
+
+* **Dialog placement (§6).** `DialogKit.window(...)` returns a `DialogWindow` (an `NSWindow`
+  subclass). `NSApp.runModal(for:)` sends `center()` to a window it orders in, which used to put
+  every dialog in the middle of the screen; `DialogWindow.center()` centres on its owner instead.
+  `DialogKit.owner(for:parent:)` is the rule (a visible `parent`, else the key window, else the main
+  window, else the app's main 7-Zip window; nil when nothing is up) and `DialogKit.center(_:over:)`
+  applies it, kept inside the owner's screen. `install(...)` calls it, so passing `parent: nil` now
+  means "the window the user is working in", not "the screen". `ProgressDialog` no longer calls
+  `window.center()` itself.

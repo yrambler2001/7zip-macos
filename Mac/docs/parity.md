@@ -30,6 +30,9 @@ what was measured before the fix and what is left. The checklist therefore reads
 **Update, 2026-10-03 (`mac/opsgaps`).** D items 2, 3, 4 and 8 are closed (B items 6, 8 and 12's
 Dock half with them); section H says how. Five checklist boxes were ticked.
 
+**Update, 2026-10-03 (`mac/optgaps`).** D items 11 and 12 are closed, and B items 13, 14, 15, 17 and 23;
+section I says how. Three checklist boxes were ticked.
+
 **Update, 2026-10-03 (`mac/panelgaps`).** Items 1, 5 and 6 below are closed and item 9 mostly;
 each is annotated in place and section G says how. Four panel-section boxes were ticked; the
 checklist now reads **403 of 496** (the other nine came from branches merged since the audit).
@@ -166,16 +169,22 @@ transport, `-thash`, `-seml`, and command dispatch.
     built and shipped, just not used here); a single click does not toggle a row and Return does
     nothing (Space, `+`, `-`, `*` and the buttons do); Apply does not refresh Launch Services.
     (`01b §4.21`)
+    **Closed 2026-10-03 (`mac/optgaps`), see I.1.**
 14. **Options ▸ Language** does not report a language file that fails to load — it is skipped
     silently — and shows only counts, not the list of missing ids. (`01b §4.9`)
+    **Closed 2026-10-03 (`mac/optgaps`), see I.2.**
 15. **Options ▸ 7-Zip** forces the Options window far wider than the screen, because the
     `pluginkit` status line is one unwrapped string; the tab row is pushed out of view on that
     page. (`Mac/docs/reports/screenshots/packaging-31-options-menu-de.png`)
+    **Closed** (`mac/polish`); and every Options page now fits a 660 pt window in eight languages,
+    measured (`mac/optgaps`, I.3).
 16. **The two-panel splitter position is restored wrong intermittently** — panel 0 collapses to its
     120 pt minimum instead of the stored ratio. (`01 §1.2`, `01b §5.7`)
 17. **Copy/Move, Benchmark and Properties draw their bottom button row clipped** by the window
     edge. The buttons are still there and still work; it is a measuring bug in the shared dialog
     builder, present in English as much as in any translation.
+    **Closed** (`mac/polish`, the `DialogKit.install` bottom constraint). Separately, every
+    `DialogKit` dialog now centres on its owner window instead of the screen (`mac/optgaps`, I.4).
 18. **Opening several archives from Finder**: the first reuses the front window's panel, only the
     rest get windows of their own. (`03 §6.2`)
 19. **Only the five `Options.*` values reach the Finder extensions**; `Compression.*` and
@@ -190,6 +199,7 @@ transport, `-thash`, `-seml`, and command dispatch.
     localization, and this app carries none), and composite one-field strings — the status line,
     the Copy dialog's info block — come out with their segments in reverse order. Nothing is
     clipped or missing. Six of the 92 translations are RTL.
+    **Segment order closed 2026-10-03 (`mac/optgaps`), see I.5**; the app is still not mirrored.
 24. **A third of the translations are substantially incomplete** — 24 of 92 are missing more than a
     quarter of the strings the app asks for, and those fall back to English. 28 are complete. Full
     table in `Mac/docs/reports/packaging.md`.
@@ -258,10 +268,10 @@ memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb
 9. File-menu enable and hide rules (`01 §2.1`) — **done 2026-10-03 (G.4)** except the Ver* (7vc) items and the small-screen variant.
 10. ~~Exit code 8 and the 7zG exception ladder; `EnumerateDirItemsAndSort` for `-i!` wildcards~~
     (`03 §2.2, §2.7`) — **done 2026-09-20 (F.1)**.
-11. ~~`-sfx<module>`~~ (**done 2026-09-20, F.3**); the Compress dialog's per-format Browse filter
-    (`01b §4.23`) — still open, and owned by the dialog's scope.
-12. Options ▸ System format icons, single-click and Return, and the Launch Services refresh;
-    Options ▸ Language's id lists and load-error report (`01b §4.21, §4.9`).
+11. ~~`-sfx<module>`~~ (**done 2026-09-20, F.3**); ~~the Compress dialog's per-format Browse filter
+    (`01b §4.23`)~~ — **done 2026-10-03 (I.6)**.
+12. ~~Options ▸ System format icons, single-click and Return, and the Launch Services refresh;
+    Options ▸ Language's id lists and load-error report (`01b §4.21, §4.9`).~~ **Done 2026-10-03 (I.1, I.2).**
 13. Write-back of a nested archive into its parent archive (`01 §3.8`).
 14. ~~Dropping onto the Dock icon as "Add to archive…"~~ (`03 §6.2`) — **done 2026-09-20 (F.4)**,
     with one verification debt: no test on this machine can perform a real Dock drop.
@@ -464,3 +474,45 @@ password, cannot open as archive) were already the lang-file strings.
 
 When every operated item is a checksum file, Test runs the same `t -thash` command line as the
 context menu's C13 and Finder. No `-scrc` control was added to the panel's Test: 7zFM has none.
+
+---
+
+## I. Closed by `mac/optgaps` — 2026-10-03
+
+Report: `Mac/docs/reports/optgaps.md`. Tests: `Mac/Tests/AppTests/OptGapsTests.swift` (app-hosted).
+
+### I.1 — D item 12 / B 13, Options ▸ System (`01b §4.21`)
+
+The rows draw 7-Zip's own document icons (`doc-<name>.icns`). A plain click on the state column
+toggles that row (NM_CLICK) and Return toggles the selection (NM_RETURN). After Apply has been
+answered the bundle is re-registered with Launch Services (the SHCNE_ASSOCCHANGED step). Columns are
+sized to their content.
+
+### I.2 — D item 12 / B 14, Options ▸ Language (`01b §4.9`)
+
+`SZLang` now computes LangPage.cpp's merge walk per file: comments, the missing and the extra ids as
+`<id> : <text>`. IDT_LANG_INFO shows them as Windows does (50 per list) in a scrolling text view, and a
+file that does not load is named in one "Error in Lang file" box.
+
+### I.3 — the Options window's width (`01b §4.22`)
+
+Wrapping labels asked for their one-line width (up to 1018 pt). They are capped and re-measured at
+their real width; the widest page now needs 576 pt in a 660 × 580 window, in English, German, Russian,
+Japanese, Arabic, Hebrew, French and Ukrainian.
+
+### I.4 — dialog placement
+
+`NSApp.runModal(for:)` re-centres a window on the screen when it shows it, which undid the placement
+of every dialog except Copy / Move / Create Folder. `DialogWindow.center()` now centres on the owner:
+the parent, else the key or main window; the screen only when no window is up.
+
+### I.5 — B 23, right-to-left composite strings
+
+The status line's parts and the Copy dialog's "label: value" lines are bidi-isolated in a
+left-to-right label, so Arabic and Hebrew keep their order. The app is still not mirrored.
+
+### I.6 — D item 11, the Compress Browse filter (`01b §4.23`)
+
+One filter per listed format (without `k_DontSave_Exts`), the "Archive:" aggregate and All Files, or
+only `exe` in SFX mode, as a "Save as type" pop-up; the chosen format's extension is appended and the
+format combo follows. A `-sfx<module>` now travels through the dialog's input and result.

@@ -242,3 +242,26 @@ title, `fallbackTitle` = the `.rc` caption, `helpTopic`, `pageDidLoad`, `applyPa
 array in `OptionsWindowController.buildContent()`. `OptionsUI` has the control factory
 (`label`, `colonLabel`, `note`, `checkbox`, `radio`, `button`, `browseButton`, `textField`,
 `vstack`, `hstack`, `scrollTable`, `column`).
+
+## Note — 2026-10-03 (`mac/optgaps`)
+
+Appended; the sections above still hold except where this note says so.
+
+* **Preferences domain (§1).** Without `SEVENZIP_DEFAULTS_SUITE` the domain is now
+  `NMacPrefs::DefaultApplicationID()` = the running application's bundle identifier (main bundle of
+  package type `APPL`), else `com.yrambler2001.7zip` (the xctest runner, the extensions). The shipping
+  app's identifier is that constant, so nothing moves for users. `SZSettings.defaultApplicationID`
+  reports it; `usesOverrideSuite` now means "the variable is set to another domain than that".
+* **Page layout (§5).** `OptionsPageBase.install` caps every wrapping label at
+  `OptionsUI.wrappingLabelWidth` (520 pt) and `viewDidLayout` re-tells a narrower label its real width;
+  a page added later gets this for free. `OptionsUI.sizeColumnsToContent(_:texts:extra:)` sizes a
+  table's columns to header + widest cell, last column elastic. The window is 660 × 580.
+* **System page.** `OptionsSystemPage.formatIcon(for:)` (the `doc-<name>.icns` image, cached);
+  `toggleRow(_:column:)` is NM_CLICK's body; `associationsDidChange()` is the SHCNE_ASSOCCHANGED step
+  (`lsregister -f` + `NSUpdateDynamicServices`, Services only under `SZ_TEST_SUPPORT`), with
+  `launchServicesRefreshCount` for tests. `OptionsAssociationTableView.onKey` also takes Return.
+* **Language page / `SZLang`.** `SZLanguageInfo.comments`, `.missingLines`, `.extraLines`
+  (`"<id> : <text>"`, LangPage.cpp:197-245); `SZLang.failedLanguageFiles`;
+  `SZLang.languages(inDirectory:failedFiles:)` for any directory. `OptionsLanguagePage.langInfoText`
+  is ShowLangInfo; `entries` and `reportedLoadErrors` are readable for tests.
+* **`OptionsPostApply.reloadLangItems()`** skips windows that are neither visible nor miniaturized.
