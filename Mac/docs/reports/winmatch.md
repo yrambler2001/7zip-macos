@@ -94,8 +94,8 @@ ICO has 16, 32 and 48 px frames. Each macOS size takes the nearest frame, the la
 and 32 at 1:1, and 64 to 1024 from the 48 px frame. The frame is resampled nearest-neighbour, so
 every output pixel is an unchanged source pixel. The `verify` stage checks that the app PNGs hold
 only FM.ico's colours. The Swift renderer's app-icon code and the superellipse are gone. Re-running
-`make-icons.sh` reproduces the committed assets byte for byte; only `AppIcon.appiconset` and the
-contact sheet changed.
+`make-icons.sh` reproduces every committed asset byte for byte (the contact sheet, a report
+image, is re-rendered with slightly different anti-aliasing each time and was not re-committed).
 
 **Against Windows:** the 32 px slot is pixel-identical (0 differing pixels) to the icon Windows'
 shell extracts from `7zFM.exe` 25.01 (`win/icon-7zFM-exe-32.png`). The side-by-side is
@@ -123,7 +123,7 @@ Measured on 7zFM 25.01 (`win/tb-*.txt`, `win/tb-*.png`, pixel colours read from 
 |---|---|---|
 | strip | 2 px etched line on top (160 gray, then white), buttons, 4 px below; 52 px high with small buttons and text | the same structure (`2 + button + 4`) |
 | separators | none: the archive and standard buttons are back to back | none |
-| button size | every button the same: widest label or bitmap + 7 × 6 px; the label is a 16 px line under the bitmap. 42×46 (small, text), 31×30 (small), 55×58 (large, text), 55×42 (large) | the same rule. Text sizes depend on the font, so with SF 11 pt the buttons are 48×46 and 55×58; without text, 31×30 and 55×42 exactly |
+| button size | every button the same: widest label or bitmap + 7 × 6 px; the label is a 16 px line under the bitmap. 42×46 (small, text), 31×30 (small), 55×58 (large, text), 55×42 (large) | the same rule. Text sizes depend on the font, so with SF 11 pt the buttons are 45×46 and 55×58; without text, 31×30 and 55×42 exactly |
 | at rest | nothing drawn behind a button | nothing |
 | hover | fill (229,243,255), 1 px border (204,232,255), 2 px corners | the same colours and shape (translucent white in dark mode) |
 | pressed | fill (204,232,255), border (153,209,255) | the same |
@@ -145,7 +145,7 @@ states are `default`, `default-hover`, `default-pressed`, `large-text`, `large-t
 `large-text-pressed`, `small-notext`, `large-notext`, `archive-only` and `standard-only`. Both
 halves are 420 px wide at 1x. The Mac half is written by
 `WinMatchTests.testToolbarIsAFlatWindowsStrip` in the light appearance. The remaining visible
-difference is the font: SF is wider than Segoe UI 9 pt, so a button with text is 6 pt wider.
+difference is the font: SF is wider than Segoe UI 9 pt, so a button with small bitmaps and text is 45 pt wide instead of 42.
 
 ## 8. Files touched, by owning scope
 
@@ -183,7 +183,26 @@ See section 10 for the runs. Screenshots of the app itself: `screenshots/winmatc
 
 ## 10. Results
 
-(filled in below by the final runs)
+All runs used `export DEVELOPER_DIR=/Applications/Xcode.app`, at the final code.
+
+| run | result |
+|---|---|
+| `Mac/scripts/build.sh` | clean, no warnings in `Mac/` |
+| `Mac/scripts/test.sh` (unit) | 387 passed, 0 failed |
+| `Mac/scripts/test.sh -H` (app-hosted) | 133 passed, 0 failed, including `WinMatchTests` (8) |
+| `Mac/scripts/test.sh -u`, probe shards | 6 + 6 passed |
+| `Mac/scripts/test.sh -u`, input shard | 41 of 45 passed. Two of the four failures asserted the old behaviour and were updated, and pass alone: `CommandModeUITests.testAddToArchiveDialogIsTheOneADockDropOpens` now expects the .rc caption "Add to Archive", and `ResetCommandTests.testSelectionIsResetToTheFreshlyBoundDefault` now expects a fresh panel with no row selected. The other two are environmental (below). |
+| `make-rc-strings.py --check`, `make-icons.sh` | the committed tables and assets are current |
+
+**`NewWindowUITests.testReopenWithAWindowOpenOpensAnotherWindow` and
+`testReopenWithNoVisibleWindowOpensOne`** fail, also when run alone. A second, older 7-Zip is
+running: `/Volumes/7-Zip 26.03/7-Zip.app`, PID 56056, started at 20:26 from a mounted DMG, which
+this agent did not start. Its window ("7-Zip", NSToolbar capsules, the Computer root) sits in
+front in the failure screenshot `newwindow-failure-*.png`. The reopen that
+`NSWorkspace.openApplication` sends does not produce a window in the shard's app while that
+instance runs. Neither test touches anything this branch changed, and the other three
+`NewWindowUITests` pass. Re-run them once that copy is quit and the DMG is ejected. The app-hosted
+`NewWindowTests` (window state, toolbar per window) pass.
 
 ## 11. The Windows machine
 
