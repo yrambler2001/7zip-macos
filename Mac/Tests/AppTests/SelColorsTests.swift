@@ -203,6 +203,8 @@ final class SelColorsTests: AppHostTestCase {
                 if isName {         // only the text: the name label's highlight is the text's width
                     rect.size.width = min(rect.width, field.intrinsicContentSize.width)
                 }
+                // Only what is on screen: a column (partly) scrolled out of the window is skipped.
+                guard table.visibleRect.contains(rect) else { continue }
                 guard let m = ContrastProbe.measure(table, rect) else { XCTFail("no pixels"); continue }
                 let what = "\(state) row \(r) '\(field.stringValue)' col \(table.tableColumns[c].title)"
                 XCTAssertGreaterThanOrEqual(m.ratio, 4.5, "\(what): text \(m.text) on \(m.background)")
@@ -252,6 +254,37 @@ final class SelColorsTests: AppHostTestCase {
                 }
             }
         }
+        panel.listFocusOverride = nil
+    }
+
+    /// Inside an archive (its 11 columns: Attributes, CRC, Method, ...) and in flat mode (the Path
+    /// column), Light and Dark, FullRow on and off: every cell of the selected rows readable.
+    func testArchiveAndFlatRowsAreReadable() {
+        let controller = makeWindow()
+        let panel = controller.focusedPanel
+        var done = false
+        panel.navigate(to: TestPaths.fixture("test.7z")) { _ in done = true }
+        XCTAssertTrue(wait(for: "inside test.7z") { done && !panel.rows.isEmpty })
+        continueAfterFailure = true
+        for flat in [false, true] {
+            if panel.flatMode != flat {
+                let before = panel.loadGeneration
+                panel.setFlatMode(flat)
+                XCTAssertTrue(wait(for: "flat \(flat)") { panel.loadGeneration != before && !panel.rows.isEmpty })
+            }
+            for dark in [false, true] {
+                NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                for fullRow in [false, true] {
+                    Settings.fullRow = fullRow
+                    panel.listFocusOverride = true
+                    let names = panel.rows.prefix(2).map(\.displayName)
+                    select(panel, names, focus: names.last)
+                    checkDetails(panel, state: "test.7z flat=\(flat) \(appearanceName(dark)) fr\(fullRow ? 1 : 0)",
+                                 selected: Set(0..<min(2, panel.rows.count)), focused: true, fullRow: fullRow)
+                }
+            }
+        }
+        if panel.flatMode { panel.setFlatMode(false) }
         panel.listFocusOverride = nil
     }
 
