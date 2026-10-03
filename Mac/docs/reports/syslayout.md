@@ -100,7 +100,8 @@ AppKit then logs the fault and skips constraint passes.
 |---|---|
 | `Mac/scripts/test.sh` (unit) | 387 passed, 0 failed |
 | `Mac/scripts/test.sh -H` (app-hosted) | 100 passed, 0 failed; no `NSGenericException` in the log (it had 1 before the fix, with a runner restart) |
-| `Mac/scripts/verify.sh -S` (all targets, sharded; how `uiverify.md` §1 runs the UI suite) | see §4.1 |
+| `Mac/scripts/verify.sh -S` (all targets, sharded; how `uiverify.md` §1 runs the UI suite) | 538 passed, 1 failed (see §4.1) |
+| `Mac/scripts/test.sh -t 7-ZipUITestsProbe2` (re-run of that shard alone) | 6 passed, 0 failed |
 
 Running app, per language: the app-hosted tests are the app itself (`7-Zip-Host`), and they open the
 real Options window on the System page in English, Ukrainian, German, Russian, Japanese, Arabic and
@@ -109,7 +110,27 @@ machine has neither (CLAUDE.md).
 
 ### 4.1 Full verification
 
-VERIFY_PLACEHOLDER
+`verify.sh -S` ran from a clean Debug build in 724 s:
+
+| target | passed | failed |
+|---|---|---|
+| `SevenZipKitTests` | 387 | 0 |
+| `SevenZipAppTests` | 100 | 0 |
+| `7-ZipUITestsProbe1` | 6 | 0 |
+| `7-ZipUITestsProbe2` | 5 | 1 |
+| `7-ZipUITests` (input shard) | 40 | 0 |
+
+**The one failure:** `LaunchStateTests.testLaunchesAndListsHomeDirectory` in Probe2.
+
+- **What happened:** XCUITest reported "Failed to activate application
+  'com.yrambler2001.7zip-p2' (current state: Running Background)" after 78 s. That happened at
+  launch, while the four read-only shards ran concurrently, before the test touched any UI.
+- **Why it is not this change:** the case does not open Options, and nothing in this branch
+  touches launch or activation.
+- **Re-run:** the shard alone (`test.sh -t 7-ZipUITestsProbe2`) passed 6 / 6 in 43 s.
+
+So every case passed in either the sharded run or the re-run. `verify-latest.md` is not committed
+because it records the sharded run's rc=65.
 
 ## 5. Files touched
 
