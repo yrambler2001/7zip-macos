@@ -473,9 +473,22 @@ public struct SevenZipPanel {
     public var upButton: XCUIElement {
         splitGroup.children(matching: .button).element(boundBy: ordinal(of: .button))
     }
-    /// The panel's own status bar ("N / M object(s) selected   <size>   <mtime>").
+    /// Section 0 of the panel's status bar ("N / M object(s) selected").
+    ///
+    /// Since `mac/navgaps` the status bar is four labels (01 §1.2, Panel.cpp CreateStatusBar
+    /// `{220, 320, 420, -1}`): this one, then the selected size, the focused item's size and its
+    /// time. All four are static texts of the split group, so the panel's ordinal alone no longer
+    /// names section 0; `statusOrdinal()` picks the leftmost label of the panel's bottom row.
     public var statusText: XCUIElement {
-        splitGroup.children(matching: .staticText).element(boundBy: ordinal(of: .staticText))
+        splitGroup.children(matching: .staticText).element(boundBy: statusOrdinal())
+    }
+
+    /// The visible status-bar sections left to right (a section past a narrow panel's edge is hidden,
+    /// so there may be fewer than four). Bidi isolates (U+2066-U+2069) are stripped, so the text
+    /// compares as typed.
+    public var statusParts: [String] {
+        guard let snap = try? splitGroup.snapshot() else { return [] }
+        return statusRow(of: snap).map { Self.stripIsolates(($0.value as? String) ?? "") }
     }
 
     /// Index of this panel's `type` element among the split group's children of that type. The
@@ -492,6 +505,96 @@ public struct SevenZipPanel {
             seen += 1
         }
         return index
+    }
+
+    /// This panel's static texts in the split group's bottom row (the status bar), left to right,
+    /// as (AX index among the split group's static texts, snapshot).
+    private func statusRowIndexed(of snap: XCUIElementSnapshot) -> [(Int, XCUIElementSnapshot)] {
+        let texts = snap.children.filter { $0.elementType == .staticText }
+        let divider = snap.children.first { $0.elementType == .splitter }
+        let mine = texts.enumerated().filter { _, text in
+            guard let divider else { return index == 0 }
+            return (text.frame.minX >= divider.frame.minX) == (index > 0)
+        }
+        guard let bottom = mine.map({ $0.element.frame.maxY }).max() else { return [] }
+        return mine.filter { abs($0.element.frame.maxY - bottom) < 6 }
+            .sorted { $0.element.frame.minX < $1.element.frame.minX }
+            .map { ($0.offset, $0.element) }
+    }
+
+    private func statusRow(of snap: XCUIElementSnapshot) -> [XCUIElementSnapshot] {
+        statusRowIndexed(of: snap).map { $0.1 }
+    }
+
+    private func statusOrdinal() -> Int {
+        guard let snap = try? splitGroup.snapshot(),
+              let first = statusRowIndexed(of: snap).first else { return ordinal(of: .staticText) }
+        return first.0
+    }
+
+    private static func stripIsolates(_ text: String) -> String {
+        String(text.unicodeScalars.filter { !(0x2066...0x2069).contains($0.value) }.map(Character.init))
+    }
+
+    // MARK: icon views (Large Icons / Small Icons / List)
+
+    // In the three icon view modes the list is an `NSCollectionView` (`PanelIconView`) laid **over**
+    // the table; the table stays in the hierarchy, so `table`, `panelCount` and the row helpers keep
+    // resolving -- but they read the hidden details list, not what is on screen (requests.md: panel
+    // -> harness). A view-mode test reads these instead. The hidden icon view of a panel in Details
+    // mode is not in the accessibility tree, so `iconView.exists` is also "this panel shows icons".
+
+    /// The panel's collection view, or a non-existent element when the panel is in Details mode.
+    public var iconView: XCUIElement {
+        let query = splitGroup.descendants(matching: .collectionView)
+        guard let snap = try? splitGroup.snapshot() else { return query.element(boundBy: index) }
+        var views: [XCUIElementSnapshot] = []
+        func walk(_ node: XCUIElementSnapshot) {
+            for child in node.children {
+                if child.elementType == .collectionView { views.append(child) } else { walk(child) }
+            }
+        }
+        walk(snap)
+        let divider = snap.children.first { $0.elementType == .splitter }
+        for (k, view) in views.enumerated() {
+            let onRight = divider.map { view.frame.minX >= $0.frame.minX } ?? false
+            if onRight == (index > 0) { return query.element(boundBy: k) }
+        }
+        // Not shown: an element bound past the end, which reports `exists == false`.
+        return query.element(boundBy: views.count)
+    }
+
+    /// The item names of the icon view in reading order (top to bottom, then left to right), from
+    /// one snapshot. Empty in Details mode.
+    public var iconNames: [String] {
+        let view = iconView
+        guard view.exists, let snap = try? view.snapshot() else { return [] }
+        var texts: [XCUIElementSnapshot] = []
+        func walk(_ node: XCUIElementSnapshot) {
+            if node.elementType == .staticText { texts.append(node) }
+            node.children.forEach(walk)
+        }
+        walk(snap)
+        return texts.sorted {
+            abs($0.frame.minY - $1.frame.minY) > 4 ? $0.frame.minY < $1.frame.minY : $0.frame.minX < $1.frame.minX
+        }.map { ($0.value as? String) ?? $0.title }
+    }
+
+    /// The label of the icon item called `name` -- the thing to click, right-click or drag.
+    public func iconItem(named name: String) -> XCUIElement {
+        iconView.descendants(matching: .staticText)
+            .matching(NSPredicate(format: "value == %@ OR title == %@", name, name)).firstMatch
+    }
+
+    /// Wait until the icon view shows an item called `name`.
+    @discardableResult
+    public func waitForIcon(named name: String, timeout: TimeInterval = 20) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if iconNames.contains(name) { return true }
+            usleep(100_000)
+        } while Date() < deadline
+        return iconNames.contains(name)
     }
 
     // MARK: state
