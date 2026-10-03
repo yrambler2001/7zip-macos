@@ -135,7 +135,7 @@ final class NewWindowTests: AppHostTestCase {
             XCTAssertNotEqual(window.frame.origin, front.frame.origin,
                               "the new window must not sit exactly on the one it was opened from")
         }
-        attach(window, "01-new-window")
+        attach(window, "10-hosted-new-window")
     }
 
     /// Each window starts from the settings as a fresh 7zFM launch does (CApp::Create): panel count
@@ -237,7 +237,7 @@ final class NewWindowTests: AppHostTestCase {
             self.added.last?.focusedPanel.currentPath.contains("test.zip") ?? false
         })
         XCTAssertTrue(window.focusedPanel.currentPath.contains("test.7z"))
-        attach(try XCTUnwrap(added.last?.window), "02-archive-from-finder")
+        attach(try XCTUnwrap(added.last?.window), "11-hosted-archive-from-finder")
     }
 
     /// Several files in one open event: one window each (one `7zFM.exe "%1"` per file).
