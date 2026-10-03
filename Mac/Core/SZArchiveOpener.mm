@@ -6,9 +6,12 @@
 #import "SZFileSystemFolder.h"
 #import "SZCodecs.h"
 #import "SZError.h"
+#import "SZExtractor.h"         // SZTempOpen.updateItemAtIndex (CopyFromFile)
 #import "SZSettings.h"          // SZSettings.temporaryDirectory (SZ_STATE_DIR)
 #import "Internal/SZBridgeUtils.h"
 #import "Internal/SZFolder+Internal.h"
+
+#include <sys/stat.h>
 
 // ---------------------------------------------------------------------------
 // The open callback handed to CAgent::Open is the engine's own COpenCallbackImp, exactly as 7zFM
@@ -163,7 +166,19 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
 /// shared Internal/SZFolder+Internal.h (which the other bridge files include).
 @interface SZArchive ()
 - (void)adoptOpenCallbackImp:(COpenCallbackImp *)spec ui:(CSZOpenCallbackUI *)ui;
+- (void)recordTempFile:(NSString *)path;
 @end
+
+/// Size and modification time of a file (CTempFileInfo::FileInfo); NO when it cannot be read.
+static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
+{
+  struct stat st;
+  if (!path || stat(path.fileSystemRepresentation, &st) != 0)
+    return NO;
+  *size = (uint64_t)st.st_size;
+  *mtime = st.st_mtimespec;
+  return YES;
+}
 
 @implementation SZArchive
 {
@@ -178,6 +193,10 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
   CSZOpenCallbackUI *_openCallbackUI;
   CMyComPtr<IInStream> _inStream;
   BOOL _closed;
+  NSString *_tempFilePath;
+  uint64_t _tempFileSize;
+  struct timespec _tempFileMTime;
+  BOOL _keepTempDirectory;
 }
 
 - (instancetype)initWithAgent:(IInFolderArchive *)agent
@@ -211,8 +230,94 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
   _openCallbackUI = ui;
 }
 
+- (void)recordTempFile:(NSString *)path
+{
+  _tempFilePath = [path copy];
+  [self refreshTempFileAttributes];
+}
+
+- (NSString *)tempFilePath
+{
+  return _tempFilePath;
+}
+
+- (void)refreshTempFileAttributes
+{
+  if (!SZStatFile(_tempFilePath, &_tempFileSize, &_tempFileMTime))
+  {
+    _tempFileSize = 0;
+    _tempFileMTime.tv_sec = 0;
+    _tempFileMTime.tv_nsec = 0;
+  }
+}
+
+- (BOOL)tempFileWasChanged
+{
+  uint64_t size = 0;
+  struct timespec mtime;
+  if (!SZStatFile(_tempFilePath, &size, &mtime))
+    return NO;                // NFind::CFileInfo::Find failed: nothing to write back
+  return size != _tempFileSize || mtime.tv_sec != _tempFileMTime.tv_sec || mtime.tv_nsec != _tempFileMTime.tv_nsec;
+}
+
+- (void)keepTempDirectory
+{
+  _keepTempDirectory = YES;
+}
+
+- (BOOL)keepsTempDirectory
+{
+  return _keepTempDirectory;
+}
+
+- (BOOL)writeBackIntoOuterFolderWithProgress:(id<SZProgressDelegate>)progress error:(NSError **)error
+{
+  SZFolder *outer = _outerFolder;
+  if (!_tempFilePath || !outer || !outer.isArchive)
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeUnsupported message:@"This archive was not opened from a copy inside another archive"];
+    return NO;
+  }
+  NSString *name = _path.lastPathComponent;
+  if (outer.isReadOnly)
+  {
+    if (error)
+      *error = [SZErrors errorWithCode:SZErrorCodeNotImplemented
+                              message:[NSString stringWithFormat:@"The archive that holds %@ cannot be updated", name]];
+    return NO;
+  }
+  // CFolderLink::FileIndex; looked up again by name if the parent listing moved meanwhile.
+  NSInteger index = _outerItemIndex;
+  if (index < 0 || index >= outer.itemCount || ![[outer nameOfItemAtIndex:index] isEqualToString:name])
+  {
+    index = NSNotFound;
+    for (NSInteger i = 0; i < outer.itemCount; i++)
+      if ([[outer nameOfItemAtIndex:i] isEqualToString:name] && ![outer isDirectoryAtIndex:i]) { index = i; break; }
+    if (index == NSNotFound)
+    {
+      if (error)
+        *error = [SZErrors errorWithCode:SZErrorCodeFileNotFound message:[NSString stringWithFormat:@"%@ is no longer in its archive", name]];
+      return NO;
+    }
+  }
+  if (![SZTempOpen updateItemAtIndex:index ofFolder:outer fromFilePath:_tempFilePath progress:progress error:error])
+    return NO;
+  [self refreshTempFileAttributes];
+  _outerItemIndex = index;
+  NSError *reloadError = nil;
+  if (![outer loadItems:&reloadError])
+    NSLog(@"7-Zip: reloading %@ after the write-back failed: %@", outer.fullPath, reloadError);
+  // the reload may reorder the parent: point at the item again
+  for (NSInteger i = 0; i < outer.itemCount; i++)
+    if ([[outer nameOfItemAtIndex:i] isEqualToString:name]) { _outerItemIndex = i; break; }
+  return YES;
+}
+
 - (void)removeTempDirectory
 {
+  if (_keepTempDirectory)
+    return;
   if (_tempDirectory)
   {
     [[NSFileManager defaultManager] removeItemAtPath:_tempDirectory error:NULL];
@@ -567,6 +672,8 @@ Z7_COM7F_IMF(CExtractToTempCallback::CryptoGetTextPassword(BSTR *password))
                            passwordDelegate:passwordDelegate outerFolder:folder outerItemIndex:index tempDirectory:tempDir error:error];
   if (!archive)
     [[NSFileManager defaultManager] removeItemAtPath:tempDir error:NULL];
+  else
+    [archive recordTempFile:tempFile];
   return archive;
 }
 
