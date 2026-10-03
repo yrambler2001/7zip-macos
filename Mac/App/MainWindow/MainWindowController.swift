@@ -167,7 +167,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     /// its nearest existing folder, as BindToPath's walk up does (PanelFolderChange.cpp:151-190).
     func openStartupPath(_ path: String, formatHint: String?, closesWindowOnFailure: Bool = false) {
         var full = (path as NSString).isAbsolutePath ? path : FileManager.default.currentDirectoryPath + "/" + path
-        full = (full as NSString).standardizingPath
         let manager = FileManager.default
         var isDirectory: ObjCBool = false
         if manager.fileExists(atPath: full, isDirectory: &isDirectory), !isDirectory.boolValue {

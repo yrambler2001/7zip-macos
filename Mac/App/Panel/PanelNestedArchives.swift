@@ -123,7 +123,9 @@ extension PanelViewController {
         alert.runModal()
     }
 
-    private static func onMain(_ body: () -> Void) {
-        if Thread.isMainThread { body() } else { DispatchQueue.main.sync(execute: body) }
+    /// Through the main run loop, not the main queue: the body runs OperationRunner, whose worker
+    /// may need `DispatchQueue.main.sync` for a question (PanelArchiveOpen.performOnMainRunLoop).
+    private static func onMain(_ body: @escaping () -> Void) {
+        performOnMainRunLoop(body)
     }
 }

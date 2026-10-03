@@ -115,8 +115,26 @@ extension PanelViewController {
             case .failure(let error): result = .failure(error)
             }
         }
-        if Thread.isMainThread { body() } else { DispatchQueue.main.sync(execute: body) }
+        Self.performOnMainRunLoop(body)
         return result
+    }
+
+    /// Runs `body` on the main thread and waits for it -- through the main *run loop*
+    /// (CFRunLoopPerformBlock in the common modes), not the main dispatch queue. A body that runs a
+    /// modal session (OperationRunner, a question) must not be a main-queue block: the main queue is
+    /// serial, so while that block runs, a worker's own `DispatchQueue.main.sync` (the password
+    /// dialog, the overwrite question) could never be delivered and both would wait forever. A
+    /// run-loop block leaves the main queue free for them inside the modal loop.
+    static func performOnMainRunLoop(_ body: @escaping () -> Void) {
+        if Thread.isMainThread { body(); return }
+        let done = DispatchSemaphore(value: 0)
+        let mainLoop = CFRunLoopGetMain()
+        CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) {
+            body()
+            done.signal()
+        }
+        CFRunLoopWakeUp(mainLoop)
+        done.wait()
     }
 
     /// True when binding `path` cannot open an archive: the root, a virtual root name, an existing

@@ -118,6 +118,26 @@ final class NavGapsBridgeTests: XCTestCase {
         XCTAssertTrue(level.contains("[tar]"), level)
     }
 
+    /// A split set whose joined content is a broken 7z: the Split level opens, the 7z level
+    /// does not. CFfpOpen::ErrorMessage names it, and 7zFM enters the split level and shows it.
+    func testOpenedArchiveWithANonOpenLevelCarriesItsText() throws {
+        try makeBrokenSplitSet()
+        let archive = try SZArchiveOpener.openArchive(atPath: work + "/v.7z.001", formatHint: nil, passwordDelegate: nil)
+        XCTAssertEqual(archive.type, "Split")
+        let text = try XCTUnwrap(archive.openErrorMessage)
+        XCTAssertTrue(text.hasPrefix("v.7z\n"), text)                      // NonOpen_ArcPath first
+        XCTAssertTrue(text.contains("Cannot open the file as [7z] archive"), text)
+        XCTAssertTrue(text.contains("Headers Error"), text)                // kpidErrorFlags
+    }
+
+    /// The first 40 bytes of test.7z (signature and start header) and then garbage, cut in two.
+    func makeBrokenSplitSet() throws {
+        var broken = try Data(contentsOf: URL(fileURLWithPath: fixture("test.7z"))).prefix(40)
+        broken.append(Data((0..<2000).map { UInt8(truncatingIfNeeded: $0 &* 37 &+ 11) }))
+        _ = try write(Data(broken.prefix(1020)), "v.7z.001")
+        _ = try write(Data(broken.dropFirst(1020)), "v.7z.002")
+    }
+
     /// Warnings of a level that did open are not 7zFM's entering message (they are in Properties).
     func testOpenedArchivesHaveNoLevelText() throws {
         let clean = try SZArchiveOpener.openArchive(atPath: fixture("test.7z"), formatHint: nil, passwordDelegate: nil)
@@ -237,3 +257,4 @@ final class NavGapsBridgeTests: XCTestCase {
         }
     }
 }
+
