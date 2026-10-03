@@ -42,7 +42,12 @@ enum PanelProperties {
         var lines = PanelPropertyLines()
         if let first = itemIndices.first {
             for info in folder.properties where info.propID != .isDir {
-                let text = folder.displayStringOfItem(at: first, propID: info.propID, timestampLevel: level)
+                // Raw properties (IArchiveGetRawProps) follow the folder's own, rendered the way
+                // PanelMenu.cpp:212-246 does: hex up to 256 bytes ("data:<n>" beyond), upper case
+                // for a CRC / checksum of at most 8 bytes (01 §3.11).
+                let text = info.isRawProperty
+                    ? folder.rawPropertyString(at: first, propID: info.propID, forPropertiesDialog: true)
+                    : folder.displayStringOfItem(at: first, propID: info.propID, timestampLevel: level)
                 guard !text.isEmpty else { continue }
                 lines.add(info.localizedName, text)
             }

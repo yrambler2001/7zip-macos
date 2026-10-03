@@ -22,6 +22,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface SZPropertyInfo ()
 - (instancetype)initWithPropID:(SZPropID)propID varType:(SZVarType)varType handlerName:(nullable NSString *)name;
+- (instancetype)initWithPropID:(SZPropID)propID varType:(SZVarType)varType handlerName:(nullable NSString *)name isRaw:(BOOL)isRaw;
 @end
 
 @interface SZArchive ()

@@ -8,6 +8,8 @@
 #import "Internal/SZBridgeUtils.h"
 #import "Internal/SZFolder+Internal.h"
 
+#include <vector>
+
 static_assert((uint32_t)SZPropIDNumDefined == (uint32_t)kpid_NUM_DEFINED, "SZPropID is out of sync with PropID.h");
 static_assert((uint32_t)SZPropIDPath == kpidPath && (uint32_t)SZPropIDName == kpidName &&
               (uint32_t)SZPropIDIsDir == kpidIsDir && (uint32_t)SZPropIDSize == kpidSize &&
@@ -25,12 +27,18 @@ static_assert((int)SZTimestampLevelMin == kTimestampPrintLevel_MIN && (int)SZTim
 
 - (instancetype)initWithPropID:(SZPropID)propID varType:(SZVarType)varType handlerName:(NSString *)name
 {
+  return [self initWithPropID:propID varType:varType handlerName:name isRaw:NO];
+}
+
+- (instancetype)initWithPropID:(SZPropID)propID varType:(SZVarType)varType handlerName:(NSString *)name isRaw:(BOOL)isRaw
+{
   self = [super init];
   if (!self)
     return nil;
   _propID = propID;
   _varType = varType;
   _handlerName = [name copy];
+  _isRawProperty = isRaw;
   return self;
 }
 
@@ -46,7 +54,8 @@ static_assert((int)SZTimestampLevelMin == kTimestampPrintLevel_MIN && (int)SZTim
 
 - (NSString *)description
 {
-  return [NSString stringWithFormat:@"<SZPropertyInfo %u '%@' vt=%u>", (unsigned)_propID, self.localizedName, (unsigned)_varType];
+  return [NSString stringWithFormat:@"<SZPropertyInfo %u '%@' vt=%u%@>", (unsigned)_propID, self.localizedName, (unsigned)_varType,
+      _isRawProperty ? @" raw" : @""];
 }
 
 @end
@@ -68,6 +77,41 @@ static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^ge
     [result addObject:[[SZPropertyInfo alloc] initWithPropID:(SZPropID)propID varType:(SZVarType)vt handlerName:handlerName]];
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Raw property text (IArchiveGetRawProps). Two upstream renderers that differ on purpose:
+// the list cell (CPanel::SetItemText, PanelListNotify.cpp:265-349) and the Properties dialog
+// (CPanel::Properties, PanelMenu.cpp:212-246).
+static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID propID, bool forDialog)
+{
+  if (dataSize == 0 || !data)
+    return @"";
+  if (propID == kpidNtSecure)
+  {
+    // Never listed (NT security is hidden on macOS, 01 §9 #7); kept for completeness.
+    AString s;
+    ConvertNtSecureToString((const Byte *)data, dataSize, s);
+    return SZStringFromUString(MultiByteToUnicodeString(s, CP_UTF8));
+  }
+  if (!forDialog && propID == kpidNtReparse)
+  {
+    UString s;
+    ConvertNtReparseToString((const Byte *)data, dataSize, s);
+    if (!s.IsEmpty())
+      return SZStringFromUString(s);
+  }
+  const UInt32 maxDataSize = forDialog ? (1u << 8) : 64;   // kMaxDataSize of each renderer
+  if (dataSize > maxDataSize)
+    return [NSString stringWithFormat:@"data:%u", (unsigned)dataSize];
+  // ConvertDataToHex_Upper for a CRC / checksum of at most 8 bytes, lower case otherwise.
+  const bool upper = dataSize <= 8 && (propID == kpidCRC || propID == kpidChecksum);
+  const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+  NSMutableString *hex = [NSMutableString stringWithCapacity:dataSize * 2];
+  const Byte *p = (const Byte *)data;
+  for (UInt32 i = 0; i < dataSize; i++)
+    [hex appendFormat:@"%c%c", digits[p[i] >> 4], digits[p[i] & 15]];
+  return hex;
 }
 
 @implementation SZArcProps
@@ -149,6 +193,9 @@ static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^ge
   CMyComPtr<IFolderSetFlatMode> _setFlatMode;
   CMyComPtr<IFolderCompare> _compare;
   CMyComPtr<IGetFolderArcProps> _getArcProps;
+  CMyComPtr<IArchiveGetRawProps> _rawProps;
+  /// PROPIDs of the raw columns in `properties` (filled with it).
+  std::vector<PROPID> _rawPropIDs;
   SZArchive *_archive;
   NSInteger _itemCount;
   BOOL _flatMode;
@@ -183,6 +230,7 @@ static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^ge
   _folder.QueryInterface(IID_IFolderSetFlatMode, &_setFlatMode);
   _folder.QueryInterface(IID_IFolderCompare, &_compare);
   _folder.QueryInterface(IID_IGetFolderArcProps, &_getArcProps);
+  _folder.QueryInterface(IID_IArchiveGetRawProps, &_rawProps);
   return self;
 }
 
@@ -276,6 +324,7 @@ static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^ge
     return NO;
   _itemCount = n;
   _properties = nil;
+  _rawPropIDs.clear();
   return YES;
 }
 
@@ -344,6 +393,8 @@ static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^ge
 
 - (NSString *)displayStringOfItemAtIndex:(NSInteger)index propID:(SZPropID)propID timestampLevel:(SZTimestampLevel)level
 {
+  if ([self isRawPropID:(PROPID)propID])
+    return [self rawPropertyStringOfItemAtIndex:index propID:propID forPropertiesDialog:NO];
   NWindows::NCOM::CPropVariant prop;
   if (_folder->GetProperty((UInt32)index, (PROPID)propID, &prop) != S_OK)
     return @"";
@@ -358,11 +409,83 @@ static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^ge
     if (_folder->GetNumberOfProperties(&n) != S_OK)
       return @[];
     IFolderFolder *f = _folder;
-    _properties = SZReadPropertyInfos(n, ^HRESULT(UInt32 i, BSTR *name, PROPID *propID, VARTYPE *vt) {
+    NSArray<SZPropertyInfo *> *plain = SZReadPropertyInfos(n, ^HRESULT(UInt32 i, BSTR *name, PROPID *propID, VARTYPE *vt) {
       return f->GetPropertyInfo(i, name, propID, vt);
     });
+    _rawPropIDs.clear();
+    NSMutableArray<SZPropertyInfo *> *all = [plain mutableCopy];
+    UInt32 numRaw = 0;
+    if (_rawProps && _rawProps->GetNumRawProps(&numRaw) == S_OK)
+    {
+      // CPanel::InitColumns (PanelItems.cpp:177-199): raw columns follow the folder's own.
+      for (UInt32 i = 0; i < numRaw; i++)
+      {
+        CMyComBSTR name;
+        PROPID propID = 0;
+        if (_rawProps->GetRawPropInfo(i, &name, &propID) != S_OK)
+          continue;
+        if (propID == kpidNtSecure)
+          continue;      // locked decision: NT security descriptors are hidden (01 §9 #7)
+        BOOL duplicate = NO;    // FindItem_for_PropID would only ever reach the first one
+        for (SZPropertyInfo *info in all)
+          if ((PROPID)info.propID == propID) { duplicate = YES; break; }
+        if (duplicate)
+          continue;
+        NSString *handlerName = nil;
+        if ((LPCOLESTR)name)
+          handlerName = SZStringFromWChars((LPCOLESTR)name, SysStringLen((BSTR)(LPCOLESTR)name));
+        [all addObject:[[SZPropertyInfo alloc] initWithPropID:(SZPropID)propID varType:SZVarTypeEmpty
+                                                  handlerName:handlerName isRaw:YES]];
+        _rawPropIDs.push_back(propID);
+      }
+    }
+    _properties = all;
   }
   return _properties;
+}
+
+- (BOOL)isRawPropID:(PROPID)propID
+{
+  if (!_rawProps)
+    return NO;
+  (void)self.properties;
+  for (PROPID p : _rawPropIDs)
+    if (p == propID)
+      return YES;
+  return NO;
+}
+
+- (BOOL)getRaw:(NSInteger)index propID:(PROPID)propID data:(const void **)data size:(UInt32 *)size type:(UInt32 *)type
+{
+  *data = NULL;
+  *size = 0;
+  *type = 0;
+  if (![self isRawPropID:propID] || index < 0 || index >= _itemCount)
+    return NO;
+  return _rawProps->GetRawProp((UInt32)index, propID, data, size, type) == S_OK;
+}
+
+- (NSData *)rawPropertyOfItemAtIndex:(NSInteger)index propID:(SZPropID)propID
+{
+  const void *data;
+  UInt32 size, type;
+  if (![self getRaw:index propID:(PROPID)propID data:&data size:&size type:&type] || size == 0 || !data)
+    return nil;
+  return [NSData dataWithBytes:data length:size];
+}
+
++ (NSString *)stringForRawPropertyData:(NSData *)data propID:(SZPropID)propID forPropertiesDialog:(BOOL)forDialog
+{
+  return SZRawPropertyString(data.bytes, (UInt32)data.length, (PROPID)propID, forDialog);
+}
+
+- (NSString *)rawPropertyStringOfItemAtIndex:(NSInteger)index propID:(SZPropID)propID forPropertiesDialog:(BOOL)forDialog
+{
+  const void *data;
+  UInt32 size, type;
+  if (![self getRaw:index propID:(PROPID)propID data:&data size:&size type:&type])
+    return @"";
+  return SZRawPropertyString(data, size, (PROPID)propID, forDialog);
 }
 
 #pragma mark - Folder properties
@@ -604,6 +727,28 @@ static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^ge
 
 - (NSInteger)compareItemAtIndex:(NSInteger)index1 withItemAtIndex:(NSInteger)index2 propID:(SZPropID)propID
 {
+  if ([self isRawPropID:(PROPID)propID])
+  {
+    // CompareItems2 with isRawProp (PanelSort.cpp:99-132): empty values first, only kRaw data is
+    // ordered, reparse data by its target text, the rest by the folder's raw comparison.
+    const void *d1, *d2;
+    UInt32 s1, s2, t1, t2;
+    if (![self getRaw:index1 propID:(PROPID)propID data:&d1 size:&s1 type:&t1]) return 0;
+    if (![self getRaw:index2 propID:(PROPID)propID data:&d2 size:&s2 type:&t2]) return 0;
+    if (s1 == 0)
+      return s2 == 0 ? 0 : -1;
+    if (s2 == 0)
+      return 1;
+    if (t1 != NPropDataType::kRaw || t2 != NPropDataType::kRaw)
+      return 0;
+    if (propID == SZPropIDNtReparse)
+      return [SZFolder compareFileName:SZRawPropertyString(d1, s1, kpidNtReparse, false)
+                          withFileName:SZRawPropertyString(d2, s2, kpidNtReparse, false)];
+    if (_compare)
+      return _compare->CompareItems((UInt32)index1, (UInt32)index2, (PROPID)propID, 1);
+    const int c = memcmp(d1, d2, MyMin(s1, s2));
+    return c != 0 ? (c < 0 ? -1 : 1) : (s1 < s2 ? -1 : (s1 > s2 ? 1 : 0));
+  }
   if (_compare)
     return _compare->CompareItems((UInt32)index1, (UInt32)index2, (PROPID)propID, 0);
   if (propID == SZPropIDName || propID == SZPropIDPath || propID == SZPropIDExtension)
