@@ -9,9 +9,9 @@
 //   3. the File-menu items without Exit.
 // Inside an archive only step 3 is shown, exactly as on Windows.
 //
-// The archive verbs send the selectors below down the responder chain: the `extract`, `compress`
-// and `tools` scopes implement them (they are the same selectors as the toolbar buttons), and
-// AppKit disables the ones nobody implements yet -- see Mac/docs/api/panel.md.
+// The archive verbs send the selectors below down the responder chain. `MainWindowController`
+// implements every one of them (`Mac/App/Commands/PanelContextActions.swift`) by calling the very
+// command the File menu, the toolbar and Finder use -- see Mac/docs/api/panel.md section 3.
 
 import Cocoa
 import Quartz
@@ -68,6 +68,9 @@ extension PanelViewController {
     static let openTypes: [String] = ["*", "#", "#:e", "7z", "zip", "cab", "rar"]
 
     func makeItemContextMenu() -> NSMenu {
+        // A right click focuses the panel it lands in (NM_RCLICK on the list sets the focus), so
+        // the command an item sends acts on *this* panel's operated items through ActiveContext.
+        delegate?.panelDidBecomeActive(self)
         let menu = NSMenu()
         let snap = snapshot
         let items = operatedRowIndices().map { rows[$0] }
@@ -91,10 +94,10 @@ extension PanelViewController {
         let names = items.map { $0.name }
         let target = PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names)
         let single = items.count == 1 ? items[0] : nil
-        let archiveLike: Bool = {
-            guard let single, !single.isDirectory else { return false }
-            return !Self.extractExcludeExtensions.contains(single.pathExtension.lowercased())
-        }()
+        let needExtract = Self.needExtract(items: items, extendedVerbs: Self.extendedVerbsRequested)
+        // kOpen and its "Open archive >" sub-menu: one file that passes DoNeedExtract
+        // (ContextMenu.cpp:741-788).
+        let archiveLike = single.map { Self.needExtract(items: [$0], extendedVerbs: false) } ?? false
 
         if archiveLike, flags.contains(.open) {
             add(menu, Lang.text(2322, "Open archive"), #selector(PanelContextCommands.sevenZipOpenArchive(_:)), target)
@@ -112,15 +115,16 @@ extension PanelViewController {
                 menu.addItem(openAs)
             }
         }
-        if archiveLike || items.count > 1 {
+        if needExtract {
             if flags.contains(.extractFiles) {
                 add(menu, Lang.text(2323, "Extract files..."), #selector(PanelContextCommands.sevenZipExtractFiles(_:)), target)
             }
             if flags.contains(.extractHere) {
                 add(menu, Lang.text(2326, "Extract Here"), #selector(PanelContextCommands.sevenZipExtractHere(_:)), target)
             }
-            if flags.contains(.extractTo), let single {
-                let folder = (single.name as NSString).deletingPathExtension
+            if flags.contains(.extractTo) {
+                // GetSubFolderNameForExtract for one archive, "*" for several (ContextMenu.cpp:836).
+                let folder = single.map { SZArchiveExtractor.subfolderName(forArchiveNamed: $0.name) } ?? "*"
                 add(menu, Lang.format(Lang.get(2327, "Extract to {0}"), "\"" + folder + "/\""),
                     #selector(PanelContextCommands.sevenZipExtractTo(_:)), target)
             }
@@ -160,6 +164,21 @@ extension PanelViewController {
             crc.submenu = sub
             menu.addItem(crc)
         }
+    }
+
+    /// `needExtract` of CZipContextMenu::QueryContextMenu (ContextMenu.cpp:797-825): no directory
+    /// among the items and every name passes DoNeedExtract (its extension is not in
+    /// kExtractExcludeExtensions). With the extended verbs (Shift held, CMF_EXTENDEDVERBS) the name
+    /// check is skipped and only the directory rule is left.
+    static func needExtract(items: [PanelRow], extendedVerbs: Bool) -> Bool {
+        guard !items.isEmpty, !items.contains(where: { $0.isDirectory || $0.isParentRow }) else { return false }
+        if extendedVerbs { return true }
+        return items.allSatisfy { !extractExcludeExtensions.contains($0.pathExtension.lowercased()) }
+    }
+
+    /// CMF_EXTENDEDVERBS: Shift held while the menu is requested.
+    static var extendedVerbsRequested: Bool {
+        NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
     }
 
     private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ target: PanelContextTarget) {

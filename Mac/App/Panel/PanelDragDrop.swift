@@ -94,7 +94,40 @@ extension PanelViewController {
     /// LVN_BEGINDRAG -> OnDrag: FS items go as file URLs, archive items as file promises whose
     /// extraction is deferred to the drop (01 §3.15).
     @objc func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-        guard let snap = snapshot, snap.supportsOperations, row < rows.count else { return nil }
+        dragPasteboardWriter(forRow: row)
+    }
+
+    @objc func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
+                         willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
+        dragSessionWillBegin(session, rowIndexes: rowIndexes)
+    }
+
+    @objc func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
+                         endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        dragSessionEnded(operation: operation)
+    }
+
+    /// CDropTarget::DragOver + GetEffect (PanelDrag.cpp:1927, :2066): a folder row under the
+    /// cursor is the target sub-folder, otherwise the panel's folder; ".." and the source panel's
+    /// own folder are refused. Option = copy, Command = move, otherwise move on the same volume.
+    @objc func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo,
+                         proposedRow row: Int, proposedDropOperation dropOperation: NSTableView.DropOperation)
+    -> NSDragOperation {
+        let (targetRow, effect) = validateListDrop(info: info, proposedRow: dropOperation == .above ? -1 : row)
+        tableView.setDropRow(targetRow, dropOperation: .on)
+        return effect
+    }
+
+    @objc func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
+                         dropOperation: NSTableView.DropOperation) -> Bool {
+        acceptListDrop(info: info, proposedRow: dropOperation == .above ? -1 : row)
+    }
+
+    // MARK: The list-widget-independent half (Details table and the icon / list modes alike)
+
+    /// The pasteboard item for one dragged row, nil for ".." or a folder without IFolderOperations.
+    func dragPasteboardWriter(forRow row: Int) -> NSPasteboardWriting? {
+        guard let snap = snapshot, snap.supportsOperations, row >= 0, row < rows.count else { return nil }
         let item = rows[row]
         guard !item.isParentRow else { return nil }
         if !item.fullPath.isEmpty {
@@ -108,8 +141,7 @@ extension PanelViewController {
         return provider
     }
 
-    @objc func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
-                         willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
+    func dragSessionWillBegin(_ session: NSDraggingSession, rowIndexes: IndexSet) {
         let indices = rowIndexes.filter { $0 < rows.count && !rows[$0].isParentRow }
         PanelDragDrop.current = PanelDragDrop.Session(panel: self, rowIndices: indices,
                                                      isArchiveSource: snapshot?.isArchive ?? false,
@@ -117,44 +149,33 @@ extension PanelViewController {
         session.draggingFormation = .list
     }
 
-    @objc func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
-                         endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+    func dragSessionEnded(operation: NSDragOperation) {
         PanelDragDrop.current = nil
         if operation == .move { refreshAfterOperation() }
     }
 
-    /// CDropTarget::DragOver + GetEffect (PanelDrag.cpp:1927, :2066): a folder row under the
-    /// cursor is the target sub-folder, otherwise the panel's folder; ".." and the source panel's
-    /// own folder are refused. Option = copy, Command = move, otherwise move on the same volume.
-    @objc func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo,
-                         proposedRow row: Int, proposedDropOperation dropOperation: NSTableView.DropOperation)
-    -> NSDragOperation {
-        guard let snap = snapshot, snap.supportsOperations, !snap.chainIsReadOnly else { return [] }
-        var targetRow = row
-        if dropOperation == .above { targetRow = -1 }
-        if targetRow >= 0, targetRow < rows.count, !rows[targetRow].isDirectory || rows[targetRow].isParentRow {
-            targetRow = -1
-        }
-        if targetRow < 0 {
-            tableView.setDropRow(-1, dropOperation: .on)
-            if let session = PanelDragDrop.current, session.panel === self { return [] }
-        } else {
-            tableView.setDropRow(targetRow, dropOperation: .on)
-        }
-        return dropEffect(info: info, targetPath: dropTargetPath(row: targetRow))
+    /// The row a drop would go into (-1 = the panel's folder) and the effect. `proposedRow` is the
+    /// row under the cursor, or -1 when the cursor is between rows / over the background.
+    func validateListDrop(info: NSDraggingInfo, proposedRow: Int) -> (row: Int, effect: NSDragOperation) {
+        guard let snap = snapshot, snap.supportsOperations, !snap.chainIsReadOnly else { return (-1, []) }
+        let targetRow = dropTargetRow(proposedRow)
+        if targetRow < 0, let session = PanelDragDrop.current, session.panel === self { return (-1, []) }
+        return (targetRow, dropEffect(info: info, targetPath: dropTargetPath(row: targetRow)))
     }
 
-    @objc func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
-                         dropOperation: NSTableView.DropOperation) -> Bool {
-        var targetRow = row
-        if dropOperation == .above { targetRow = -1 }
-        if targetRow >= 0, targetRow < rows.count, !rows[targetRow].isDirectory || rows[targetRow].isParentRow {
-            targetRow = -1
-        }
+    /// CDropTarget::Drop for a drop on the list.
+    func acceptListDrop(info: NSDraggingInfo, proposedRow: Int) -> Bool {
+        let targetRow = dropTargetRow(proposedRow)
         let target = dropTargetPath(row: targetRow)
         let effect = dropEffect(info: info, targetPath: target)
         let move = effect.contains(.move) && !(snapshot?.isArchive ?? false)
         return performDrop(info: info, targetRow: targetRow, targetPath: target, move: move)
+    }
+
+    /// Only a real folder row is a drop target; anything else means the panel's own folder.
+    private func dropTargetRow(_ row: Int) -> Int {
+        guard row >= 0, row < rows.count, rows[row].isDirectory, !rows[row].isParentRow else { return -1 }
+        return row
     }
 
     /// Destination of a drop: the folder of the highlighted row, else this panel's folder.
@@ -354,28 +375,42 @@ extension PanelViewController: NSFilePromiseProviderDelegate {
 
 extension PanelViewController {
 
-    /// The dropped names are handed to the `compress` scope's entry point (the same selector as
-    /// the Add toolbar button). While that scope is not on this branch, nothing responds to it and
-    /// the drop is reported as unsupported -- see Mac/docs/api/panel.md.
+    /// The dropped names -- not the panel's selection -- are handed to the `compress` scope's
+    /// "Add to archive..." with the dialog (`CompressFiles(destPath, CreateArchiveName(names), "",
+    /// names, email = false, showDialog = true)`).
     func compressDroppedFiles(info: NSDraggingInfo) -> Bool {
         let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self],
                                                       options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
-        let paths = urls.map { $0.path }
-        guard !paths.isEmpty else { return false }
-        // Names that live in a 7zE / 7zO temp folder must not be archived into temp: the
-        // destination becomes this panel's folder (AreThereNamesFromTemp).
+        guard let context = dropCompressContext(paths: urls.map { $0.path }) else { return false }
+        CompressCommands.addToArchive(context: context, showDialog: true, email: false)
+        return true
+    }
+
+    /// The `OperationContext` of a background drop: the dropped paths as the operated items and the
+    /// archive's folder as `folderPath`. That folder is the dropped files' own folder, except that
+    /// names living in a 7zE / 7zO temp folder must not be archived into temp, so the destination
+    /// becomes this panel's folder (AreThereNamesFromTemp, PanelDrag.cpp:2794) -- or the home
+    /// folder when the panel does not show a file-system folder.
+    func dropCompressContext(paths: [String]) -> OperationContext? {
+        guard !paths.isEmpty, let folder = currentFolderForContext() else { return nil }
         let temp = TestSupport.temporaryDirectory
-        let destination = paths.contains { $0.hasPrefix(temp) } ? (snapshot?.fullPath ?? temp)
-                                                               : ((paths[0] as NSString).deletingLastPathComponent + "/")
-        let target = PanelContextTarget(paths: paths, folderPath: destination,
-                                        names: paths.map { ($0 as NSString).lastPathComponent })
-        pendingCompressTarget = target
-        if NSApp.sendAction(#selector(MenuActions.toolbarAddToArchive(_:)), to: nil, from: self) {
-            return true
+        var destination: String
+        if paths.contains(where: { $0.hasPrefix(temp) }) {
+            destination = (snapshot?.isFileSystem ?? false) ? (snapshot?.fullPath ?? "") : NSHomeDirectory()
+        } else {
+            destination = (paths[0] as NSString).deletingLastPathComponent
         }
-        pendingCompressTarget = nil
-        showUnsupportedOperation()
-        return false
+        if !destination.hasSuffix("/") { destination += "/" }
+        return OperationContext(folder: folder,
+                                displayPath: destination,
+                                isArchive: false,
+                                isFileSystem: true,
+                                indices: [],
+                                names: paths.map { ($0 as NSString).lastPathComponent },
+                                paths: paths,
+                                folderPath: destination,
+                                otherPanelPath: nil,
+                                window: hostWindow)
     }
 }
 

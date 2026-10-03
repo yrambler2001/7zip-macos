@@ -67,6 +67,15 @@ enum CompressCommands {
     /// showDialog: true, waitFinish: false)`.
     static func addToArchive(showDialog: Bool, email: Bool, forcedFormatName: String? = nil) {
         guard let context = ActiveContext.current() else { return }
+        addToArchive(context: context, showDialog: showDialog, email: email,
+                     forcedFormatName: forcedFormatName)
+    }
+
+    /// The same for an explicit context: `paths` are the items, `folderPath` the destination
+    /// folder. The panel's background drop (CompressDropFiles, 01 §3.15) passes the *dropped*
+    /// files here, which are not the panel's selection.
+    static func addToArchive(context: OperationContext, showDialog: Bool, email: Bool,
+                             forcedFormatName: String? = nil) {
         guard let paths = operatedFileSystemPaths(context) else { return }
 
         var base = SZUpdater.archiveBaseName(forItemPaths: paths, isHash: false, baseName: nil)

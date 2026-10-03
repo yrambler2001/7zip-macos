@@ -532,13 +532,46 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
             return snap.supportsOperations && !snap.chainIsReadOnly
                 && !focusedPanel.operatedRowIndices().isEmpty && !snap.isHashFolder
         default:
+            return fileMenuRule(action) ?? true
+        }
+    }
+
+    /// The CFileMenu::Load rules (MyLoadMenu.cpp:588-734, 01 §2.1) for the File-menu items whose
+    /// handler lives on the window rather than on the panel; nil = not a File-menu item.
+    ///   IDM_SPLIT 549 / IDM_COMBINE 550   enabled only for isOneFsFile
+    ///   IDM_DIFF 554                      disabled in a hash folder (hidden without a Diff tool)
+    ///   IDM_LINK 558                      exactly one operated item, not in a hash folder
+    ///   CRC popup (IDM_CRC32 102 ...)     always enabled
+    func fileMenuRule(_ action: Selector?) -> Bool? {
+        let panel = focusedPanel
+        let snap = panel.snapshot
+        let operated = panel.operatedRowIndices().map { panel.rows[$0] }
+        let isHash = snap?.isHashFolder ?? false
+        switch action {
+        case #selector(MenuActions.fileSplit(_:)), #selector(MenuActions.fileCombine(_:)):
+            let isOneFsFile = (snap?.isFileSystem ?? false) && operated.count == 1 && !operated[0].isDirectory
+            return isOneFsFile
+        case #selector(MenuActions.fileDiff(_:)):
+            return !isHash
+        case #selector(MenuActions.fileLink(_:)):
+            return operated.count == 1 && !isHash
+        case #selector(MenuActions.fileCalculateHash(_:)):
             return true
+        default:
+            return nil
         }
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(fileCopyTo(_:)), #selector(fileMoveTo(_:)):
+            return windowActionIsEnabled(item.action)
+        case #selector(MenuActions.fileDiff(_:)):
+            // ReadRegDiff empty -> IDM_DIFF is removed from the menu (MyLoadMenu.cpp:672-676).
+            item.isHidden = Settings.diffPath.isEmpty
+            return windowActionIsEnabled(item.action)
+        case #selector(MenuActions.fileSplit(_:)), #selector(MenuActions.fileCombine(_:)),
+             #selector(MenuActions.fileLink(_:)):
             return windowActionIsEnabled(item.action)
         case #selector(viewTwoPanels(_:)): item.state = numPanels == 2 ? .on : .off
         case #selector(viewAutoRefresh(_:)): item.state = autoRefresh ? .on : .off
