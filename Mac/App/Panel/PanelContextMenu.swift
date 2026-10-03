@@ -30,6 +30,21 @@ import SevenZipKit
     func sevenZipCompressEmail(_ sender: Any?)        // kCompressEmail
     func sevenZipCompressTo7z(_ sender: Any?)         // kCompressTo7z
     func sevenZipCompressToZip(_ sender: Any?)        // kCompressToZip
+    func sevenZipCompressTo7zEmail(_ sender: Any?)    // kCompressTo7zEmail
+    func sevenZipCompressToZipEmail(_ sender: Any?)   // kCompressToZipEmail
+    func sevenZipChecksumCommand(_ sender: Any?)      // kHash_Generate_SHA256 / kHash_TestArc (C12 / C13)
+}
+
+/// A checksum-file command of the "CRC SHA >" submenu (03 §1.4 C12 / C13): the 7zG command line the
+/// Finder extension sends for the same verb, built when the item is chosen so no list file is
+/// written for a menu nobody picks.
+final class PanelChecksumCommand: NSObject {
+    let command: FinderMenuCommand
+    let paths: [String]
+    init(command: FinderMenuCommand, paths: [String]) {
+        self.command = command
+        self.paths = paths
+    }
 }
 
 /// What a context command applies to; handed over as the menu item's representedObject.
@@ -139,17 +154,27 @@ extension PanelViewController {
             add(menu, Lang.text(2329, "Compress and email..."), #selector(PanelContextCommands.sevenZipCompressEmail(_:)), target)
         }
         let base = PanelContextMenuNaming.archiveBaseName(names: names, folderPath: snap.fullPath)
-        if flags.contains(.compressTo7z) {
-            add(menu, Lang.format(Lang.get(2328, "Add to {0}"), "\"" + base + ".7z\""),
-                #selector(PanelContextCommands.sevenZipCompressTo7z(_:)),
-                PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names,
-                                   archiveName: base + ".7z"))
-        }
-        if flags.contains(.compressToZip) {
-            add(menu, Lang.format(Lang.get(2328, "Add to {0}"), "\"" + base + ".zip\""),
-                #selector(PanelContextCommands.sevenZipCompressToZip(_:)),
-                PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names,
-                                   archiveName: base + ".zip"))
+        // ContextMenu.cpp:940-1001: the "Add to <name>.<ext>" item is left out when that is the
+        // name of the single selected file; the "and email" twins follow each one.
+        for (ext, flag, emailFlag, action, emailAction) in [
+            ("7z", Settings.ContextMenuFlags.compressTo7z, Settings.ContextMenuFlags.compressTo7zEmail,
+             #selector(PanelContextCommands.sevenZipCompressTo7z(_:)),
+             #selector(PanelContextCommands.sevenZipCompressTo7zEmail(_:))),
+            ("zip", Settings.ContextMenuFlags.compressToZip, Settings.ContextMenuFlags.compressToZipEmail,
+             #selector(PanelContextCommands.sevenZipCompressToZip(_:)),
+             #selector(PanelContextCommands.sevenZipCompressToZipEmail(_:))),
+        ] {
+            let archiveName = base + "." + ext
+            let target = PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names,
+                                            archiveName: archiveName)
+            let quoted = "\"" + archiveName + "\""
+            if flags.contains(flag), single?.name.caseInsensitiveCompare(archiveName) != .orderedSame {
+                add(menu, Lang.format(Lang.get(2328, "Add to {0}"), quoted), action, target)    // IDS_CONTEXT_COMPRESS_TO
+            }
+            if flags.contains(emailFlag) {
+                add(menu, Lang.format(Lang.get(2330, "Compress to {0} and email"), quoted),     // IDS_CONTEXT_COMPRESS_TO_EMAIL
+                    emailAction, target)
+            }
         }
         if flags.contains(.crc) {
             let crc = NSMenuItem(title: Lang.text(2350, "CRC SHA"), action: nil, keyEquivalent: "")
@@ -160,6 +185,24 @@ extension PanelViewController {
                 let item = NSMenuItem(title: name, action: #selector(MenuActions.fileCalculateHash(_:)), keyEquivalent: "")
                 item.tag = tag
                 sub.addItem(item)
+            }
+            // C12 `SHA-256 -> <name>.sha256` and C13 `Test archive : Checksum` (ContextMenu.cpp:
+            // 1101-1142), the same command lines the Finder extension sends (FinderMenuModel).
+            sub.addItem(.separator())
+            let hashName = ArchiveNaming.createArchiveName(
+                paths: paths, isHash: true, firstItemIsDirectory: items[0].isDirectory) + ".sha256"
+            let folder = snap.fullPath.hasSuffix("/") ? snap.fullPath : snap.fullPath + "/"
+            let generate = FinderMenuCommand(verb: "SevenZip.Checksum.Generate.SHA256",
+                                             title: "SHA-256 -> " + hashName,
+                                             prefixArguments: ["a"], selectionKind: .items,
+                                             suffixArguments: ["-thash", "-sae", "--", folder + hashName])
+            addChecksum(sub, generate, paths)
+            if !items.contains(where: { $0.isDirectory }) {
+                let test = FinderMenuCommand(verb: "SevenZip.Checksum.Test.Hash",
+                                             title: Lang.text(2325, "Test archive") + " : " + Lang.text(1046, "Checksum"),
+                                             prefixArguments: ["t", "-thash"], selectionKind: .archives,
+                                             refusesDirectories: true)
+                addChecksum(sub, test, paths)
             }
             crc.submenu = sub
             menu.addItem(crc)
@@ -179,6 +222,13 @@ extension PanelViewController {
     /// CMF_EXTENDEDVERBS: Shift held while the menu is requested.
     static var extendedVerbsRequested: Bool {
         NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
+    }
+
+    private func addChecksum(_ menu: NSMenu, _ command: FinderMenuCommand, _ paths: [String]) {
+        let item = NSMenuItem(title: command.title,
+                              action: #selector(PanelContextCommands.sevenZipChecksumCommand(_:)), keyEquivalent: "")
+        item.representedObject = PanelChecksumCommand(command: command, paths: paths)
+        menu.addItem(item)
     }
 
     private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ target: PanelContextTarget) {

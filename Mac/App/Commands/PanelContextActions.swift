@@ -16,7 +16,9 @@
 //   kTest                     ExtractCommands.testArchives()        (toolbar Test 1072)
 //   kCompress                 CompressCommands.addToArchive(showDialog: true)  (toolbar Add 1070)
 //   kCompressEmail            CompressCommands.addToArchive(showDialog: true, email: true)
-//   kCompressTo7z / ToZip     CompressCommands.compressTo(formatName:)
+//   kCompressTo7z / ToZip     CompressCommands.compressTo(formatName:) (+ email: true for the
+//                             "Compress to <name> and email" twins)
+//   C12 / C13 (CRC SHA >)     CommandExecutor.run(argv:) with the Finder extension's command line
 //   kHash_* ("CRC SHA >")     MainWindowController.fileCalculateHash(_:) (tools scope, unchanged)
 //
 // The commands read their items through `ActiveContext` (the frozen contract), which is the
@@ -69,6 +71,26 @@ extension MainWindowController: PanelContextCommands {
     /// kCompressToZip (IDS_CONTEXT_COMPRESS_TO 2328, `Add to "<name>.zip"`).
     @objc func sevenZipCompressToZip(_ sender: Any?) {
         CompressCommands.compressTo(formatName: "zip", email: false)
+    }
+
+    /// kCompressTo7zEmail (IDS_CONTEXT_COMPRESS_TO_EMAIL 2330).
+    @objc func sevenZipCompressTo7zEmail(_ sender: Any?) {
+        CompressCommands.compressTo(formatName: "7z", email: true)
+    }
+
+    /// kCompressToZipEmail (IDS_CONTEXT_COMPRESS_TO_EMAIL 2330).
+    @objc func sevenZipCompressToZipEmail(_ sender: Any?) {
+        CompressCommands.compressTo(formatName: "zip", email: true)
+    }
+
+    /// C12 / C13 of the "CRC SHA >" submenu: 7zFM runs these through 7zG
+    /// (CZipContextMenu::InvokeCommand -> CalcChecksum / TestArchives with `-thash`); the port runs
+    /// the same command line in-process through `CommandExecutor`, as the Finder extension does.
+    @objc func sevenZipChecksumCommand(_ sender: Any?) {
+        guard let request = (sender as? NSMenuItem)?.representedObject as? PanelChecksumCommand else { return }
+        let built = request.command.argv(for: request.paths)
+        CommandExecutor.run(argv: built.argv, temporaryFiles: built.temporaryFiles, parentWindow: window)
+        ActiveContext.refresh()
     }
 
     static func contextTarget(_ sender: Any?) -> PanelContextTarget? {

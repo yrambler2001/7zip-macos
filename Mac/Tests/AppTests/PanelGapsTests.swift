@@ -27,11 +27,13 @@ final class PanelGapsTests: AppHostTestCase {
     private var scratchDirectories: [String] = []
     private var savedDiffPath = ""
     private var savedNumPanels = 1
+    private var savedPanelPaths: [String?] = []
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         savedDiffPath = Settings.diffPath
         savedNumPanels = Settings.numPanels
+        savedPanelPaths = [Settings.panelPath(0), Settings.panelPath(1)]
     }
 
     override func tearDown() {
@@ -42,6 +44,10 @@ final class PanelGapsTests: AppHostTestCase {
         controllers = []
         for path in scratchDirectories { try? FileManager.default.removeItem(atPath: path) }
         scratchDirectories = []
+        // A closing window saves its panels' paths (saveState), and those are the scratch folders
+        // deleted just above: the next class's MainWindowController would restore them, fail to
+        // bind, and greet its test with an error sheet that queues every later sheet behind it.
+        for (i, path) in savedPanelPaths.enumerated() { Settings.setPanelPath(path, i) }
         Settings.diffPath = savedDiffPath
         Settings.numPanels = savedNumPanels
         super.tearDown()
@@ -113,7 +119,8 @@ final class PanelGapsTests: AppHostTestCase {
         let verbs = Set(["sevenZipOpenArchive:", "sevenZipOpenArchiveAs:", "sevenZipExtractFiles:",
                          "sevenZipExtractHere:", "sevenZipExtractTo:", "sevenZipTestArchive:",
                          "sevenZipCompress:", "sevenZipCompressEmail:", "sevenZipCompressTo7z:",
-                         "sevenZipCompressToZip:", "fileCalculateHash:"])
+                         "sevenZipCompressToZip:", "sevenZipCompressTo7zEmail:",
+                         "sevenZipCompressToZipEmail:", "sevenZipChecksumCommand:", "fileCalculateHash:"])
         var found: [NSMenuItem] = []
         for item in menu.items {
             if let action = item.action, verbs.contains(NSStringFromSelector(action)) { found.append(item) }
@@ -139,8 +146,10 @@ final class PanelGapsTests: AppHostTestCase {
 
         let menu = panel.makeItemContextMenu()
         let items = sevenZipItems(menu)
-        // Open + 7 "Open archive >" types + Extract files / Here / To / Test + 4 Add-to verbs + 11 hashes
-        XCTAssertGreaterThanOrEqual(items.count, 1 + 7 + 4 + 4 + 11, "menu: \(titles(menu))")
+        // Open + 7 "Open archive >" types + Extract files / Here / To / Test + 5 Add-to verbs
+        // (`Add to "arc.zip"` is the file's own name, so it is left out) + 11 hashes
+        // + SHA-256 -> file + Test : Checksum
+        XCTAssertEqual(items.count, 1 + 7 + 4 + 5 + 11 + 2, "menu: \(titles(menu))")
         for item in items {
             let action = item.action!
             guard let target = handler(for: action, from: panel) else {
@@ -154,9 +163,12 @@ final class PanelGapsTests: AppHostTestCase {
         let shown = titles(menu)
         for title in ["Open archive", "Extract files...", "Extract Here", "Extract to \"arc/\"",
                       "Test archive", "Add to archive...", "Compress and email...",
-                      "Add to \"arc.7z\"", "Add to \"arc.zip\""] {
+                      "Add to \"arc.7z\"", "Compress to \"arc.7z\" and email",
+                      "Compress to \"arc.zip\" and email"] {
             XCTAssertTrue(shown.contains(title), "missing \(title) in \(shown)")
         }
+        XCTAssertFalse(shown.contains("Add to \"arc.zip\""),
+                       "kCompressToZip is left out when arc.zip is the selected file (ContextMenu.cpp:973)")
     }
 
     /// needExtract (ContextMenu.cpp:797-825): a text file or a folder gets no Open / Extract / Test,
@@ -223,6 +235,32 @@ final class PanelGapsTests: AppHostTestCase {
         if let to7z { XCTAssertTrue(send(to7z, from: panel)) } else { XCTFail("no Add to \"notes.7z\"") }
         XCTAssertTrue(wait(for: "notes.7z") { fm.fileExists(atPath: scratch + "/notes.7z") },
                       "Add to \"notes.7z\" did not compress")
+    }
+
+    /// C12 / C13: `SHA-256 -> <name>.sha256` writes the checksum file next to the items, and
+    /// `Test archive : Checksum` is offered for it.
+    func testChecksumFileCommands() throws {
+        let scratch = makeScratch("sha")
+        let controller = makeWindow(panels: 1)
+        let panel = controller.focusedPanel
+        navigate(panel, to: scratch)
+        select(panel, "notes.txt")
+        let items = sevenZipItems(panel.makeItemContextMenu())
+            .filter { $0.action == #selector(PanelContextCommands.sevenZipChecksumCommand(_:)) }
+        XCTAssertEqual(items.map(\.title), ["SHA-256 -> notes.txt.sha256", "Test archive : Checksum"])
+        guard let generate = items.first else { return }
+        XCTAssertTrue(send(generate, from: panel))
+        let file = scratch + "/notes.txt.sha256"
+        XCTAssertTrue(wait(for: "notes.txt.sha256") { FileManager.default.fileExists(atPath: file) })
+        let text = try String(contentsOfFile: file, encoding: .utf8)
+        // sha256("notes\n")
+        XCTAssertTrue(text.contains("notes.txt"), text)
+        XCTAssertTrue(text.lowercased().contains("444e0fffbd825e9610ff5b199485707a0c895339ae80c15cc8a8aee41b106fda"), text)
+
+        select(panel, "dir")
+        let dirItems = sevenZipItems(panel.makeItemContextMenu())
+            .filter { $0.action == #selector(PanelContextCommands.sevenZipChecksumCommand(_:)) }
+        XCTAssertEqual(dirItems.map(\.title), ["SHA-256 -> dir.sha256"], "C13 refuses directories")
     }
 
     /// kOpen binds the panel to the archive.
