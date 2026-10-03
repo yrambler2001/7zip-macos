@@ -376,4 +376,91 @@ final class OptGapsTests: AppHostTestCase {
         }
         for child in wideChildren { collectWide(child, limit: limit, path: name, into: &out) }
     }
+
+    /// A screenshot of Options > System with the bundled format icons (`mac/optgaps`, I.1), for
+    /// the per-scope screenshot set (PROGRESS 9.4).
+    ///
+    /// `mac/release` dropped it because it raised NSGenericException in a full `-H` run: it ran
+    /// right after `testOptionsPagesFitTheirWindow` left the app in Ukrainian, where the System
+    /// page's header label never settled (`testSystemPageHeaderLayoutSettles`,
+    /// Mac/docs/reports/syslayout.md). Also shot in German, Russian and Arabic (RTL).
+    func testScreenshotSystemPage() {
+        for (code, suffix) in [("-", ""), ("de", "-de"), ("ru", "-ru"), ("ar", "-ar")] {
+            useLanguage(code)
+            SZSettings.setInteger(0, forKey: "FM.OptionsPage")          // open on the System page
+            let appeared = ModalProbe.present({ OptionsWindowController.showOptions() }) { window in
+                _ = self.attach(window, "01-options-system" + suffix)
+            }
+            XCTAssertTrue(appeared, "Options did not come up in '\(code)'")
+        }
+        useLanguage("-")
+    }
+
+    /// Regression (`mac/syslayout`): the System page's "Associate 7-Zip with:" label shares a row
+    /// with a spacer and the +/-/* buttons. Its width there was ambiguous, and
+    /// `OptionsPageBase.viewDidLayout` wrote whatever width the solver picked back into
+    /// `preferredMaxLayoutWidth`, so in Ukrainian it flipped between 94.5 and 63.5 pt on every pass
+    /// until AppKit raised NSGenericException "more Update Constraints in Window passes than there
+    /// are views in the window". The flip depends on the solver's previous answer, so this test
+    /// seeds the label with the narrow widths seen in the failing run, lays the page out, and
+    /// requires the row to be unambiguous, the label to stay on one line at its full width, and
+    /// the width feedback to settle in a pass or two. Before the fix it raised the exception.
+    func testSystemPageHeaderLayoutSettles() throws {
+        continueAfterFailure = true
+        let window = try XCTUnwrap(OptionsWindowController.shared.window)
+        for code in ["-", "uk", "de", "ru", "ar", "he", "ja"] {
+            useLanguage(code)
+            XCTAssertTrue(ModalProbe.present({ OptionsWindowController.showOptions() }) { _ in })
+            let content = try XCTUnwrap(window.contentView)
+            let tabs = try XCTUnwrap(Self.firstTabView(in: content))
+            let item = try XCTUnwrap(tabs.tabViewItems.first { $0.viewController is OptionsSystemPage })
+            tabs.selectTabViewItem(item)
+            let page = try XCTUnwrap(item.viewController as? OptionsSystemPage)
+            content.layoutSubtreeIfNeeded()
+            let caption = Lang.text(2201, "Associate 7-Zip with:")
+            let label = try XCTUnwrap(Self.textField(in: page.view) { $0.stringValue == caption },
+                                      "no IDT_SYSTEM_ASSOCIATE label in '\(code)'")
+            let oneLine = ceil((caption as NSString).size(withAttributes: [.font: label.font!]).width)
+            for seed: CGFloat in [4, 63.5, 94.5, 200, 0] {
+                label.preferredMaxLayoutWidth = seed
+                label.invalidateIntrinsicContentSize()
+                page.view.needsLayout = true
+                let before = page.labelWidthUpdates
+                content.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                let passes = page.labelWidthUpdates - before
+                XCTAssertLessThanOrEqual(passes, 2, "'\(code)', seed \(seed): the label width did not settle")
+                XCTAssertFalse(label.hasAmbiguousLayout, "'\(code)': the header row is ambiguous")
+                for view in label.superview?.subviews ?? [] {
+                    XCTAssertFalse(view.hasAmbiguousLayout, "'\(code)': \(type(of: view)) in the header is ambiguous")
+                }
+                if let row = label.superview,
+                   let buttons = row.subviews.first(where: { $0 !== label && $0 is NSStackView }) {
+                    XCTAssertFalse(label.frame.intersects(buttons.frame),
+                                   "'\(code)': the label \(label.frame) runs into the buttons \(buttons.frame)")
+                    // Alignment rects: a label's frame reaches 2 pt past its text on each side.
+                    let slack = row.bounds.insetBy(dx: -1, dy: -1)
+                    let labelRect = label.alignmentRect(forFrame: label.frame)
+                    let buttonsRect = buttons.alignmentRect(forFrame: buttons.frame)
+                    XCTAssertTrue(slack.contains(labelRect) && slack.contains(buttonsRect),
+                                  "'\(code)': the header row \(row.bounds) does not hold \(labelRect) / \(buttonsRect)")
+                    XCTAssertLessThan(buttons.frame.width, buttons.fittingSize.width + 1,
+                                      "'\(code)': the button group stretched to \(buttons.frame.width) pt")
+                } else {
+                    XCTFail("'\(code)': no button group next to the label")
+                }
+                XCTAssertGreaterThanOrEqual(label.frame.width + 1, oneLine,
+                                            "'\(code)', seed \(seed): '\(caption)' wraps in \(label.frame.width) pt")
+            }
+            ModalProbe.close(window)
+        }
+    }
+
+    static func textField(in view: NSView, where match: (NSTextField) -> Bool) -> NSTextField? {
+        if let field = view as? NSTextField, match(field) { return field }
+        for child in view.subviews {
+            if let found = textField(in: child, where: match) { return found }
+        }
+        return nil
+    }
 }
