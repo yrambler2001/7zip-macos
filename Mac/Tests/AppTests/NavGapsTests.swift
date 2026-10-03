@@ -304,4 +304,48 @@ final class NavGapsTests: AppHostTestCase {
         XCTAssertTrue(wait(for: "the scratch folder") { panel.currentPath == self.scratch + "/" })
         XCTAssertNil(sheetText(controller.window))
     }
+
+    // MARK: - window chrome (PROGRESS 81, 83, 108)
+
+    /// Refresh_StatusBar's four parts at the right edges {220, 320, 420, rest}.
+    func testStatusBarHasFourSections() throws {
+        let controller = makeWindow()
+        let panel = controller.focusedPanel
+        navigate(panel, to: scratch)
+        panel.selectAll(true)
+        XCTAssertTrue(wait(for: "status") { panel.statusBarTexts[0].contains("/") })
+        let texts = panel.statusBarTexts
+        XCTAssertEqual(texts.count, 4)
+        XCTAssertTrue(Bidi.stripped(texts[0]).contains("\(panel.rows.filter { !$0.isParentRow }.count) / "), texts[0])
+        XCTAssertFalse(texts[1].isEmpty, "the selected size")
+        XCTAssertFalse(texts[3].isEmpty, "the focused item's time")
+        XCTAssertEqual(PanelViewController.statusSectionEdges, [220, 320, 420])
+        _ = attach(try XCTUnwrap(controller.window), "navgaps-02-status-sections")
+    }
+
+    /// The 7-Zip toolbar bitmaps, large and small; no toolbar at all when both are off; a 4 pt splitter.
+    func testToolbarBitmapsAndVisibility() throws {
+        let savedMask = Settings.toolbarsMask
+        defer { Settings.toolbarsMask = savedMask }
+        Settings.toolbarsMask = 0xF
+        let controller = makeWindow()
+        for id in [NSToolbarItem.Identifier.szAdd, .szExtract, .szTest, .szCopy, .szMove, .szDelete, .szInfo] {
+            let large = try XCTUnwrap(MainWindowController.toolbarBitmap(id, large: true), "\(id)")
+            let small = try XCTUnwrap(MainWindowController.toolbarBitmap(id, large: false), "\(id)")
+            XCTAssertEqual(large.size, NSSize(width: 48, height: 36))
+            XCTAssertEqual(small.size, NSSize(width: 24, height: 24))
+        }
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        XCTAssertTrue(toolbar.isVisible)
+        XCTAssertEqual(toolbar.items.first?.image?.size, NSSize(width: 48, height: 36), "Large Buttons is on")
+        _ = attach(try XCTUnwrap(controller.window), "navgaps-03-toolbar-bitmaps")
+        controller.viewToolbarsLargeButtons(nil)
+        XCTAssertEqual(toolbar.items.first?.image?.size, NSSize(width: 24, height: 24))
+        controller.viewArchiveToolbar(nil)
+        controller.viewStandardToolbar(nil)
+        XCTAssertFalse(toolbar.isVisible, "no logical toolbar, no toolbar")
+        controller.viewStandardToolbar(nil)
+        XCTAssertTrue(toolbar.isVisible)
+        XCTAssertEqual(PanelSplitView().dividerThickness, 4)
+    }
 }

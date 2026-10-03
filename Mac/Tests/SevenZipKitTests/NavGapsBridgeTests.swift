@@ -256,5 +256,19 @@ final class NavGapsBridgeTests: XCTestCase {
             XCTAssertEqual(typed?.isArchive, true)
         }
     }
-}
 
+    // MARK: - raw-property column widths (archgaps follow-up)
+
+    func testRawPropertyColumnsStartWideEnoughForTheirHex() throws {
+        let wim = try SZFolder.folder(forPath: fixture("test.wim"), passwordDelegate: nil)
+        let model = PanelColumnsModel(properties: wim.properties, folderType: wim.folderType,
+                                      isFileSystem: false, hiddenByDefault: [], layout: nil)
+        let sha1 = try XCTUnwrap(model.columns.first { $0.propID == .sha1 })
+        XCTAssertEqual(sha1.width, 300)
+        XCTAssertEqual(model.columns.first { $0.propID == .size }?.width, 100, "ordinary columns keep 7zFM's 100")
+        let xar = try SZFolder.folder(forPath: fixture("test.xar"), passwordDelegate: nil)
+        let xarModel = PanelColumnsModel(properties: xar.properties, folderType: xar.folderType,
+                                         isFileSystem: false, hiddenByDefault: [], layout: nil)
+        XCTAssertEqual(xarModel.columns.first { $0.propID == .checksum }?.width, 300)
+    }
+}
