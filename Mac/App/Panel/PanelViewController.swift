@@ -83,9 +83,12 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     var focusedIndex = -1 {
         didSet {
             guard focusedIndex != oldValue, isViewLoaded else { return }
-            tableView.enumerateAvailableRowViews { view, _ in view.needsDisplay = true }
+            refreshSelectionAppearance()
         }
     }
+    /// Tests only: pretend the list has (true) or lacks (false) the keyboard focus, which decides
+    /// whether the selection is drawn (`listHasKeyboardFocus`, PanelSelectionStyle).
+    var listFocusOverride: Bool? { didSet { if isViewLoaded { refreshSelectionAppearance() } } }
     /// Shift key-down anchor (_prevFocusedItem, 01 §3.7).
     var selectionAnchor = -1
     /// Per-panel navigation stack (macOS addition; 7zFM has no Back/Forward, 01 §9).
@@ -198,6 +201,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         tableView.allowsColumnResizing = true
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.gridStyleMask = Settings.showGrid ? [.solidHorizontalGridLineMask, .solidVerticalGridLineMask] : []
+        tableView.gridColor = PanelSelectionStyle.grid               // LVS_EX_GRIDLINES (240,240,240)
         tableView.rowHeight = 20
         tableView.intercellSpacing = NSSize(width: 6, height: 2)
         tableView.style = .plain
@@ -377,6 +381,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             mySelected.removeAll()
         }
         tableView.needsDisplay = true
+        refreshSelectionAppearance()                        // FullRow: which cells are highlighted
         reload()                                            // ShowDots / icons / timestamp level
     }
 
