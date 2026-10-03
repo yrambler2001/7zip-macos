@@ -143,3 +143,9 @@ environment variables the app honours for testing, the `sevenzip://test/reset` c
 a running app to a known state without relaunching, how a test observes that the reset finished, and
 the rule that several instances with different bundle identifiers must coexist. The `resetcmd` scope
 implements it; the `fastui` scope consumes it. Neither changes its shape alone.
+
+## Running tests while other agents run
+
+Every `xcodebuild test` that launches the app, including a hand-written one that bypasses
+`Mac/scripts/test.sh`, must hold the app-launch lock (`.worktrees/.app-lock`) for the whole run.
+Use the scripts; they take it. When agents run one after another, as they do now, this is moot.
