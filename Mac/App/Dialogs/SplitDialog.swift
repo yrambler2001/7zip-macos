@@ -58,7 +58,7 @@ final class SplitDialog: NSObject {
         let stack = NSStackView(views: [
             DialogKit.label(Lang.text(7301, "Split to:")),          // IDT_SPLIT_PATH 7301
             pathRow,
-            DialogKit.label(Lang.text(7302, "Split to volumes,  bytes:")),   // IDT_SPLIT_VOLUME 7302
+            DialogKit.label(Lang.dialogText(7300, 7302, "Split to volumes,  bytes:")),   // IDT_SPLIT_VOLUME 7302
             volumeCombo,
             buttons,
         ])

@@ -205,7 +205,7 @@ final class OptGapsTests: AppHostTestCase {
         }
         let controller = MainWindowController()
         controller.showWindow(nil)
-        XCTAssertNotNil(controller.window?.toolbar)
+        XCTAssertFalse(controller.toolbarView.buttons.isEmpty)
         controller.window?.close()
         OptionsPostApply.reloadLangItems()           // raised before the fix
         XCTAssertNotNil(NSApp.mainMenu)

@@ -213,7 +213,11 @@ extension PanelViewController {
     // MARK: - Calculate full size (F3 on a folder / Space, 01 §3.11)
 
     func calcFocusedItemSize() {
-        let indices = operatedRowIndices()
+        var indices = operatedRowIndices()
+        // EditItem on a folder calculates the *focused* item, selected or not (PanelItemOpen.cpp).
+        if indices.isEmpty, focusedIndex >= 0, focusedIndex < rows.count, !rows[focusedIndex].isParentRow {
+            indices = [focusedIndex]
+        }
         guard !indices.isEmpty else { return }
         let engineIndices = indices.map { NSNumber(value: rows[$0].engineIndex) }
         let names = indices.map { rows[$0].name }

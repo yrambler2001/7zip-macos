@@ -76,9 +76,9 @@ final class CommandModeUITests: SevenZipUITestCase {
         XCTAssertTrue(add.waitForExistence(timeout: 10), "no Add button in the toolbar")
         add.click()
 
-        // The window title is lang id 4000, which `en.ttt` spells "Add to archive" -- the
-        // `Lang.text(4000, "Add to Archive")` fallback in the source is never what a run sees.
-        guard let dialog = sevenZip.waitForDialog(title: "Add to archive", timeout: 30) else {
+        // The window title is lang id 4000: with no language file the .rc caption "Add to Archive"
+        // (winmatch: the built-in English is the resource text, as on Windows, not en.ttt's).
+        guard let dialog = sevenZip.waitForDialog(title: "Add to Archive", timeout: 30) else {
             _ = sevenZip.dumpTree("cmdmode-compress")
             return XCTFail("IDD_COMPRESS 4000 did not appear")
         }

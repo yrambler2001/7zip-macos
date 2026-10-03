@@ -144,15 +144,25 @@ final class PanelLogicTests: XCTestCase {
     func testOperatedItemsRule() {
         let rows = [PanelRow.parent, row("a", index: 0), row("b", index: 1), row("c", index: 2)]
         // the selection wins
-        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet([2, 3]), focused: 1), [2, 3])
-        // nothing selected: the focused row
-        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet(), focused: 2), [2])
+        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet([2, 3]), focused: 1,
+                                                   focusedIsListSelected: false), [2, 3])
+        // nothing selected, the focused row only focused (a folder just opened, Deselect All):
+        // nothing is operated, "0 / 3 object(s) selected" (PanelItems.cpp:984-1001, winmatch)
+        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet(), focused: 2,
+                                                   focusedIsListSelected: false), [])
+        // AlternativeSelection: no marked item, the list-selected cursor row is operated
+        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet(), focused: 2,
+                                                   focusedIsListSelected: true), [2])
         // ".." is never operated on
-        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet(integer: 0), focused: 0), [])
-        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet(), focused: 0), [])
+        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet(integer: 0), focused: 0,
+                                                   focusedIsListSelected: true), [])
+        XCTAssertEqual(PanelOperatedItems.operated(rows: rows, selected: IndexSet(), focused: 0,
+                                                   focusedIsListSelected: true), [])
         // OperSmart: an empty result means the whole folder
-        XCTAssertEqual(PanelOperatedItems.operatedSmart(rows: rows, selected: IndexSet(), focused: 0), [1, 2, 3])
-        XCTAssertEqual(PanelOperatedItems.operatedSmart(rows: rows, selected: IndexSet(integer: 1), focused: 0), [1])
+        XCTAssertEqual(PanelOperatedItems.operatedSmart(rows: rows, selected: IndexSet(), focused: 2,
+                                                        focusedIsListSelected: false), [1, 2, 3])
+        XCTAssertEqual(PanelOperatedItems.operatedSmart(rows: rows, selected: IndexSet(integer: 1), focused: 0,
+                                                        focusedIsListSelected: false), [1])
     }
 
     // MARK: - Columns (01 §3.2, 01b §5.3)

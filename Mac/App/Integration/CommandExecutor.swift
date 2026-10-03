@@ -275,7 +275,6 @@ enum CommandExecutor {
                 dialogOptions.overwriteModeForced = options.overwriteModeForced
                 dialogOptions.eliminateDuplicateRoot = command.eliminateDuplicateRoot
                 dialogOptions.password = command.password ?? ""
-                dialogOptions.summaryLines = summaryLines(for: archives)
                 dialogOptions.parentWindow = parentWindow
                 guard let answer = ExtractDialog.run(dialogOptions) else { return .userBreak }
                 outputDirectory = answer.directoryPath
@@ -740,15 +739,6 @@ enum CommandExecutor {
     private static func strippedExtension(_ path: String, keep: Bool) -> String {
         guard !keep else { return path }
         return (path as NSString).deletingPathExtension
-    }
-
-    /// `CApp::GetItemsInfoString` applied to the archives, like the Extract dialog's summary.
-    private static func summaryLines(for archives: [String]) -> [String] {
-        let maxLines = 11
-        var lines = archives.prefix(maxLines).map(ArchiveNaming.lastComponent)
-        if archives.count > maxLines { lines.append("...") }
-        lines.append(Lang.text(3907, "Archives:") + " \(archives.count)")   // IDS_ARCHIVES_COLON
-        return lines
     }
 
     /// `parent` used to be accepted and ignored: every message was app-modal with no owner window,

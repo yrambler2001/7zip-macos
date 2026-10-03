@@ -240,10 +240,10 @@ final class ResetCommandTests: XCTestCase {
 
     /// The contract's "return selection ... to their defaults".
     ///
-    /// "Default" is not "nothing selected": a freshly bound panel selects its first row, exactly as
-    /// 7zFM leaves a focused-but-unselected row (`Mac/docs/api/panel.md` section 7 point 6). So the
-    /// assertion is that a row the test picked *by hand* is no longer selected afterwards and the
-    /// first row is -- which is only true if the panel was really rebuilt.
+    /// "Default" is what 7zFM shows in a folder it has just opened: the first row focused and
+    /// *nothing* selected (winmatch, "0 / N object(s) selected"). So the assertion is that the row
+    /// the test picked by hand is no longer selected afterwards and no row is -- which is only true
+    /// if the panel was really rebuilt (a kept selection would survive).
     func testSelectionIsResetToTheFreshlyBoundDefault() {
         _ = launchApp()
         guard sendReset(["path0": fixtures, "panels": "1", "view": "3"]) != nil else {
@@ -267,7 +267,9 @@ final class ResetCommandTests: XCTestCase {
         }
         XCTAssertTrue(table.staticTexts["test.zip"].waitForExistence(timeout: 15))
         XCTAssertFalse(row("test.zip").isSelected, "the hand-picked row must not survive a reset")
-        XCTAssertTrue(row("multi.7z.001").isSelected, "and the panel must be freshly bound")
+        XCTAssertFalse(row("multi.7z.001").isSelected, "a freshly bound panel selects nothing")
+        XCTAssertEqual(table.tableRows.allElementsBoundByIndex.filter(\.isSelected).count, 0,
+                       "and the panel must be freshly bound: no row selected")
     }
 
     /// A reset has to cancel a running operation and wait for the worker to actually stop before it

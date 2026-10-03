@@ -28,10 +28,16 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (class, nonatomic, readonly) SZLang *shared;
 
-/// Lang string for an ID: current language file, else built-in English, else "".
+/// Lang string for an ID: current language file, else the English of 7zFM's own .rc resources
+/// (what Windows shows with no language file; Mac/scripts/make-rc-strings.py), else en.ttt, else "".
 - (NSString *)stringForID:(uint32_t)langID NS_SWIFT_NAME(string(forID:));
 /// Same, with an explicit fallback when neither table has the ID.
 - (NSString *)stringForID:(uint32_t)langID fallback:(NSString *)fallback NS_SWIFT_NAME(string(forID:fallback:));
+/// A dialog control's text (LangSetDlgItems): the language file, else the control's text in that
+/// dialog's .rc resource (`dialogID` = the IDD, e.g. 3800 for IDD_PASSWORD), else as above.
+/// `colon` = LangSetDlgItems_Colon: a translated text gets ":" appended, the .rc text has it.
+- (NSString *)stringForID:(uint32_t)langID inDialog:(uint32_t)dialogID colon:(BOOL)colon fallback:(NSString *)fallback
+    NS_SWIFT_NAME(string(forID:inDialog:colon:fallback:));
 /// Only from the loaded language file (LangString_OnlyFromLangFile); nil if absent or no file.
 - (nullable NSString *)translatedStringForID:(uint32_t)langID NS_SWIFT_NAME(translatedString(forID:));
 /// Built-in English (MyLoadString equivalent): en.ttt, then the few Windows resource-only

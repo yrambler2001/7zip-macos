@@ -48,7 +48,7 @@ final class PasswordDialog: NSObject, NSTextFieldDelegate {
     private init(options: Options, parent: NSWindow?) {
         self.options = options
         window = DialogKit.window(title: Lang.text(3800, "Enter password"), resizable: false)
-        showBox = DialogKit.checkbox(Lang.text(3803, "Show password"), target: nil, action: nil)
+        showBox = DialogKit.checkbox(Lang.dialogText(3800, 3803, "Show password"), target: nil, action: nil)
         encryptNamesBox = DialogKit.checkbox(Lang.text(4016, "Encrypt file names"), target: nil, action: nil)
         okButton = DialogKit.button(Lang.text(401, "OK"), target: nil, action: #selector(NSObject.doesNotRecognizeSelector(_:)), key: "\r")
         super.init()
@@ -71,7 +71,7 @@ final class PasswordDialog: NSObject, NSTextFieldDelegate {
         }
         mismatchLabel.textColor = .systemRed
 
-        let enterLabel = DialogKit.label(Lang.text(3801, "Enter password:"))     // IDT_PASSWORD_ENTER 3801
+        let enterLabel = DialogKit.label(Lang.dialogText(3800, 3801, "Enter password:"))     // IDT_PASSWORD_ENTER 3801
         let reenterLabel = DialogKit.label(Lang.text(3802, "Reenter password:")) // IDT_PASSWORD_REENTER 3802
 
         var views: [NSView] = []

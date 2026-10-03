@@ -9,8 +9,8 @@ All art derives from the upstream Windows icon resources, which are read-only in
 | Input | Used for |
 |---|---|
 | `CPP/7zip/Archive/Icons/*.ico` (27 files) | one document icon each: the exact badge colour and the label the badge spells |
-| `CPP/7zip/UI/FileManager/FM.ico` | the app icon's `7z` mark (the File Manager's own Windows icon) |
-| `CPP/7zip/UI/FileManager/7zipLogo.ico` | the About-box wordmark (decoded and archived; not drawn into an asset) |
+| `CPP/7zip/UI/FileManager/FM.ico` | the app icon itself, frame for frame (the File Manager's own Windows icon) |
+| `CPP/7zip/UI/FileManager/7zipLogo.ico` | the About-box wordmark, shipped unscaled as `AboutLogo.imageset` (IDI_LOGO) |
 | `CPP/7zip/Bundles/SFXWin/7z.ico` | the SFX stub icon (decoded and archived) |
 | `CPP/7zip/Bundles/Format7zF/resource.rc` | `<index> ICON "<name>.ico"` (0–26) and STRINGTABLE 100, the `ext:index` string |
 | `Mac/App/Support/FileTypes.swift` | the port's authoritative extension → icon-index table (`options` scope) |
@@ -40,9 +40,10 @@ Stages:
    transparency is the trailing 1-bit AND mask — 7-Zip's are all 8bpp + AND mask). Writes
    `Mac/build/icons/icons-manifest.json`: the shared body palette, each format's badge colour,
    label and extensions.
-2. **draw** — `make-icons.swift` renders every icon at every pixel size from the manifest. The
-   art is re-drawn per size (stroke widths, insets, corner radii, fold and type size are all
-   functions of the pixel size); nothing is downsampled from one big bitmap.
+2. **draw** — `make-icons.swift` renders every document icon at every pixel size from the
+   manifest. The art is re-drawn per size (stroke widths, insets, corner radii, fold and type size
+   are all functions of the pixel size); nothing is downsampled from one big bitmap. Then
+   `stage_app_icon` (Python) writes the app icon's PNGs straight from `FM.ico` (see below).
 3. **assemble** — lays the PNGs out as `AppIcon.appiconset`, 27 `doc-<name>.imageset`s, and 27
    `.icns` files via `iconutil`.
 4. **sheet** — writes `Mac/docs/reports/screenshots/icons-contact-sheet.png`: every icon at 128 pt
@@ -61,21 +62,21 @@ Ten slots, `icon_<pt>x<pt>[@2x].png`, covering 16, 32, 128, 256 and 512 pt at 1�
 pixel size: `actool` collapses identical *filenames* and then emits an `AppIcon.icns` missing the
 collapsed slots.
 
-Geometry: Apple's rounded square, 824/1024 = 0.8046875 of the canvas, centred, which leaves the
-standard 100/1024 margin. The corner is the continuous ("squircle") one, drawn as the superellipse
-`|x/a|^5 + |y/a|^5 = 1` — for Apple's 824 pt body with a 185.4 pt radius the rounded rectangle's
-45° point is at 357.7 and the superellipse's at 358.7, a 1 pt difference.
+The app icon **is** the original 7zFM icon, `CPP/7zip/UI/FileManager/FM.ico` (`winmatch`, user
+decision): nothing is redrawn, there is no macOS rounded-square mask, no added margin and no
+shadow. `FM.ico` has three frames, 16, 32 and 48 px (4-bit and 8-bit paletted, AND-mask
+transparency). Each macOS pixel size takes the nearest frame (the larger on a tie) and resamples it
+nearest-neighbour to fill the canvas, so every output pixel is one source pixel unchanged:
 
-Art: a vertical gradient between 7-Zip's two brand blues (`#0000ff` from `zip.ico` → `#000080`
-from `7z.ico`) carrying the manila archive sheet (`#ffff99`, olive `#999900` border) and the `7z`
-mark `FM.ico` draws, in the navy. Small sizes are deliberately different compositions, because
-the sheet's border and the mark collapse into noise below 64 px:
-
-| Pixel size | Composition |
+| Pixel size | FM.ico frame |
 |---|---|
-| 16 | squircle + `7` in manila, no sheet |
-| 32 | squircle + `7z` in manila, no sheet |
-| 64 … 1024 | squircle + manila sheet + `7z` in navy, with contact shadow |
+| 16 | 16 (1:1) |
+| 32 | 32 (1:1) |
+| 64 … 1024 | 48 |
+
+`verify` checks that the app PNGs contain only `FM.ico`'s own colours. The 32 px slot is
+pixel-identical to the icon Windows' shell extracts from 7zFM.exe 25.01
+(`Mac/docs/reports/winmatch.md`).
 
 `Info.plist` needs nothing: `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon` in `Mac/project.yml`
 makes `actool` write `CFBundleIconFile` / `CFBundleIconName` and emplace `AppIcon.icns`.

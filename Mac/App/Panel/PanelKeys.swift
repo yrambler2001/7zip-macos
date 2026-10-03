@@ -94,8 +94,10 @@ extension PanelViewController {
         case NSUpArrowFunctionKey:
             if option { delegate?.panel(self, setOtherPanelPath: currentPath); return true }   // Alt+Up
             if shift && usesAlternativeSelection { arrowWithShift(delta: -1); return true }
+            if moveFromUnselectedFocus(delta: -1, mods: mods) { return true }
         case NSDownArrowFunctionKey:
             if shift && usesAlternativeSelection { arrowWithShift(delta: 1); return true }
+            if moveFromUnselectedFocus(delta: 1, mods: mods) { return true }
         case NSLeftArrowFunctionKey, NSRightArrowFunctionKey:
             if option { setOtherPanelToFocusedSubFolder(); return true }                        // Alt+Left/Right
         case NSPageUpFunctionKey:
@@ -141,6 +143,16 @@ extension PanelViewController {
         toggleMySelection(index)
         let next = max(0, min(rows.count - 1, index + delta))
         setFocus(next, extendingSelection: true)
+    }
+
+    /// A focused row that is not selected (a folder just opened, 01 §3.6): the list control moves
+    /// the focus from *it* and selects the new row, where NSTableView, which knows no focus
+    /// without a selection, would select the first or last row instead (winmatch).
+    private func moveFromUnselectedFocus(delta: Int, mods: NSEvent.ModifierFlags) -> Bool {
+        guard !usesAlternativeSelection, mods.subtracting([.numericPad, .function]).isEmpty,
+              selectedIndexes.isEmpty, focusedIndex >= 0, focusedIndex < rows.count else { return false }
+        setFocus(max(0, min(rows.count - 1, focusedIndex + delta)))
+        return true
     }
 
     /// OnInsert (PanelSelect.cpp:77-108).
