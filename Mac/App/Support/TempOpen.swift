@@ -161,7 +161,7 @@ enum SuspiciousName {
     /// True when the name hides its real extension behind many spaces, a right-to-left override,
     /// or trailing dots/spaces. The caller then asks IDS_VIRUS 3012 before launching.
     static func looksDangerous(_ name: String) -> Bool {
-        if name.contains("\u{202E}") || name.contains("\u{202B}") || name.contains("\u{202A}") { return true }
+        if name.contains("\u{202E}") || name.contains("\u{202D}") || name.contains("\u{202B}") || name.contains("\u{202A}") { return true }
         if name.contains("     ") { return true }               // 5+ consecutive spaces
         var trimmed = name
         while let last = trimmed.last, last == "." || last == " " { trimmed.removeLast() }

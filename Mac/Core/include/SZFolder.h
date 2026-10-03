@@ -42,6 +42,12 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable SZFolder *)folderForPath:(NSString *)path
                     passwordDelegate:(nullable id<SZPasswordDelegate>)passwordDelegate
                                error:(NSError **)error NS_SWIFT_NAME(folder(forPath:passwordDelegate:));
+/// The same, opening the first archive file on the path with `formatHint` (the 7zFM command
+/// line's `-t<type>`, BindToPath's arcFormat: "7z", "*", "#", "zip:tar" ...; nil = detect).
++ (nullable SZFolder *)folderForPath:(NSString *)path
+                          formatHint:(nullable NSString *)formatHint
+                    passwordDelegate:(nullable id<SZPasswordDelegate>)passwordDelegate
+                               error:(NSError **)error NS_SWIFT_NAME(folder(forPath:formatHint:passwordDelegate:));
 
 #pragma mark Items
 

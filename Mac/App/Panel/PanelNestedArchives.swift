@@ -41,10 +41,14 @@ extension PanelViewController {
     @discardableResult
     func leaveNestedArchives(from old: SZFolder?, to new: SZFolder?) -> Bool {
         let staying = Self.archiveChain(of: new)
+        let leaving = Self.archiveChain(of: old)
         var wroteBack = false
-        for archive in Self.archiveChain(of: old) where !staying.contains(where: { $0 === archive }) {
+        for archive in leaving where !staying.contains(where: { $0 === archive }) {
             if closeNestedLevel(archive) { wroteBack = true }
         }
+        // CFolderLink::Password dies with the last link: once the panel is out of every archive,
+        // the next archive must ask for its own password instead of silently getting this one.
+        if staying.isEmpty && !leaving.isEmpty { rememberedPassword = nil }
         return wroteBack
     }
 

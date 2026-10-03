@@ -257,6 +257,14 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
            passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
                       error:(NSError **)error
 {
+  return [self folderForPath:path formatHint:nil passwordDelegate:passwordDelegate error:error];
+}
+
++ (SZFolder *)folderForPath:(NSString *)path
+                 formatHint:(NSString *)formatHint
+           passwordDelegate:(id<SZPasswordDelegate>)passwordDelegate
+                      error:(NSError **)error
+{
   NSString *p = path ?: @"";
   if ([p hasPrefix:@"~"])
     p = [p stringByExpandingTildeInPath];
@@ -305,7 +313,8 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
       break;
   }
   // prefix is a file: open it as an archive, continue inside
-  SZArchive *archive = [SZArchiveOpener openArchiveAtPath:prefix formatHint:nil passwordDelegate:passwordDelegate error:error];
+  SZArchive *archive = [SZArchiveOpener openArchiveAtPath:prefix formatHint:(formatHint.length ? formatHint : nil)
+                                         passwordDelegate:passwordDelegate error:error];
   if (!archive)
     return nil;
   SZFolder *folder = [archive rootFolder:error];

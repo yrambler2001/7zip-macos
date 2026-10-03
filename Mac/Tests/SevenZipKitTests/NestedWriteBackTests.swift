@@ -155,4 +155,15 @@ final class NestedWriteBackTests: XCTestCase {
         inner.close()
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir))
     }
+
+    /// The launch argument's `-t<type>` reaches CAgent::Open (PROGRESS §1.4).
+    func testFolderForPathHonoursTheFormatHint() throws {
+        let fixtures = Bundle(for: NestedWriteBackTests.self).resourceURL!.appendingPathComponent("Fixtures").path
+        let path = fixtures + "/test.7z"
+        XCTAssertNoThrow(try SZFolder.folder(forPath: path, formatHint: "7z", passwordDelegate: nil))
+        XCTAssertNoThrow(try SZFolder.folder(forPath: path, formatHint: nil, passwordDelegate: nil))
+        XCTAssertThrowsError(try SZFolder.folder(forPath: path, formatHint: "zip", passwordDelegate: nil))
+        // inner paths still bind after a hinted open
+        XCTAssertEqual(try SZFolder.folder(forPath: outerPath + "/test.7z", formatHint: "zip", passwordDelegate: nil).isArchive, true)
+    }
 }

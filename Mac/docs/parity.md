@@ -33,6 +33,9 @@ Dock half with them); section H says how. Five checklist boxes were ticked.
 **Update, 2026-10-03 (`mac/optgaps`).** D items 11 and 12 are closed, and B items 13, 14, 15, 17 and 23;
 section I says how. Three checklist boxes were ticked.
 
+**Update, 2026-10-03 (`mac/archgaps`).** D items 7 and 13 are closed (B item 11's raw half with
+them), and two crashes / blank listings found on the way are fixed; section J says how.
+
 **Update, 2026-10-03 (`mac/panelgaps`).** Items 1, 5 and 6 below are closed and item 9 mostly;
 each is annotated in place and section G says how. Four panel-section boxes were ticked; the
 checklist now reads **403 of 496** (the other nine came from branches merged since the audit).
@@ -162,6 +165,8 @@ transport, `-thash`, `-seml`, and command dispatch.
     dialog's own per-format Browse filter is a separate item and is still open.
 11. **Properties has no raw-property block** and no NT security summary: `IArchiveGetRawProps` is
     not bridged. (`01 §3.11`)
+    **Raw properties closed 2026-10-03 (`mac/archgaps`), see J.1**; NT security stays hidden by the
+    locked decision.
 12. **Progress has no Dock-tile percentage**, and the messages list uses fixed column widths.
     (`01b §4.17`)
     **Dock tile closed 2026-10-03 (`mac/opsgaps`), see H.3**; the column widths are unchanged.
@@ -258,7 +263,7 @@ memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb
 5. ~~Open Outside for items inside an archive; Diff across two panels (`01 §3.8, §3.11`).~~ **Done 2026-10-03 (G.2).**
 6. ~~Drag and drop in the three icon view modes; the dropped-file list for background drops
    (`01 §3.15`).~~ **Done 2026-10-03 (G.3).**
-7. Raw properties (`IArchiveGetRawProps`) in the columns and in Properties (`01 §3.2, §3.11`).
+7. ~~Raw properties (`IArchiveGetRawProps`) in the columns and in Properties (`01 §3.2, §3.11`).~~ **Done 2026-10-03 (J.1).**
 8. Dock-tile progress, and the exception→message mapping for a failed operation
    (`01b §4.17`, `01 §8.7`) — **the command-mode half is done 2026-09-20 (F.1)**: every failure a
    command can hit is classified by `SevenZipFailureLadder`, and `SZUpdater` / `SZHasher` now give
@@ -272,7 +277,7 @@ memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb
     (`01b §4.23`)~~ — **done 2026-10-03 (I.6)**.
 12. ~~Options ▸ System format icons, single-click and Return, and the Launch Services refresh;
     Options ▸ Language's id lists and load-error report (`01b §4.21, §4.9`).~~ **Done 2026-10-03 (I.1, I.2).**
-13. Write-back of a nested archive into its parent archive (`01 §3.8`).
+13. ~~Write-back of a nested archive into its parent archive (`01 §3.8`).~~ **Done 2026-10-03 (J.2).**
 14. ~~Dropping onto the Dock icon as "Add to archive…"~~ (`03 §6.2`) — **done 2026-09-20 (F.4)**,
     with one verification debt: no test on this machine can perform a real Dock drop.
 
@@ -516,3 +521,36 @@ left-to-right label, so Arabic and Hebrew keep their order. The app is still not
 One filter per listed format (without `k_DontSave_Exts`), the "Archive:" aggregate and All Files, or
 only `exe` in SFX mode, as a "Save as type" pop-up; the chosen format's extension is appended and the
 format combo follows. A `-sfx<module>` now travels through the dialog's input and result.
+
+---
+
+## J. Closed by `mac/archgaps` — 2026-10-03
+
+Details, measurements and the test names are in `Mac/docs/reports/archgaps.md`.
+
+### J.1 — D item 7 / B item 11, raw properties (`01 §3.2, §3.11`)
+
+`SZFolder` bridges `IArchiveGetRawProps`: the raw properties follow the folder's own columns (as
+`CPanel::InitColumns` appends them), render as `PanelListNotify.cpp` does (reparse data decoded,
+`data:<n>` beyond 64 bytes, upper-case hex only for a CRC / checksum of at most 8 bytes), sort as
+`CompareItems2` does (empty first, then the handler's raw order), and appear in Properties with the
+`PanelMenu.cpp` form (256-byte limit). WIM shows SHA-1 and reparse data, XAR its checksum, the
+file-system image handlers their raw fields. `kpidNtSecure` is never listed (locked decision).
+Two defects surfaced while testing it and are fixed: every **tree-handler archive (WIM, XAR, HFS,
+APFS, NTFS, Ext, FAT) listed blank names** -- an upstream use-after-free in `CProxyArc2::Load` that
+macOS's zero-on-free exposes, patched under `#ifdef __APPLE__` (`upstream-patches.md`) -- and the
+**Properties dialog read `CArchiveLink::Arcs[-1]`** for every archive (`GetArcProp2` at level 0)
+and crashed on WIM.
+
+### J.2 — D item 13, nested-archive write-back (`01 §3.8`)
+
+Leaving a nested archive that was opened from a `7zO` temp copy -- going up out of its root, binding
+another path, opening the drives list, closing the window, quitting -- compares the copy with what
+was recorded at open, asks IDS_WANT_UPDATE_MODIFIED_FILE 3009, and on Yes replaces the item in the
+parent with `CopyFromFile` under the progress dialog; levels unwind innermost first. A pending edit
+of a file inside the nested archive is offered first. No / Cancel discard the copy; a failed,
+cancelled or read-only write-back shows IDS_CANNOT_UPDATE_FILE 3010 with the copy's path and keeps
+the copy; the parent is rewritten through a temp file and is never touched on failure (byte-for-byte
+in the tests). Cancel in that progress dialog now works (`CopyFromFile` had no update callback).
+Difference from Windows: binding a path *inside* the same nested archive closes and reopens the
+chain (one question) instead of reusing it.

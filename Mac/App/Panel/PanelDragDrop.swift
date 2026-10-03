@@ -270,7 +270,20 @@ extension PanelViewController {
                     let row = source.rows[index]
                     return row.fullPath.isEmpty ? nil : row.fullPath
                 }
-                guard !paths.isEmpty else { showUnsupportedOperation(); return false }
+                if paths.isEmpty {
+                    // archive -> archive (PROGRESS §4.7): the source extracts into a 7zE temp
+                    // folder and this panel adds what landed there, as F5 does
+                    // (CApp::OnCopy's two-archive case, 01 §3.10).
+                    guard let temp = PanelDragDrop.makeTempDirectory() else { return false }
+                    defer { try? FileManager.default.removeItem(atPath: temp) }
+                    let rowIndices = session.rowIndices
+                    guard source.copyItemsOut(rowIndices: rowIndices, to: temp + "/", move: false) else { return false }
+                    let names = (try? FileManager.default.contentsOfDirectory(atPath: temp)) ?? []
+                    let extracted = names.map { (temp as NSString).appendingPathComponent($0) }
+                    guard !extracted.isEmpty, copyItemsIn(paths: extracted, move: false) else { return false }
+                    if move { source.deleteItems(rowIndices: rowIndices, toTrash: false, confirm: false) }
+                    return true
+                }
                 return copyItemsIn(paths: paths, move: move)
             }
             let ok = source.copyItemsOut(rowIndices: session.rowIndices, to: targetPath, move: move)

@@ -53,6 +53,30 @@ private final class AlertAnswerer {
     }
 }
 
+/// A drop with nothing on the pasteboard: the in-process drag session names the source.
+private final class EmptyDraggingInfo: NSObject, NSDraggingInfo {
+    private let pasteboard = NSPasteboard(name: NSPasteboard.Name("archgaps-\(UUID().uuidString)"))
+    deinit { pasteboard.releaseGlobally() }
+    var draggingDestinationWindow: NSWindow? { nil }
+    var draggingSourceOperationMask: NSDragOperation { [.copy] }
+    var draggingLocation: NSPoint { .zero }
+    var draggedImageLocation: NSPoint { .zero }
+    var draggedImage: NSImage? { nil }
+    var draggingPasteboard: NSPasteboard { pasteboard }
+    var draggingSource: Any? { nil }
+    var draggingSequenceNumber: Int { 1 }
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    func enumerateDraggingItems(options enumOpts: NSDraggingItemEnumerationOptions = [], for view: NSView?,
+                                classes classArray: [AnyClass],
+                                searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:],
+                                using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+    func resetSpringLoading() {}
+}
+
 final class ArchGapsTests: AppHostTestCase {
 
     override var screenshotPrefix: String { "archgaps" }
@@ -92,15 +116,17 @@ final class ArchGapsTests: AppHostTestCase {
 
     // MARK: - helpers
 
-    private func makePanel() -> PanelViewController {
-        Settings.numPanels = 1
+    private func makePanel() -> PanelViewController { makeWindow(panels: 1).focusedPanel }
+
+    private func makeWindow(panels: Int) -> MainWindowController {
+        Settings.numPanels = panels
         let controller = MainWindowController()
         controllers.append(controller)
         controller.window?.setContentSize(NSSize(width: 1200, height: 800))
         controller.showWindow(nil)
         controller.window?.layoutIfNeeded()
         ActiveContext.register(controller)
-        return controller.focusedPanel
+        return controller
     }
 
     private func navigate(_ panel: PanelViewController, to path: String) {
@@ -252,5 +278,41 @@ final class ArchGapsTests: AppHostTestCase {
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: scratch + "/nested.zip")), before, "parent untouched")
         XCTAssertTrue(FileManager.default.fileExists(atPath: copy), "the modified copy is kept")
         try? FileManager.default.removeItem(atPath: (copy as NSString).deletingLastPathComponent)
+    }
+
+    // MARK: - smaller gaps found by the audit
+
+    /// PROGRESS §2.3: the chain's password dies with the last archive level.
+    func testRememberedPasswordIsForgottenOutsideArchives() throws {
+        let panel = makePanel()
+        navigate(panel, to: scratch + "/nested.zip")
+        panel.rememberedPassword = "stale"
+        navigate(panel, to: scratch + "/nested.zip/test.7z")     // a new chain: closed and reopened
+        XCTAssertNil(panel.rememberedPassword)
+        panel.rememberedPassword = "kept"
+        panel.goUp()                                              // still inside nested.zip
+        XCTAssertTrue(wait(for: "back in nested.zip") { panel.snapshot?.fullPath.hasSuffix("nested.zip/") ?? false })
+        XCTAssertEqual(panel.rememberedPassword, "kept")
+        panel.goUp()                                              // out of every archive
+        XCTAssertTrue(wait(for: "in the scratch folder") { panel.snapshot?.isFileSystem ?? false })
+        XCTAssertNil(panel.rememberedPassword)
+    }
+
+    /// PROGRESS §4.7: archive members dropped on an archive panel are added through a 7zE folder.
+    func testDropFromOneArchiveIntoAnother() throws {
+        let controller = makeWindow(panels: 2)
+        let target = controller.panels[0], source = controller.panels[1]
+        answer { _ in Lang.text(406, "Yes") }                     // 6011 "copy files to archive"
+        navigate(target, to: scratch + "/nested.zip")
+        navigate(source, to: scratch + "/test.xar")
+        let index = try XCTUnwrap(source.rows.firstIndex { $0.name == "readme.txt" })
+        PanelDragDrop.current = PanelDragDrop.Session(panel: source, rowIndices: [index],
+                                                     isArchiveSource: true, tempDirectory: nil)
+        defer { PanelDragDrop.current = nil }
+        XCTAssertTrue(target.acceptListDrop(info: EmptyDraggingInfo(), proposedRow: -1))
+        let outer = try SZFolder.folder(forPath: scratch + "/nested.zip", passwordDelegate: nil)
+        let names = (0..<outer.itemCount).map { outer.nameOfItem(at: $0) }
+        XCTAssertTrue(names.contains("readme.txt"), "\(names)")
+        XCTAssertTrue(names.contains("test.7z"))
     }
 }
