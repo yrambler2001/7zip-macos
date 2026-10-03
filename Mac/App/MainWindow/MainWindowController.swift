@@ -609,16 +609,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         windowActionIsEnabled(item.action)
     }
 
-    /// The toolbar Copy / Move buttons follow the File-menu rules of 01 §2.1.
+    /// Copy To / Move To follow CFileMenu::Load (MyLoadMenu.cpp:635-672, 01 §2.1): Copy is
+    /// grayed only in a hash folder, Move also when the folder is read-only. Nothing selected
+    /// does not gray them: F5 then copies the whole folder (Get_ItemIndices_OperSmart).
     private func windowActionIsEnabled(_ action: Selector?) -> Bool {
         switch action {
         case #selector(fileCopyTo(_:)):
             guard let snap = focusedPanel.snapshot else { return false }
-            return snap.supportsOperations && !focusedPanel.operatedRowIndices().isEmpty && !snap.isHashFolder
+            return !snap.isHashFolder
         case #selector(fileMoveTo(_:)):
             guard let snap = focusedPanel.snapshot else { return false }
-            return snap.supportsOperations && !snap.chainIsReadOnly
-                && !focusedPanel.operatedRowIndices().isEmpty && !snap.isHashFolder
+            return snap.supportsOperations && !snap.chainIsReadOnly && !snap.isHashFolder
         default:
             return fileMenuRule(action) ?? true
         }

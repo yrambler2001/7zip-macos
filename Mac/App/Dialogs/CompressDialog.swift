@@ -253,7 +253,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         deleteBox.title = Lang.text(4019, "Delete files after compression")
 
         showPasswordBox.setButtonType(.switch)
-        showPasswordBox.title = Lang.text(3803, "Show Password")
+        showPasswordBox.title = Lang.dialogText(4000, 3803, "Show Password")
         showPasswordBox.target = self
         showPasswordBox.action = #selector(showPasswordToggled(_:))
         encryptNamesBox.setButtonType(.switch)
@@ -263,7 +263,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         dictionaryLabel.stringValue = Lang.text(4006, "Dictionary size:")
         orderLabel.stringValue = Lang.text(4007, "Word size:")
         solidLabel.stringValue = Lang.text(4008, "Solid Block size:")
-        threadsLabel.stringValue = Lang.text(4009, "Number of CPU threads:")
+        threadsLabel.stringValue = Lang.dialogText(4000, 4009, "Number of CPU threads:")
         memoryLabel.stringValue = Lang.text(4017, "Memory usage for Compressing:")
         memoryDeLabel.stringValue = Lang.text(4018, "Memory usage for Decompressing:")
 
@@ -352,7 +352,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
             [threadsLabel, threadsRow],
             [memoryLabel, memUseRow],
             [memoryDeLabel, memoryDeValueLabel],
-            [DialogKit.label(Lang.text(7302, "Split to volumes, bytes:")), volumeCombo],  // IDT_SPLIT_TO_VOLUMES 7302
+            [DialogKit.label(Lang.dialogText(4000, 7302, "Split to volumes, bytes:")), volumeCombo],  // IDT_SPLIT_TO_VOLUMES 7302
             [DialogKit.label(Lang.text(4010, "Parameters:")), parametersField],      // IDT_COMPRESS_PARAMETERS 4010
         ])
         grid.rowSpacing = 6
@@ -394,7 +394,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         optionsGroup.contentView = wrap(optionsStack)
 
         // IDG_COMPRESS_ENCRYPTION 4014
-        let enterLabel = DialogKit.label(Lang.text(3801, "Enter password:"))       // IDT_PASSWORD_ENTER 3801
+        let enterLabel = DialogKit.label(Lang.dialogText(4000, 3801, "Enter password:"))       // IDT_PASSWORD_ENTER 3801
         password2Label.stringValue = Lang.text(3802, "Reenter password:")
         // The secure field and the plain one occupy the same cell; "Show Password" swaps them
         // (UpdatePasswordControl clears the password char on Windows).

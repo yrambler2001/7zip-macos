@@ -34,10 +34,10 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         var eliminateDuplicateRoot: Bool?
         /// NtSecurity as a CBoolPair. The control is hidden on macOS (01 §9 #7).
         var restoreFileSecurity: Bool?
-        /// Informational lines about what is being extracted, rendered above the buttons.
-        /// **Not a Windows control**: IDD_EXTRACT has no summary. It is the `CCopyDialog`
-        /// info text (`CApp::GetItemsInfoString`, App.cpp:500-547, max 11 lines) applied to
-        /// the archives, which is what the macOS port shows instead of a second dialog.
+        /// Informational lines rendered above the buttons -- **only** for Extract inside an
+        /// archive, where 7zFM shows `CCopyDialog` and this is its info text
+        /// (`CApp::GetItemsInfoString`, App.cpp:500-547, max 11 lines). IDD_EXTRACT itself has no
+        /// such control, so archives on disk and the 7zG command line leave it empty (winmatch).
         var summaryLines: [String] = []
         var parentWindow: NSWindow?
     }
@@ -140,7 +140,7 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         elimDupBox = DialogKit.checkbox(Lang.text(3430, "Eliminate duplication of root folder"),
                                        target: nil, action: nil)
         ntSecurityBox = DialogKit.checkbox(Lang.text(3431, "Restore file security"), target: nil, action: nil)
-        showPasswordBox = DialogKit.checkbox(Lang.text(3803, "Show Password"), target: nil, action: nil)
+        showPasswordBox = DialogKit.checkbox(Lang.dialogText(3400, 3803, "Show Password"), target: nil, action: nil)
         super.init()
 
         browseButton.target = self

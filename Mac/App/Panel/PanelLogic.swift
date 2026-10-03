@@ -158,19 +158,27 @@ enum PanelMask {
 
 enum PanelOperatedItems {
 
-    /// The selected rows, or the focused row when nothing is selected; never "..".
-    static func operated(rows: [PanelRow], selected: IndexSet, focused: Int) -> [Int] {
+    /// Get_ItemIndices_Operated (PanelItems.cpp:984-1001): the selected rows; when none is
+    /// selected, the focused row -- but only while that row is *list-selected*, which is the
+    /// AlternativeSelection cursor (01 §3.6). In the normal mode a focused row that is not
+    /// selected is not operated: a freshly opened folder shows "0 / N object(s) selected"
+    /// (winmatch, `requests.md` wincompare -> panel). Never "..".
+    static func operated(rows: [PanelRow], selected: IndexSet, focused: Int,
+                         focusedIsListSelected: Bool) -> [Int] {
         var result = selected.filter { $0 >= 0 && $0 < rows.count && !rows[$0].isParentRow }
-        if result.isEmpty, focused >= 0, focused < rows.count, !rows[focused].isParentRow {
+        if result.isEmpty, focusedIsListSelected, focused >= 0, focused < rows.count,
+           !rows[focused].isParentRow {
             result = [focused]
         }
         return result
     }
 
     /// Get_ItemIndices_OperSmart: as above, but an empty result means "everything in the folder"
-    /// (what the hash and compress commands operate on when only ".." is focused).
-    static func operatedSmart(rows: [PanelRow], selected: IndexSet, focused: Int) -> [Int] {
-        let items = operated(rows: rows, selected: selected, focused: focused)
+    /// (what Copy / Move, Test and the hash commands operate on when nothing is selected).
+    static func operatedSmart(rows: [PanelRow], selected: IndexSet, focused: Int,
+                              focusedIsListSelected: Bool) -> [Int] {
+        let items = operated(rows: rows, selected: selected, focused: focused,
+                             focusedIsListSelected: focusedIsListSelected)
         if !items.isEmpty { return items }
         return rows.indices.filter { !rows[$0].isParentRow }
     }

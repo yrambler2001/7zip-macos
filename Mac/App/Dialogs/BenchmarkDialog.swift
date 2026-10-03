@@ -215,7 +215,7 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
                              dictionaryCombo,
                              DialogKit.label(Lang.text(7601, "Memory usage:")),      // IDT_BENCH_MEMORY 7601
                              memoryValue])
-        header.addRow(with: [DialogKit.label(Lang.text(4009, "Number of CPU threads:")), // IDT_BENCH_NUM_THREADS 4009
+        header.addRow(with: [DialogKit.label(Lang.dialogText(7600, 4009, "Number of CPU threads:")), // IDT_BENCH_NUM_THREADS 4009
                              threadsCombo,
                              DialogKit.label(""),
                              hardwareThreads])

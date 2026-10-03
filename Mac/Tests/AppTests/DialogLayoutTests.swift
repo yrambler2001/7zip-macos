@@ -154,7 +154,6 @@ final class DialogLayoutTests: AppHostTestCase {
         var options = ExtractDialog.Options()
         options.directoryPath = fixtures + "/"
         options.archivePath = archive
-        options.summaryLines = infoLines
         sweep("Extract (IDD_EXTRACT 3400)", shot: "37-extract") {
             _ = ExtractDialog.run(options)
         }

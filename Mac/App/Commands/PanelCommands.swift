@@ -15,7 +15,16 @@ extension MainWindowController {
     func performCopyOrMove(move: Bool, copyToSame: Bool) {
         let source = focusedPanel
         guard let sourceSnapshot = source.snapshot else { return }
-        let rowIndices = source.operatedRowIndices()
+        // App.cpp:588-609: Shift+F5 / Shift+F6 take the focused item, selected or not; F5 / F6
+        // take Get_ItemIndices_OperSmart -- nothing selected means the whole folder (winmatch).
+        let rowIndices: [Int]
+        if copyToSame {
+            let focused = source.focusedIndex
+            guard focused >= 0, focused < source.rows.count, !source.rows[focused].isParentRow else { return }
+            rowIndices = [focused]
+        } else {
+            rowIndices = source.operatedSmartRowIndices()
+        }
         guard !rowIndices.isEmpty else { return }
         guard sourceSnapshot.supportsOperations else {
             source.showUnsupportedOperation()

@@ -117,26 +117,21 @@ extension PanelViewController: NSUserInterfaceValidations {
     func isActionEnabled(_ action: Selector?) -> Bool {
         guard let action, let snap = snapshot else { return false }
         let operated = operatedRowIndices().map { rows[$0] }
-        let allAreFiles = !operated.isEmpty && operated.allSatisfy { !$0.isDirectory }
         let readOnly = snap.chainIsReadOnly || !snap.supportsOperations
         let hash = snap.isHashFolder
+        // CFileMenu::Load grays an item only for readOnly, isHashFolder, Split / Combine without
+        // isOneFsFile and Link without one item -- never for "nothing selected": a folder just
+        // opened (0 / N selected) has every File item enabled (wincompare menu-noselection,
+        // winmatch). A command with nothing to operate on then does nothing, as on Windows.
         switch action {
-        case #selector(fileOpen(_:)):
-            return !operated.isEmpty && !hash
-        case #selector(fileOpenInside(_:)), #selector(fileOpenInsideOne(_:)), #selector(fileOpenInsideParser(_:)):
-            return operated.count == 1 && allAreFiles && !hash
-        case #selector(fileOpenOutside(_:)):
-            return !operated.isEmpty && !hash
-        case #selector(fileView(_:)):
-            return !operated.isEmpty && !hash
-        case #selector(fileEdit(_:)):
-            return allAreFiles && !hash
-        case #selector(fileRename(_:)):
-            return operated.count == 1 && !readOnly
-        case #selector(fileDelete(_:)):
-            return !operated.isEmpty && !readOnly
+        case #selector(fileOpen(_:)), #selector(fileOpenInside(_:)), #selector(fileOpenInsideOne(_:)),
+             #selector(fileOpenInsideParser(_:)), #selector(fileOpenOutside(_:)),
+             #selector(fileView(_:)), #selector(fileEdit(_:)):
+            return !hash
+        case #selector(fileRename(_:)), #selector(fileDelete(_:)):
+            return !readOnly
         case #selector(fileComment(_:)):
-            return operated.count == 1 && !readOnly && !hash
+            return !readOnly && !hash
         case #selector(fileCreateFolder(_:)), #selector(fileCreateFile(_:)):
             return !readOnly && !hash
         case #selector(viewOpenParentFolder(_:)):

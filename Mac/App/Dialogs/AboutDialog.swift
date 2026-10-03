@@ -43,9 +43,10 @@ final class AboutDialog: NSObject {
         // IDB_ABOUT_HOMEPAGE 110 "www.7-zip.org"
         let homePage = DialogKit.button("www.7-zip.org", target: self, action: #selector(homePageClicked))
         let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r")
-        // IDD_ABOUT has only OK and www.7-zip.org (AboutDialog.rc); its help topic is F1-only
-        // (CAboutDialog::OnHelp), which Help > Contents covers here. 7zFM 25.01 shows two buttons
-        // (Mac/docs/reports/wincompare.md), so the port's extra Help button is gone.
+        // IDD_ABOUT has only OK and www.7-zip.org (AboutDialog.rc), and 7zFM 25.01 shows exactly
+        // those two (wincompare / winmatch dumps). Its help topic is reached with F1
+        // (CAboutDialog::OnHelp -> ShowHelpWindow("start.htm"), which opens HtmlHelp in 7zFM's
+        // process): `helpKeyMonitor` gives the dialog the same F1 (and the Mac Help key).
         let buttons = NSStackView(views: [NSView(), homePage, ok])
         buttons.orientation = .horizontal
         buttons.spacing = 10
@@ -75,6 +76,22 @@ final class AboutDialog: NSObject {
 
     @objc private func okClicked() { NSApp.stopModal() }
 
+    /// F1 / Help in the dialog = CAboutDialog::OnHelp (AboutDialog.cpp:55-58): the start page.
+    static func isHelpKey(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first else { return false }
+        let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        return mods.isEmpty && (Int(scalar.value) == NSF1FunctionKey || Int(scalar.value) == NSHelpFunctionKey)
+    }
+
+    private func installHelpKeyMonitor() -> Any? {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.window, Self.isHelpKey(event) else { return event }
+            Help.show(topic: Help.start)                                   // kHelpTopic "start.htm"
+            return nil
+        }
+    }
+
     /// OnInit (:32-53): the codecs error message, when there is one, is shown first.
     static func show(parent: NSWindow? = nil) {
         do {
@@ -88,7 +105,9 @@ final class AboutDialog: NSObject {
             alert.runModal()
         }
         let dialog = AboutDialog(parent: parent)
+        let monitor = dialog.installHelpKeyMonitor()
         NSApp.runModal(for: dialog.window)
+        if let monitor { NSEvent.removeMonitor(monitor) }
         dialog.window.orderOut(nil)
     }
 }

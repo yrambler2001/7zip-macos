@@ -144,7 +144,7 @@ enum ExtractCommands {
             dialogOptions.pathMode = options.pathMode
             dialogOptions.overwriteMode = options.overwriteMode
             dialogOptions.eliminateDuplicateRoot = eliminateDuplicateRoot
-            dialogOptions.summaryLines = itemsInfoLines(context)
+            // No summary of the archives: IDD_EXTRACT has none (winmatch, wincompare.md §5).
             dialogOptions.parentWindow = context.window
             guard let answer = ExtractDialog.run(dialogOptions) else { return }   // Cancel -> E_ABORT
             options.outputDirectory = answer.directoryPath

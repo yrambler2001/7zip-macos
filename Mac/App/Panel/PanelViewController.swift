@@ -78,8 +78,14 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     /// AlternativeSelection mode keeps its own vector (_selectedStatusVector, 01 §3.6).
     private var mySelected = Set<Int>()
     private var alternativeSelection = Settings.alternativeSelection
-    /// The row with the caret. NSTableView has no separate focus, so the panel tracks it.
-    var focusedIndex = -1
+    /// The row with the caret. NSTableView has no separate focus, so the panel tracks it, and
+    /// `PanelRowView` draws the focus rectangle of an unselected focused row (winmatch).
+    var focusedIndex = -1 {
+        didSet {
+            guard focusedIndex != oldValue, isViewLoaded else { return }
+            tableView.enumerateAvailableRowViews { view, _ in view.needsDisplay = true }
+        }
+    }
     /// Shift key-down anchor (_prevFocusedItem, 01 §3.7).
     var selectionAnchor = -1
     /// Per-panel navigation stack (macOS addition; 7zFM has no Back/Forward, 01 §9).
@@ -919,9 +925,22 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         return rows.isEmpty ? nil : rows[0]
     }
 
+    /// The rows the list control itself has selected: in AlternativeSelection mode that is the
+    /// cursor row, not the marked items (`_listView.IsItemSelected`).
+    var listSelectedIndexes: IndexSet {
+        listViewMode == 3 ? tableView.selectedRowIndexes : iconView.selectionIndexes
+    }
+
     /// Get_ItemIndices_Operated: the list indices the commands work on.
     func operatedRowIndices() -> [Int] {
-        PanelOperatedItems.operated(rows: rows, selected: selectedIndexes, focused: focusedIndex)
+        PanelOperatedItems.operated(rows: rows, selected: selectedIndexes, focused: focusedIndex,
+                                    focusedIsListSelected: listSelectedIndexes.contains(focusedIndex))
+    }
+
+    /// Get_ItemIndices_OperSmart: nothing operated means the whole folder (App.cpp OnCopy).
+    func operatedSmartRowIndices() -> [Int] {
+        PanelOperatedItems.operatedSmart(rows: rows, selected: selectedIndexes, focused: focusedIndex,
+                                         focusedIsListSelected: listSelectedIndexes.contains(focusedIndex))
     }
 
     /// The same as engine item indices.
@@ -960,9 +979,9 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             focus = 0
         }
         focusedIndex = focus
-        if indexes.isEmpty && focus >= 0 && !alternativeSelection {
-            indexes.insert(focus)
-        }
+        // RefreshListCtrl (PanelItems.cpp:900-930) selects only the items it was asked to keep;
+        // with none, the focused item is *not* selected -- a folder just opened says
+        // "0 / N object(s) selected" (winmatch). AlternativeSelection's cursor is list-selected.
         if alternativeSelection {
             mySelected = Set(indexes.filter { !rows[$0].isParentRow })
             if focus >= 0 { tableView.selectRowIndexes(IndexSet(integer: focus), byExtendingSelection: false) }
