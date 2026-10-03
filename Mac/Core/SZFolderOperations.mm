@@ -32,6 +32,37 @@
 // ---------------------------------------------------------------------------
 // helpers
 
+/// IFolderSetZoneIdMode + IFolderSetZoneIdFile (PanelCopy.cpp:76-92): the quarantine policy
+/// for the next CopyTo / Extract of an archive folder. `source` is the file whose
+/// `com.apple.quarantine` bytes are propagated (Get_ZoneId_Stream_from_ParentFolders); nil
+/// leaves the agent to read its own archive file. A folder without the interfaces is a no-op.
+static HRESULT SZSetFolderZone(IUnknown *folder, SZZoneIDMode zoneMode, NSString *source)
+{
+    {
+        CMyComPtr<IFolderSetZoneIdMode> setZoneMode;
+        folder->QueryInterface(IID_IFolderSetZoneIdMode, (void **)&setZoneMode);
+        if (setZoneMode)
+            RINOK(setZoneMode->SetZoneIdMode((NExtract::NZoneIdMode::EEnum)zoneMode))
+    }
+    CMyComPtr<IFolderSetZoneIdFile> setZoneFile;
+    folder->QueryInterface(IID_IFolderSetZoneIdFile, (void **)&setZoneFile);
+    if (!setZoneFile)
+        return S_OK;
+    CByteBuffer zoneBuf;
+    if (zoneMode != SZZoneIDModeNone && source.length != 0)
+    {
+        const char *path = source.fileSystemRepresentation;
+        const ssize_t size = getxattr(path, "com.apple.quarantine", NULL, 0, 0, 0);
+        if (size > 0 && size < (1 << 15))
+        {
+            zoneBuf.Alloc((size_t)size);
+            if (getxattr(path, "com.apple.quarantine", zoneBuf, (size_t)size, 0, 0) != size)
+                zoneBuf.Free();
+        }
+    }
+    return setZoneFile->SetZoneIdFile(zoneBuf, (UInt32)zoneBuf.Size());
+}
+
 /// Directory paths handed to the engine must end with a separator: CArchiveExtractCallback
 /// and FSFolderCopy append the item names straight onto them.
 static NSString *SZDirPathWithSeparator(NSString *path)
@@ -134,32 +165,7 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
             [progress progressSetStatus:moveMode ? SZProgressStatusMoving : SZProgressStatusCopying];
         // PanelCopy.cpp:76-92: the zone mode and the zone bytes are set before every CopyTo,
         // so an earlier call's policy never leaks into this one.
-        {
-            CMyComPtr<IFolderSetZoneIdMode> setZoneMode;
-            ops.QueryInterface(IID_IFolderSetZoneIdMode, &setZoneMode);
-            if (setZoneMode)
-                RINOK(setZoneMode->SetZoneIdMode((NExtract::NZoneIdMode::EEnum)zoneMode))
-        }
-        {
-            CMyComPtr<IFolderSetZoneIdFile> setZoneFile;
-            ops.QueryInterface(IID_IFolderSetZoneIdFile, &setZoneFile);
-            if (setZoneFile)
-            {
-                CByteBuffer zoneBuf;
-                if (zoneMode != SZZoneIDModeNone && zoneSourcePath.length != 0)
-                {
-                    const char *src = zoneSourcePath.fileSystemRepresentation;
-                    const ssize_t size = getxattr(src, "com.apple.quarantine", NULL, 0, 0, 0);
-                    if (size > 0 && size < (1 << 15))
-                    {
-                        zoneBuf.Alloc((size_t)size);
-                        if (getxattr(src, "com.apple.quarantine", zoneBuf, (size_t)size, 0, 0) != size)
-                            zoneBuf.Free();
-                    }
-                }
-                RINOK(setZoneFile->SetZoneIdFile(zoneBuf, (UInt32)zoneBuf.Size()))
-            }
-        }
+        RINOK(SZSetFolderZone(ops, zoneMode, zoneSourcePath))
         CRecordVector<UInt32> indices;
         SZIndexVector(indexes, indices);
         return ops->CopyTo(BoolToInt(moveMode != NO), indices.ConstData(), indices.Size(),
@@ -455,6 +461,23 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
                                               progress:(id<SZProgressDelegate>)progress
                                                  error:(NSError **)error
 {
+    // Drag-out, temp-open and Test pass kNone, as PanelDrag.cpp:2887 / PanelItemOpen.cpp do.
+    return [self extractItemsAtIndexes:indexes toPath:destinationPath pathMode:pathMode
+                         overwriteMode:overwriteMode testMode:testMode
+                              zoneMode:SZZoneIDModeNone zoneSourcePath:nil
+                              progress:progress error:error];
+}
+
+- (nullable SZOperationSummary *)extractItemsAtIndexes:(NSArray<NSNumber *> *)indexes
+                                                toPath:(NSString *)destinationPath
+                                              pathMode:(SZExtractPathMode)pathMode
+                                         overwriteMode:(SZOverwriteMode)overwriteMode
+                                              testMode:(BOOL)testMode
+                                              zoneMode:(SZZoneIDMode)zoneMode
+                                        zoneSourcePath:(NSString *)zoneSourcePath
+                                              progress:(id<SZProgressDelegate>)progress
+                                                 error:(NSError **)error
+{
     CMyComPtr<IArchiveFolder> archiveFolder;
     self.rawFolder->QueryInterface(IID_IArchiveFolder, (void **)&archiveFolder);
     if (!archiveFolder)
@@ -479,6 +502,8 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
         if ([progress respondsToSelector:@selector(progressSetTitleFileName:)])
             [progress progressSetTitleFileName:self.fullPath];
 
+        // CPanel::CopyTo: no zone in test mode (PanelCopy.cpp:188).
+        RINOK(SZSetFolderZone(archiveFolder, testMode ? SZZoneIDModeNone : zoneMode, zoneSourcePath))
         CRecordVector<UInt32> indices;
         SZIndexVector(indexes, indices);
         if (indices.IsEmpty())

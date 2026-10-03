@@ -75,6 +75,15 @@ enum ExtractCommands {
         }
         guard let archives = archivePaths(context) else { return }
 
+        // `t -thash` (03 §2.6, parity D item 4, opsgaps): when every operated item is a checksum
+        // file the panel's Test verifies it, through the same command line as the context menu's
+        // C13 "Test archive : Checksum" and Finder's, instead of the archive statistics box.
+        if areChecksumFiles(archives) {
+            _ = CommandExecutor.run(argv: ["t", "-thash", "--"] + archives, parentWindow: context.window)
+            ActiveContext.refresh()
+            return
+        }
+
         let options = SZExtractOptions()
         options.testMode = true
         applyZoneMode(options)
@@ -208,9 +217,12 @@ enum ExtractCommands {
         let folder = context.folder
         let indices = context.indices.map { NSNumber(value: $0) }
         OperationRunner.run(runnerOptions) { runner -> SZOperationSummary in
+            // CPanel::CopyTo with NeedRegistryZone (PanelCopy.cpp:188-198): the quarantine of
+            // the archive is propagated per Options.WriteZoneIdExtract (01 §9 #23, opsgaps).
             try folder.extractItems(at: indices, toPath: answer.directoryPath,
                                     pathMode: answer.pathMode, overwriteMode: answer.overwriteMode,
-                                    testMode: false, progress: runner)
+                                    testMode: false, zoneMode: SZFolder.registryZoneMode,
+                                    zoneSourcePath: nil, progress: runner)
         }
         ActiveContext.refresh()
     }
@@ -266,6 +278,14 @@ enum ExtractCommands {
             }
         }
         return paths
+    }
+
+    /// True when every path has one of the hash pseudo-format's extensions (`.sha256`, `.md5`, ...,
+    /// `SZCodecs.format(named: "hash")`), i.e. the items C13 would verify.
+    static func areChecksumFiles(_ paths: [String]) -> Bool {
+        guard !paths.isEmpty, let hash = SZCodecs.format(named: "hash") else { return false }
+        let extensions = Set(hash.extensions.map { $0.lowercased() })
+        return paths.allSatisfy { extensions.contains(($0 as NSString).pathExtension.lowercased()) }
     }
 
     /// Options.WriteZoneIdExtract -> `-snz<N>` on every extract command (03 §1.3). On macOS the

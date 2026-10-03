@@ -151,6 +151,21 @@ NS_ASSUME_NONNULL_BEGIN
                                                  error:(NSError **)error
     NS_SWIFT_NAME(extractItems(at:toPath:pathMode:overwriteMode:testMode:progress:));
 
+/// The same with a quarantine policy (opsgaps, 01 9 #23): `zoneMode` / `zoneSourcePath` as for
+/// `copyItems(at:toPath:zoneMode:zoneSourcePath:progress:)`. The plain variant above passes
+/// None, which is what 7zFM does for drag-out and temp-open; Extract inside an archive is
+/// CPanel::CopyTo and passes `SZFolder.registryZoneMode`. Ignored in test mode.
+- (nullable SZOperationSummary *)extractItemsAtIndexes:(nullable NSArray<NSNumber *> *)indexes
+                                                toPath:(NSString *)destinationPath
+                                              pathMode:(SZExtractPathMode)pathMode
+                                         overwriteMode:(SZOverwriteMode)overwriteMode
+                                              testMode:(BOOL)testMode
+                                              zoneMode:(SZZoneIDMode)zoneMode
+                                        zoneSourcePath:(nullable NSString *)zoneSourcePath
+                                              progress:(nullable id<SZProgressDelegate>)progress
+                                                 error:(NSError **)error
+    NS_SWIFT_NAME(extractItems(at:toPath:pathMode:overwriteMode:testMode:zoneMode:zoneSourcePath:progress:));
+
 @end
 
 NS_ASSUME_NONNULL_END

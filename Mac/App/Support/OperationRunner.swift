@@ -144,6 +144,7 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
                                             showCompressionInfo: options.showCompressionInfo)
         progressDialog.delegate = self
         dialog = progressDialog
+        ProgressDockTile.shared.begin(self)          // the taskbar button's progress (01b §4.17)
         update()
         progressDialog.window.makeKeyAndOrderFront(nil)
 
@@ -172,7 +173,16 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
 
         ticker.invalidate()
         timer = nil
+        ProgressDockTile.shared.end(self)            // finished, failed or cancelled: TBPF_NOPROGRESS
         progressDialog.window.orderOut(nil)
+        // `cancelActiveOperations` ends the modal session before the worker has seen E_ABORT.
+        // CProgressDialog never returns before its thread has (WaitCreating + the close message),
+        // so let the worker reach its next CheckBreak; spinning the run loop (not blocking) keeps
+        // a worker that is waiting on the main thread for a question dialog alive. Without this
+        // the outcome is still nil here and a cancelled run reported "did not produce a result".
+        while !sync.isFinished {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+        }
         dialog = nil
         restoreForegroundPriority()
         return finish(outcome: outcome, showedDialog: true)
@@ -189,9 +199,11 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         case .failure(let error as NSError) where error.code == SZError.Code.cancelled.rawValue:
             break                                   // E_ABORT is silent (8.7)
         case .failure(let error):
+            // FinalMessage.ErrorMessage, shown with MB_ICONERROR (:1009-1016).
+            guard let text = Self.failureMessage(for: error) else { break }
             let alert = NSAlert()
             alert.messageText = options.mainTitle
-            alert.informativeText = error.localizedDescription
+            alert.informativeText = text
             alert.alertStyle = .critical
             alert.addButton(withTitle: Lang.text(401, "OK"))
             alert.runModal()
@@ -213,9 +225,47 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         return result
     }
 
+    /// The text CProgressThreadVirt::Process (ProgressDialog2.cpp:1432-1475) puts in
+    /// FinalMessage.ErrorMessage for a failed operation, or nil for E_ABORT (silent, 01 §8.7).
+    ///
+    /// * `HResultToMessage` (:1477-1483): E_OUTOFMEMORY is IDS_MEM_ERROR 3000, not the errno
+    ///   text; `SevenZipFailureLadder.classify` already recognises every spelling of it the
+    ///   bridge produces (the code, the HRESULT, ENOMEM).
+    /// * the catch arms: `catch (int v)` is "Error #v" (the bridge says "Internal Error #v") and
+    ///   `catch (...)` is "Error" (the bridge says "Unknown error" or nothing).
+    /// * anything else is the engine's own text, which for per-item and open failures is already
+    ///   the lang-file string (3721-3729, 3005/3006/3017, IDS_EXTRACT_MSG_WRONG_PSW_CLAIM 3729).
+    static func failureMessage(for error: Error) -> String? {
+        let memoryText = Lang.text(3000, SevenZipFailureLadder.englishMemoryErrorMessage)   // IDS_MEM_ERROR
+        let failure = SevenZipFailureLadder.classify(error, memoryMessage: memoryText)
+        switch failure.exitCode {
+        case .userBreak:
+            return nil
+        case .memoryError:
+            return memoryText
+        default:
+            break
+        }
+        let text = (error as NSError).localizedDescription
+        let internalPrefix = "Internal Error #"
+        if text.hasPrefix(internalPrefix) {
+            let digits = text.dropFirst(internalPrefix.count)
+            if !digits.isEmpty, digits.allSatisfy(\.isNumber) { return "Error #" + digits }
+        }
+        if text.isEmpty || text == "Unknown error" { return "Error" }
+        return text
+    }
+
     private func update() {
         guard let dialog else { return }
-        dialog.update(sync.snapshot(background: isBackground))
+        let snapshot = sync.snapshot(background: isBackground)
+        dialog.update(snapshot)
+        if !finishHandled {
+            ProgressDockTile.shared.update(self, .init(completed: snapshot.completedBytes,
+                                                      total: snapshot.totalBytes,
+                                                      paused: snapshot.paused,
+                                                      hasErrors: !snapshot.messages.isEmpty))
+        }
     }
 
     /// kCloseMessage (:1305): the worker is done.
@@ -223,6 +273,9 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         guard !finishHandled else { return }
         finishHandled = true
         update()
+        // OnExternalCloseMessage (:995): the taskbar bar goes even when the dialog stays open
+        // to show its messages.
+        ProgressDockTile.shared.end(self)
         let hasMessages = sync.messageCount != 0
         guard let dialog else { return }
         dialog.operationDidFinish(hasMessages: hasMessages)

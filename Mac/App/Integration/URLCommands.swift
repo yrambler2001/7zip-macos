@@ -23,6 +23,12 @@ enum URLCommands {
         let action: CommandURL.Action
         do {
             action = try CommandURL.parse(url)
+        } catch where url.host?.lowercased() == CommandURL.testHost {
+            // The `test` host is refused *silently* (requests.md, `fastui` -> `resetcmd`; opsgaps):
+            // an unattended run that sends a reset to an app without the affordances must not be
+            // wedged behind a modal "Unsupported URL command" box that nothing can click away.
+            NSLog("7-Zip: ignored %@ (test support is off)", url.absoluteString)
+            return .userError
         } catch let error as SevenZipArgumentError {
             CommandExecutor.showError(error.description, parent: parentWindow)
             return .userError

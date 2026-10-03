@@ -148,10 +148,10 @@ enum Help {
         // HtmlHelp is case-insensitive; the bundled tree is the CHM's own lower-case names.
         let page = String(parts.first ?? "").lowercased()
         guard !page.isEmpty, !page.contains("..") else { return nil }
-        let candidate = resources.appendingPathComponent("Help").appendingPathComponent(page)
+        let candidate = resources.appendingPathComponent("Help").appendingPathComponent(page).absoluteURL
         guard FileManager.default.fileExists(atPath: candidate.path) else { return nil }
         if parts.count > 1, !parts[1].isEmpty,
-           var components = URLComponents(url: candidate, resolvingAgainstBaseURL: false) {
+           var components = URLComponents(url: candidate.absoluteURL, resolvingAgainstBaseURL: true) {
             components.fragment = String(parts[1])
             return components.url ?? candidate
         }
