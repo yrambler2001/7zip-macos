@@ -569,21 +569,21 @@ public struct SevenZipPanel {
     public var iconNames: [String] {
         let view = iconView
         guard view.exists, let snap = try? view.snapshot() else { return [] }
-        var texts: [XCUIElementSnapshot] = []
+        // Each item is a Cell labelled with its name (`PanelCollectionItem`'s root view).
+        var cells: [XCUIElementSnapshot] = []
         func walk(_ node: XCUIElementSnapshot) {
-            if node.elementType == .staticText { texts.append(node) }
+            if node.elementType == .cell, !node.label.isEmpty { cells.append(node); return }
             node.children.forEach(walk)
         }
         walk(snap)
-        return texts.sorted {
+        return cells.sorted {
             abs($0.frame.minY - $1.frame.minY) > 4 ? $0.frame.minY < $1.frame.minY : $0.frame.minX < $1.frame.minX
-        }.map { ($0.value as? String) ?? $0.title }
+        }.map { $0.label }
     }
 
-    /// The label of the icon item called `name` -- the thing to click, right-click or drag.
+    /// The icon item (Cell) called `name` -- the thing to click, right-click or drag.
     public func iconItem(named name: String) -> XCUIElement {
-        iconView.descendants(matching: .staticText)
-            .matching(NSPredicate(format: "value == %@ OR title == %@", name, name)).firstMatch
+        iconView.descendants(matching: .cell).matching(NSPredicate(format: "label == %@", name)).firstMatch
     }
 
     /// Wait until the icon view shows an item called `name`.

@@ -403,6 +403,26 @@ final class PanelGapsTests: AppHostTestCase {
         panel.setListViewMode(3)
     }
 
+    /// Regression (`mac/uiverify`): in every icon mode the collection view's accessibility children
+    /// are its items, each a Cell labelled with the item's name. AppKit alone exposed one section
+    /// element with no children, so these modes were empty to VoiceOver and XCUITest.
+    func testIconModeItemsAreAccessibilityCells() {
+        let scratch = makeScratch("ax")
+        let controller = makeWindow(panels: 1)
+        let panel = controller.focusedPanel
+        navigate(panel, to: scratch)
+        for mode in 0...2 {
+            panel.setListViewMode(mode)
+            let cv = panel.iconView.collectionView
+            cv.layoutSubtreeIfNeeded()
+            let children = (cv.accessibilityChildren() ?? []).compactMap { $0 as? NSView }
+            let labels = children.compactMap { $0.isAccessibilityElement() ? $0.accessibilityLabel() : nil }
+            XCTAssertEqual(Set(labels), Set(panel.rows.map(\.name)), "mode \(mode)")
+            XCTAssertTrue(children.allSatisfy { $0.accessibilityRole() == .cell }, "mode \(mode)")
+        }
+        panel.setListViewMode(3)
+    }
+
     /// Drag-out of an archive member from an icon mode is the same file promise as in Details.
     func testIconModeDragOutOfAnArchiveMemberIsAPromise() {
         let scratch = makeScratch("promise")

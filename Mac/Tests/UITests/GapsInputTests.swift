@@ -88,7 +88,8 @@ final class GapsInputTests: SevenZipUITestCase {
                              SettingsDomain.Key.listMode0: 0]))            // Large Icons
         let panel = sevenZip.panel(0)
         XCTAssertTrue(waitFor("the icon view") { panel.iconView.exists }, "panel 0 is not in an icon mode")
-        XCTAssertTrue(panel.waitForIcon(named: "alpha.txt"), "icons: \(panel.iconNames)")
+        if !panel.waitForIcon(named: "alpha.txt") { _ = sevenZip.dumpTree("uiverify-icons") }
+        XCTAssertTrue(panel.iconNames.contains("alpha.txt"), "icons: \(panel.iconNames)")
         XCTAssertTrue(panel.iconNames.contains("dir"), "icons: \(panel.iconNames)")
         screenshot("02-large-icons")
 
@@ -115,8 +116,9 @@ final class GapsInputTests: SevenZipUITestCase {
         guard let dialog = sevenZip.waitForDialog(title: "Enter password") else {
             return XCTFail("no password dialog; dialogs: \(app.dialogs.count), sheets: \(app.sheets.count)")
         }
-        let opening = app.windows.matching(NSPredicate(format: "title BEGINSWITH 'Opening'")).count
-            + app.dialogs.matching(NSPredicate(format: "title BEGINSWITH 'Opening'")).count
+        let titled = NSPredicate(format: "title CONTAINS 'Opening'")
+        let opening = app.windows.matching(titled).count + app.dialogs.matching(titled).count
+        if opening == 0 { _ = sevenZip.dumpTree("uiverify-opening") }
         XCTAssertGreaterThan(opening, 0, "the Opening progress is not up behind the password dialog")
         screenshot("03-opening-and-password")
 
