@@ -116,6 +116,11 @@ final class PanelGapsTests: AppHostTestCase {
     }
 
     private func sevenZipItems(_ menu: NSMenu) -> [NSMenuItem] {
+        // CascadedMenu (default on): the verbs live in the "7-Zip" submenu; the File-menu part
+        // after it has a CRC submenu of its own whose fileCalculateHash: items are not 7-Zip verbs.
+        if let cascade = menu.items.first(where: { $0.title == "7-Zip" })?.submenu, menu.supermenu == nil {
+            return sevenZipItems(cascade)
+        }
         let verbs = Set(["sevenZipOpenArchive:", "sevenZipOpenArchiveAs:", "sevenZipExtractFiles:",
                          "sevenZipExtractHere:", "sevenZipExtractTo:", "sevenZipTestArchive:",
                          "sevenZipCompress:", "sevenZipCompressEmail:", "sevenZipCompressTo7z:",
@@ -129,7 +134,15 @@ final class PanelGapsTests: AppHostTestCase {
         return found
     }
 
-    private func titles(_ menu: NSMenu) -> [String] { menu.items.filter { !$0.isSeparatorItem }.map(\.title) }
+    /// The menu's titles with the cascaded "7-Zip" block flattened into them (CascadedMenu, default
+    /// on, puts the 7-Zip verbs in one submenu, ContextMenu.cpp:1013-1020).
+    private func titles(_ menu: NSMenu) -> [String] {
+        menu.items.flatMap { item -> [String] in
+            if item.isSeparatorItem { return [] }
+            if item.title == "7-Zip", let sub = item.submenu { return titles(sub) }
+            return [item.title]
+        }
+    }
 
     // MARK: - parity item 1: the context menu's 7-Zip verbs
 

@@ -61,12 +61,19 @@ final class GapsInputTests: SevenZipUITestCase {
             return XCTFail("no context menu on arc.zip")
         }
         let titles = panel.menuItemTitles(of: menu)
+        // CascadedMenu (default on): the 7-Zip verbs are one "7-Zip" submenu at the top, followed
+        // directly by the File-menu items (ContextMenu.cpp:1013-1020, PanelMenu.cpp:947-952).
+        XCTAssertEqual(titles.first, "7-Zip", "context menu: \(titles)")
+        let sevenZipItem = menu.menuItems["7-Zip"]
+        sevenZipItem.hover()
+        let sub = sevenZipItem.menus.firstMatch
+        XCTAssertTrue(sub.waitForExistence(timeout: 5), "the 7-Zip submenu did not open")
+        let verbs = panel.menuItemTitles(of: sub)
         screenshot("01-context-menu-7zip-verbs")
         let title = "Extract to \"arc/\""
-        XCTAssertTrue(titles.contains(title), "context menu: \(titles)")
-        // The 7-Zip verbs come first, the file-menu items after the separator (PanelContextMenu).
-        XCTAssertTrue(titles.contains("Open archive"), "context menu: \(titles)")
-        menu.menuItems.matching(NSPredicate(format: "title == %@", title)).firstMatch.click()
+        XCTAssertTrue(verbs.contains(title), "7-Zip submenu: \(verbs)")
+        XCTAssertTrue(verbs.contains("Open archive"), "7-Zip submenu: \(verbs)")
+        sub.menuItems.matching(NSPredicate(format: "title == %@", title)).firstMatch.click()
 
         XCTAssertTrue(waitForFile(scratch + "/arc"), "Extract to \"arc/\" made no folder")
         let extracted = (try? FileManager.default.contentsOfDirectory(atPath: scratch + "/arc")) ?? []

@@ -8,12 +8,13 @@ import SevenZipKit
 
 enum PanelFormat {
 
-    /// GetColumnAlign: strings and times left, numbers and sizes right, booleans centred.
+    /// GetColumnAlign: strings and times left, numbers, sizes and booleans right (VT_BOOL is in the
+    /// LVCFMT_RIGHT group, PanelItems.cpp:64-76; 7zFM 25.01 shows "Encrypted" right-aligned --
+    /// Mac/docs/reports/wincompare.md).
     static func alignment(for varType: SZVarType, propID: SZPropID) -> NSTextAlignment {
         if propID == .name || propID == .path || propID == .prefix { return .left }
         switch varType {
-        case .UI1, .UI2, .UI4, .UI8, .I2, .I4, .I8: return .right
-        case .bool: return .center
+        case .UI1, .UI2, .UI4, .UI8, .I2, .I4, .I8, .bool: return .right
         case .fileTime: return .left
         default: return Formatting.sizePropIDs.contains(propID) ? .right : .left
         }

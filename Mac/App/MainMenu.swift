@@ -106,6 +106,24 @@ enum MainMenu {
         item(menu, 0, lang: noLangID, "New Window", key: "n", mods: [.command, .option],
              action: #selector(a.fileNewWindow(_:)))
         menu.addItem(.separator())
+        addFileCommands(to: menu)
+        // The 7-Zip Explorer commands (CPanel::CreateSevenZipMenu) are not a fixed part of this
+        // menu: CPanel::CreateFileMenu inserts them in front of IDM_OPEN each time the menu opens,
+        // and only for a file-system folder with operated items (PanelMenu.cpp:921-945,
+        // programMenu = true). FileMenuDelegate does the same (Mac/docs/reports/wincompare.md).
+        menu.delegate = FileMenuDelegate.shared
+        menu.addItem(.separator())
+        item(menu, 8, lang: 557, "E&xit\tAlt+F4", key: "w", mods: [.command], action: #selector(a.fileExit(_:)))   // IDCLOSE (lang 557)
+        let top = NSMenuItem()
+        top.submenu = menu
+        return top
+    }
+
+    /// CFileMenu::Load (MyLoadMenu.cpp:588-734) from IDM_OPEN to the Ver* items: the part of the File
+    /// menu that the list's context menu shares with the menu bar (PanelMenu.cpp:952-985, the same
+    /// builder with programMenu = false, which only leaves out Exit).
+    static func addFileCommands(to menu: NSMenu) {
+        let a = MenuActions.self
         item(menu, 540, lang: 540, "&Open\tEnter", key: String(UnicodeScalar(NSDownArrowFunctionKey)!), mods: [.command], action: #selector(a.fileOpen(_:)))                  // IDM_OPEN
         item(menu, 541, lang: 541, "Open &Inside\tCtrl+PgDn", key: String(UnicodeScalar(NSPageDownFunctionKey)!), mods: [.command], action: #selector(a.fileOpenInside(_:)))  // IDM_OPEN_INSIDE
         let inside = Lang.stripMnemonic(Lang.dropAccelerator(Lang.translated(541) ?? "Open &Inside"))
@@ -154,26 +172,6 @@ enum MainMenu {
         item(menu, 581, lang: 581, "Ver Commit", action: #selector(a.fileVerCommit(_:)), hidden: true)
         item(menu, 582, lang: 582, "Ver Revert", action: #selector(a.fileVerRevert(_:)), hidden: true)
         item(menu, 583, lang: 583, "Ver Diff (&0)", action: #selector(a.fileVerDiff(_:)), hidden: true)
-        menu.addItem(.separator())
-        // The 7-Zip Explorer commands 7zFM inserts into the item context menu, in the cascaded
-        // "7-Zip" submenu that CascadedMenu (default on) produces (01 §2.8-2.9,
-        // Explorer/ContextMenu.cpp:652-666; ids kSevenZipStartMenuID 1100 + enum_CommandInternalID).
-        let sevenZip = NSMenuItem(title: Lang.menuTitle(2301, "7-Zip"), action: nil, keyEquivalent: "")
-        let sevenZipMenu = NSMenu(title: sevenZip.title)
-        item(sevenZipMenu, 2323, lang: 2323, "Extract files...", action: #selector(a.toolbarExtractArchives(_:)))   // kExtract / IDS_CONTEXT_EXTRACT
-        item(sevenZipMenu, 2326, lang: 2326, "Extract Here", action: #selector(a.extractHere(_:)))                  // kExtractHere / IDS_CONTEXT_EXTRACT_HERE
-        item(sevenZipMenu, 2327, lang: 2327, "Extract to {0}", action: #selector(a.extractToSubfolder(_:)))  // kExtractTo / IDS_CONTEXT_EXTRACT_TO
-        item(sevenZipMenu, 2325, lang: 2325, "Test archive", action: #selector(a.toolbarTestArchives(_:)))          // kTest / IDS_CONTEXT_TEST
-        // "{0}" in IDS_CONTEXT_EXTRACT_TO is the sub-folder name of the current selection, which
-        // Windows computes while building the menu; here the delegate fills it in on open.
-        sevenZipMenu.delegate = ExtractMenuTitles.shared
-        sevenZip.submenu = sevenZipMenu
-        menu.addItem(sevenZip)
-        menu.addItem(.separator())
-        item(menu, 8, lang: 557, "E&xit\tAlt+F4", key: "w", mods: [.command], action: #selector(a.fileExit(_:)))   // IDCLOSE (lang 557)
-        let top = NSMenuItem()
-        top.submenu = menu
-        return top
     }
 
     // MARK: Edit (IDM_EDIT 501)
@@ -326,17 +324,20 @@ final class TimeMenuDelegate: NSObject, NSMenuDelegate {
         if let popupItem { self.popupItem = popupItem }
         menu.removeAllItems()
         let now = Date()
-        self.popupItem?.title = Self.format(now, level: -3, utc: true)
+        // ConvertUtcFileTimeToString follows g_Timestamp_Show_UTC (PropVariantConv.cpp:31-41):
+        // the examples are local time unless View > Time > UTC is checked.
+        let utc = Settings.timestampShowUTC
+        self.popupItem?.title = Self.format(now, level: -3, utc: utc)
         for (k, level) in Self.levels.enumerated() {
-            let it = NSMenuItem(title: Self.format(now, level: level, utc: true),
+            let it = NSMenuItem(title: Self.format(now, level: level, utc: utc),
                                 action: #selector(MenuActions.viewTimestampLevel(_:)), keyEquivalent: "")
             it.tag = MainMenu.idmViewTime + k   // IDM_VIEW_TIME + k
             it.representedObject = level
             menu.addItem(it)
         }
-        let utc = NSMenuItem(title: "UTC", action: #selector(MenuActions.viewTimeUTC(_:)), keyEquivalent: "")
-        utc.tag = 799   // IDM_VIEW_TIME_UTC
-        menu.addItem(utc)
+        let utcItem = NSMenuItem(title: "UTC", action: #selector(MenuActions.viewTimeUTC(_:)), keyEquivalent: "")
+        utcItem.tag = 799   // IDM_VIEW_TIME_UTC
+        menu.addItem(utcItem)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -486,4 +487,25 @@ final class FavoritesMenuDelegate: NSObject, NSMenuDelegate {
     func compressToSevenZipAndEmail(_ sender: Any?)  // kCompressTo7zEmail
     func compressToZipAndEmail(_ sender: Any?)       // kCompressToZipEmail
     func compressAddToOpenArchive(_ sender: Any?)    // add files to the open archive (01 3.10)
+}
+
+/// Inserts the 7-Zip Explorer commands at the top of the File menu each time it opens, the way
+/// CPanel::CreateFileMenu(programMenu = true) calls CreateSevenZipMenu before CFileMenu::Load
+/// (PanelMenu.cpp:921-945): the cascaded "7-Zip" submenu (and "CRC SHA" when it is not cascaded)
+/// for the operated items of a file-system folder, nothing inside an archive or with no items.
+final class FileMenuDelegate: NSObject, NSMenuDelegate {
+    static let shared = FileMenuDelegate()
+    static let dynamicIdentifier = NSUserInterfaceItemIdentifier("sz.file.sevenZipCommands")
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        for item in menu.items where item.identifier == Self.dynamicIdentifier { menu.removeItem(item) }
+        let controller = (ActiveContext.provider as? MainWindowController) ?? MainWindows.frontToBack.first
+        guard let panel = controller?.focusedPanel,
+              var index = menu.items.firstIndex(where: { $0.tag == 540 }) else { return }   // IDM_OPEN
+        for item in panel.sevenZipMenuItems() {
+            item.identifier = Self.dynamicIdentifier
+            menu.insertItem(item, at: index)
+            index += 1
+        }
+    }
 }
