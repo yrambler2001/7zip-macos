@@ -927,7 +927,15 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     private func updateAddressBar(_ snap: PanelSnapshot) {
         pathCombo.stringValue = snap.fullPath
-        folderIcon.image = PanelIcons.addressBarIcon(for: snap)
+        // The address-bar icon is a 16 pt slot (the combo's small icon); a symbol or file icon
+        // comes at its own size (19 pt for the folder symbol), so a 16 pt copy is shown instead
+        // of letting AppKit scale it on every panel (requests.md, `fastui` -> `panel`).
+        let sized = PanelIcons.addressBarIcon(for: snap).map { icon -> NSImage in
+            let copy = (icon.copy() as? NSImage) ?? icon
+            copy.size = NSSize(width: 16, height: 16)
+            return copy
+        }
+        folderIcon.image = sized
     }
 
     func focusList() {

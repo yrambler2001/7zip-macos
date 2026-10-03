@@ -162,6 +162,10 @@ final class PanelIconView: NSView {
         collectionView.allowsMultipleSelection = true
         collectionView.allowsEmptySelection = true
         collectionView.backgroundColors = [.controlBackgroundColor]
+        // Drag and drop as in Details view (01 §3.15): the same types, the same source masks.
+        collectionView.registerForDraggedTypes(PanelDragDrop.acceptedTypes)
+        collectionView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
+        collectionView.setDraggingSourceOperationMask([.copy], forLocal: false)
         collectionView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
         collectionView.autoresizingMask = [.width]
         scrollView.documentView = collectionView
@@ -281,6 +285,50 @@ extension PanelIconView: NSCollectionViewDataSource, NSCollectionViewDelegate {
 
     func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) {
         panel?.refreshStatusBar()
+    }
+
+    // MARK: Drag source (CPanel::OnDrag) -- the Details table's code path, per item
+
+    func collectionView(_ collectionView: NSCollectionView, canDragItemsAt indexPaths: Set<IndexPath>,
+                        with event: NSEvent) -> Bool {
+        guard let panel else { return false }
+        return indexPaths.contains { panel.dragPasteboardWriter(forRow: $0.item) != nil }
+    }
+
+    func collectionView(_ collectionView: NSCollectionView,
+                        pasteboardWriterForItemAt indexPath: IndexPath) -> NSPasteboardWriting? {
+        panel?.dragPasteboardWriter(forRow: indexPath.item)
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession,
+                        willBeginAt screenPoint: NSPoint, forItemsAt indexPaths: Set<IndexPath>) {
+        panel?.dragSessionWillBegin(session, rowIndexes: IndexSet(indexPaths.map { $0.item }))
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession,
+                        endedAt screenPoint: NSPoint, dragOperation operation: NSDragOperation) {
+        panel?.dragSessionEnded(operation: operation)
+    }
+
+    // MARK: Drop target (CDropTarget) -- a folder item is the target, anything else the panel
+
+    func collectionView(_ collectionView: NSCollectionView, validateDrop draggingInfo: NSDraggingInfo,
+                        proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
+                        dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>)
+    -> NSDragOperation {
+        guard let panel else { return [] }
+        let proposed = proposedDropOperation.pointee == .on ? proposedDropIndexPath.pointee.item : -1
+        let (row, effect) = panel.validateListDrop(info: draggingInfo, proposedRow: proposed)
+        // A collection view has no "whole view" drop row; `.before` an item stands for the panel's
+        // own folder (the table's drop row -1), `.on` a folder item for that sub-folder.
+        proposedDropOperation.pointee = row >= 0 ? .on : .before
+        return effect
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, acceptDrop draggingInfo: NSDraggingInfo,
+                        indexPath: IndexPath, dropOperation: NSCollectionView.DropOperation) -> Bool {
+        guard let panel else { return false }
+        return panel.acceptListDrop(info: draggingInfo, proposedRow: dropOperation == .on ? indexPath.item : -1)
     }
 }
 

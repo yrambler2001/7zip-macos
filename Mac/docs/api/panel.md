@@ -283,3 +283,35 @@ panel.hostWindow          // view.window, else the window that owns the panel (t
 Nothing else about the panel API changed. The three confirmation alerts that are app-modal **by
 design** (`confirmDelete`, `confirmSuspiciousName`, `confirmCopyToArchive` — 7zFM's `MessageBoxW`
 answers, and always raised by a gesture on the visible panel) were left alone; see `reports/modalfix.md`.
+
+---
+
+## Note — 2026-10-03 (`mac/panelgaps`)
+
+Supersedes parts of §3 and §7.9; the text above still describes what `mac/panel` shipped.
+
+* **§3, the context verbs are implemented.** Every `PanelContextCommands` selector is implemented on
+  `MainWindowController` (`Mac/App/Commands/PanelContextActions.swift`) and calls the File-menu /
+  toolbar command (`ExtractCommands`, `CompressCommands`); nobody else needs to implement them. New
+  selectors: `sevenZipCompressTo7zEmail(_:)`, `sevenZipCompressToZipEmail(_:)` and
+  `sevenZipChecksumCommand(_:)` (C12 / C13, `representedObject` is a `PanelChecksumCommand` wrapping
+  the Finder extension's `FinderMenuCommand`). Building the menu (`makeItemContextMenu`) focuses the
+  panel it belongs to, so `ActiveContext.current()` names that panel's operated items.
+* **§3, background drop.** `pendingCompressTarget` is no longer set. `compressDroppedFiles(info:)`
+  calls `CompressCommands.addToArchive(context:showDialog:email:)` with
+  `panel.dropCompressContext(paths:)` — an `OperationContext` whose `paths` are the dropped files and
+  whose `folderPath` is the destination folder.
+* **§7.9, Open Outside inside an archive works.** `panel.operationContext(rowIndices:)` builds the
+  frozen `OperationContext` for explicit rows; Open Outside (and Enter on a non-archive member) hands
+  one per row to `ItemOpenCommands.openOutside(context:)`.
+* **Diff.** `MainWindowController.diffRequest()` is the two-panel rule of `CApp::DiffFiles`;
+  `fileDiff` uses it before the single-panel `ItemOpenCommands.diff()`.
+* **Drag and drop helpers** usable by any list widget: `dragPasteboardWriter(forRow:)`,
+  `dragSessionWillBegin(_:rowIndexes:)`, `dragSessionEnded(operation:)`,
+  `validateListDrop(info:proposedRow:)`, `acceptListDrop(info:proposedRow:)` (row −1 = the panel's
+  folder). The icon-mode `NSCollectionView` uses them.
+* **File-menu rules on the window:** `MainWindowController.fileMenuRule(_:)`.
+* **Test hygiene for app-hosted tests:** a `MainWindowController` saves `PanelPath0/1` when its window
+  closes. A test that points panels at scratch folders and deletes them must restore those two keys,
+  or the next class's window greets its test with a bind-error sheet that queues every later sheet
+  (it made `PanelWindowlessErrorTests` fail after `PanelGapsTests` until restored).

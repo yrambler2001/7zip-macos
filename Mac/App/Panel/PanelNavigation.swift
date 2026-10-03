@@ -185,10 +185,25 @@ extension PanelViewController {
     }
 
     /// OpenSelectedItems(false): hand the file(s) to the default application (IDM_OPEN_OUTSIDE).
-    /// Items inside an archive need the temp-file flow of the `extract` scope (PROGRESS §4.6).
+    /// An item inside an archive goes through OpenItemInArchive: it is extracted to a `7zO` temp
+    /// folder and that copy is opened, with the edit watched for a write-back (01 §3.8, §3.9) --
+    /// the `extract` scope's `ItemOpenCommands.openOutside(context:)`.
     func openSelectionOutside() {
-        guard let snap = snapshot, snap.isFileSystem else { return }
-        for row in operatedRowIndices().map({ rows[$0] }) where !row.fullPath.isEmpty {
+        guard let snap = snapshot, !snap.isHashFolder else { return }
+        let indices = operatedRowIndices()
+        if indices.count > Self.maxOpenItems {
+            showError(message: Lang.text(3016, "Too many items"))     // IDS_TOO_MANY_ITEMS
+            return
+        }
+        if snap.isArchive {
+            for index in indices {
+                guard let context = operationContext(rowIndices: [index]) else { continue }
+                ItemOpenCommands.openOutside(context: context)
+            }
+            return
+        }
+        guard snap.isFileSystem else { return }
+        for row in indices.map({ rows[$0] }) where !row.fullPath.isEmpty {
             guard confirmSuspiciousName(row.name) else { continue }
             NSWorkspace.shared.open(URL(fileURLWithPath: row.fullPath))
         }
@@ -238,7 +253,10 @@ extension PanelViewController {
                     DispatchQueue.main.async { self.apply(snap, selectNames: []) }
                 } catch {
                     let code = (error as NSError).code
-                    if !insideOnly && isFS && code == SZError.Code.notArchive.rawValue {
+                    // Not an archive: start it externally -- straight from disk in a file-system
+                    // folder, through a 7zO temp copy inside an archive (OpenItemInArchive with
+                    // tryExternal, PanelItemOpen.cpp).
+                    if !insideOnly && code == SZError.Code.notArchive.rawValue {
                         self.openExternally(row)
                     } else if code != SZError.Code.cancelled.rawValue {
                         throw error
@@ -254,9 +272,15 @@ extension PanelViewController {
     private func openExternally(_ row: PanelRow) {
         let path = row.fullPath
         guard !path.isEmpty else {
-            // Inside an archive this needs the temp-file open of the `extract` scope (PROGRESS §4.6).
+            // Inside an archive: OpenItemInArchive's tryExternal half -- extract the item to a 7zO
+            // temp folder and open that copy (ItemOpenCommands, the extract scope's temp-open).
             DispatchQueue.main.async {
-                self.showError(message: Lang.text(6008, "The operation is not supported."))
+                guard let index = self.rows.firstIndex(where: { $0.engineIndex == row.engineIndex && $0.name == row.name }),
+                      let context = self.operationContext(rowIndices: [index]) else {
+                    self.showUnsupportedOperation()
+                    return
+                }
+                ItemOpenCommands.openOutside(context: context)
             }
             return
         }

@@ -9,9 +9,9 @@
 //   3. the File-menu items without Exit.
 // Inside an archive only step 3 is shown, exactly as on Windows.
 //
-// The archive verbs send the selectors below down the responder chain: the `extract`, `compress`
-// and `tools` scopes implement them (they are the same selectors as the toolbar buttons), and
-// AppKit disables the ones nobody implements yet -- see Mac/docs/api/panel.md.
+// The archive verbs send the selectors below down the responder chain. `MainWindowController`
+// implements every one of them (`Mac/App/Commands/PanelContextActions.swift`) by calling the very
+// command the File menu, the toolbar and Finder use -- see Mac/docs/api/panel.md section 3.
 
 import Cocoa
 import Quartz
@@ -30,6 +30,21 @@ import SevenZipKit
     func sevenZipCompressEmail(_ sender: Any?)        // kCompressEmail
     func sevenZipCompressTo7z(_ sender: Any?)         // kCompressTo7z
     func sevenZipCompressToZip(_ sender: Any?)        // kCompressToZip
+    func sevenZipCompressTo7zEmail(_ sender: Any?)    // kCompressTo7zEmail
+    func sevenZipCompressToZipEmail(_ sender: Any?)   // kCompressToZipEmail
+    func sevenZipChecksumCommand(_ sender: Any?)      // kHash_Generate_SHA256 / kHash_TestArc (C12 / C13)
+}
+
+/// A checksum-file command of the "CRC SHA >" submenu (03 §1.4 C12 / C13): the 7zG command line the
+/// Finder extension sends for the same verb, built when the item is chosen so no list file is
+/// written for a menu nobody picks.
+final class PanelChecksumCommand: NSObject {
+    let command: FinderMenuCommand
+    let paths: [String]
+    init(command: FinderMenuCommand, paths: [String]) {
+        self.command = command
+        self.paths = paths
+    }
 }
 
 /// What a context command applies to; handed over as the menu item's representedObject.
@@ -68,6 +83,9 @@ extension PanelViewController {
     static let openTypes: [String] = ["*", "#", "#:e", "7z", "zip", "cab", "rar"]
 
     func makeItemContextMenu() -> NSMenu {
+        // A right click focuses the panel it lands in (NM_RCLICK on the list sets the focus), so
+        // the command an item sends acts on *this* panel's operated items through ActiveContext.
+        delegate?.panelDidBecomeActive(self)
         let menu = NSMenu()
         let snap = snapshot
         let items = operatedRowIndices().map { rows[$0] }
@@ -91,10 +109,10 @@ extension PanelViewController {
         let names = items.map { $0.name }
         let target = PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names)
         let single = items.count == 1 ? items[0] : nil
-        let archiveLike: Bool = {
-            guard let single, !single.isDirectory else { return false }
-            return !Self.extractExcludeExtensions.contains(single.pathExtension.lowercased())
-        }()
+        let needExtract = Self.needExtract(items: items, extendedVerbs: Self.extendedVerbsRequested)
+        // kOpen and its "Open archive >" sub-menu: one file that passes DoNeedExtract
+        // (ContextMenu.cpp:741-788).
+        let archiveLike = single.map { Self.needExtract(items: [$0], extendedVerbs: false) } ?? false
 
         if archiveLike, flags.contains(.open) {
             add(menu, Lang.text(2322, "Open archive"), #selector(PanelContextCommands.sevenZipOpenArchive(_:)), target)
@@ -112,15 +130,16 @@ extension PanelViewController {
                 menu.addItem(openAs)
             }
         }
-        if archiveLike || items.count > 1 {
+        if needExtract {
             if flags.contains(.extractFiles) {
                 add(menu, Lang.text(2323, "Extract files..."), #selector(PanelContextCommands.sevenZipExtractFiles(_:)), target)
             }
             if flags.contains(.extractHere) {
                 add(menu, Lang.text(2326, "Extract Here"), #selector(PanelContextCommands.sevenZipExtractHere(_:)), target)
             }
-            if flags.contains(.extractTo), let single {
-                let folder = (single.name as NSString).deletingPathExtension
+            if flags.contains(.extractTo) {
+                // GetSubFolderNameForExtract for one archive, "*" for several (ContextMenu.cpp:836).
+                let folder = single.map { SZArchiveExtractor.subfolderName(forArchiveNamed: $0.name) } ?? "*"
                 add(menu, Lang.format(Lang.get(2327, "Extract to {0}"), "\"" + folder + "/\""),
                     #selector(PanelContextCommands.sevenZipExtractTo(_:)), target)
             }
@@ -135,17 +154,27 @@ extension PanelViewController {
             add(menu, Lang.text(2329, "Compress and email..."), #selector(PanelContextCommands.sevenZipCompressEmail(_:)), target)
         }
         let base = PanelContextMenuNaming.archiveBaseName(names: names, folderPath: snap.fullPath)
-        if flags.contains(.compressTo7z) {
-            add(menu, Lang.format(Lang.get(2328, "Add to {0}"), "\"" + base + ".7z\""),
-                #selector(PanelContextCommands.sevenZipCompressTo7z(_:)),
-                PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names,
-                                   archiveName: base + ".7z"))
-        }
-        if flags.contains(.compressToZip) {
-            add(menu, Lang.format(Lang.get(2328, "Add to {0}"), "\"" + base + ".zip\""),
-                #selector(PanelContextCommands.sevenZipCompressToZip(_:)),
-                PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names,
-                                   archiveName: base + ".zip"))
+        // ContextMenu.cpp:940-1001: the "Add to <name>.<ext>" item is left out when that is the
+        // name of the single selected file; the "and email" twins follow each one.
+        for (ext, flag, emailFlag, action, emailAction) in [
+            ("7z", Settings.ContextMenuFlags.compressTo7z, Settings.ContextMenuFlags.compressTo7zEmail,
+             #selector(PanelContextCommands.sevenZipCompressTo7z(_:)),
+             #selector(PanelContextCommands.sevenZipCompressTo7zEmail(_:))),
+            ("zip", Settings.ContextMenuFlags.compressToZip, Settings.ContextMenuFlags.compressToZipEmail,
+             #selector(PanelContextCommands.sevenZipCompressToZip(_:)),
+             #selector(PanelContextCommands.sevenZipCompressToZipEmail(_:))),
+        ] {
+            let archiveName = base + "." + ext
+            let target = PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names,
+                                            archiveName: archiveName)
+            let quoted = "\"" + archiveName + "\""
+            if flags.contains(flag), single?.name.caseInsensitiveCompare(archiveName) != .orderedSame {
+                add(menu, Lang.format(Lang.get(2328, "Add to {0}"), quoted), action, target)    // IDS_CONTEXT_COMPRESS_TO
+            }
+            if flags.contains(emailFlag) {
+                add(menu, Lang.format(Lang.get(2330, "Compress to {0} and email"), quoted),     // IDS_CONTEXT_COMPRESS_TO_EMAIL
+                    emailAction, target)
+            }
         }
         if flags.contains(.crc) {
             let crc = NSMenuItem(title: Lang.text(2350, "CRC SHA"), action: nil, keyEquivalent: "")
@@ -157,9 +186,49 @@ extension PanelViewController {
                 item.tag = tag
                 sub.addItem(item)
             }
+            // C12 `SHA-256 -> <name>.sha256` and C13 `Test archive : Checksum` (ContextMenu.cpp:
+            // 1101-1142), the same command lines the Finder extension sends (FinderMenuModel).
+            sub.addItem(.separator())
+            let hashName = ArchiveNaming.createArchiveName(
+                paths: paths, isHash: true, firstItemIsDirectory: items[0].isDirectory) + ".sha256"
+            let folder = snap.fullPath.hasSuffix("/") ? snap.fullPath : snap.fullPath + "/"
+            let generate = FinderMenuCommand(verb: "SevenZip.Checksum.Generate.SHA256",
+                                             title: "SHA-256 -> " + hashName,
+                                             prefixArguments: ["a"], selectionKind: .items,
+                                             suffixArguments: ["-thash", "-sae", "--", folder + hashName])
+            addChecksum(sub, generate, paths)
+            if !items.contains(where: { $0.isDirectory }) {
+                let test = FinderMenuCommand(verb: "SevenZip.Checksum.Test.Hash",
+                                             title: Lang.text(2325, "Test archive") + " : " + Lang.text(1046, "Checksum"),
+                                             prefixArguments: ["t", "-thash"], selectionKind: .archives,
+                                             refusesDirectories: true)
+                addChecksum(sub, test, paths)
+            }
             crc.submenu = sub
             menu.addItem(crc)
         }
+    }
+
+    /// `needExtract` of CZipContextMenu::QueryContextMenu (ContextMenu.cpp:797-825): no directory
+    /// among the items and every name passes DoNeedExtract (its extension is not in
+    /// kExtractExcludeExtensions). With the extended verbs (Shift held, CMF_EXTENDEDVERBS) the name
+    /// check is skipped and only the directory rule is left.
+    static func needExtract(items: [PanelRow], extendedVerbs: Bool) -> Bool {
+        guard !items.isEmpty, !items.contains(where: { $0.isDirectory || $0.isParentRow }) else { return false }
+        if extendedVerbs { return true }
+        return items.allSatisfy { !extractExcludeExtensions.contains($0.pathExtension.lowercased()) }
+    }
+
+    /// CMF_EXTENDEDVERBS: Shift held while the menu is requested.
+    static var extendedVerbsRequested: Bool {
+        NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false
+    }
+
+    private func addChecksum(_ menu: NSMenu, _ command: FinderMenuCommand, _ paths: [String]) {
+        let item = NSMenuItem(title: command.title,
+                              action: #selector(PanelContextCommands.sevenZipChecksumCommand(_:)), keyEquivalent: "")
+        item.representedObject = PanelChecksumCommand(command: command, paths: paths)
+        menu.addItem(item)
     }
 
     private func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ target: PanelContextTarget) {

@@ -42,6 +42,12 @@ enum ItemOpenCommands {
     /// (OpenFolderExternal, PanelItemOpen.cpp:835).
     static func openOutside() {
         guard let context = ActiveContext.current() else { return }
+        openOutside(context: context)
+    }
+
+    /// Open Outside for the first item of an explicit context -- the panel builds one per
+    /// operated row (OpenSelectedItems(false) opens every one, PanelItems.cpp:1096-1136).
+    static func openOutside(context: OperationContext) {
         guard let index = context.indices.first, let name = context.names.first else { return }
 
         if context.isFileSystem {
@@ -101,6 +107,14 @@ enum ItemOpenCommands {
             TempOpenManager.shared.track(session)
             session.startWatching(launchedApplication: nil)
         }
+    }
+
+    /// CApp::DiffFiles(path1, path2): run the configured Diff tool on two file-system paths,
+    /// IDS_CANNOT_START_EDITOR 3011 when it does not start. Nothing happens without a Diff tool
+    /// (ReadRegDiff empty), which is also when IDM_DIFF is hidden.
+    static func diff(paths: [String], parent: NSWindow?) {
+        guard !Settings.diffPath.isEmpty, paths.count == 2 else { return }
+        if !ExternalTool.open(paths, with: .diff) { cannotStartEditor(parent: parent) }
     }
 
     // MARK: - inside an archive
@@ -299,6 +313,17 @@ extension MainWindowController {
     /// IDM_FILE_EDIT 544 (F4).
     @objc func fileEdit(_ sender: Any?) { ItemOpenCommands.open(useEditor: true) }
 
-    /// IDM_DIFF 554.
-    @objc func fileDiff(_ sender: Any?) { ItemOpenCommands.diff() }
+    /// IDM_DIFF 554. One item selected in each of two panels compares the two (CApp::DiffFiles,
+    /// PanelItemOpen.cpp:766-788); `diffRequest()` is the panel scope's half of that rule
+    /// (Mac/App/Commands/PanelContextActions.swift). Everything else is the single-panel path.
+    @objc func fileDiff(_ sender: Any?) {
+        switch diffRequest() {
+        case .singlePanel:
+            ItemOpenCommands.diff()
+        case .unsupported:
+            focusedPanel.showUnsupportedOperation()
+        case .paths(let first, let second):
+            ItemOpenCommands.diff(paths: [first, second], parent: window)
+        }
+    }
 }

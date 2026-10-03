@@ -23,6 +23,9 @@ enum MainMenu {
     static let kMenuIDOpenBookmark = 830   // k_MenuID_OpenBookmark
     static let kMenuIDSetBookmark = 810    // k_MenuID_SetBookmark
     static let idmViewTime = 761           // IDM_VIEW_TIME (+ level index)
+    /// "No lang id": a macOS-only item with no 7-Zip string. Not 0, which is the *product name*
+    /// ("7-Zip") in every translation (CLang::Open, Lang.cpp:158-160).
+    static let noLangID = UInt32.max
 
     private static func fkey(_ n: Int) -> String {
         String(UnicodeScalar(NSF1FunctionKey + n - 1)!)
@@ -33,7 +36,9 @@ enum MainMenu {
     private static func item(_ menu: NSMenu, _ idm: Int, lang: UInt32, _ title: String,
                              key: String = "", mods: NSEvent.ModifierFlags = [],
                              action: Selector?, tag: Int? = nil, hidden: Bool = false) -> NSMenuItem {
-        let it = NSMenuItem(title: Lang.menuTitle(lang, title), action: action, keyEquivalent: key)
+        let it = NSMenuItem(title: lang == noLangID ? Lang.stripMnemonic(Lang.dropAccelerator(title))
+                                                    : Lang.menuTitle(lang, title),
+                            action: action, keyEquivalent: key)
         it.keyEquivalentModifierMask = mods
         it.tag = tag ?? idm
         it.isHidden = hidden
@@ -231,8 +236,8 @@ enum MainMenu {
         toolbars.submenu = toolbarsMenu
         menu.addItem(toolbars)
         // Back / Forward: not in 7zFM (which has no navigation stack), added for macOS.
-        item(menu, 0, lang: 0, "Back", key: "[", mods: [.command], action: #selector(a.viewGoBack(_:)), tag: 780)
-        item(menu, 0, lang: 0, "Forward", key: "]", mods: [.command], action: #selector(a.viewGoForward(_:)), tag: 781)
+        item(menu, 0, lang: noLangID, "Back", key: "[", mods: [.command], action: #selector(a.viewGoBack(_:)), tag: 780)
+        item(menu, 0, lang: noLangID, "Forward", key: "]", mods: [.command], action: #selector(a.viewGoForward(_:)), tag: 781)
         item(menu, 734, lang: 734, "Open Root Folder\t\\", action: #selector(a.viewOpenRootFolder(_:)))                       // IDM_OPEN_ROOT_FOLDER ("\" or "/" typed in the list)
         item(menu, 735, lang: 735, "Up One Level\tBackspace", key: String(UnicodeScalar(NSUpArrowFunctionKey)!), mods: [.command], action: #selector(a.viewOpenParentFolder(_:)))   // IDM_OPEN_PARENT_FOLDER (Backspace in the list; Cmd+Up here)
         item(menu, 736, lang: 736, "Folders History...\tAlt+F12", key: fkey(12), mods: [.option], action: #selector(a.viewFoldersHistory(_:)))   // IDM_FOLDERS_HISTORY

@@ -19,12 +19,6 @@ extension PanelViewController: NSUserInterfaceValidations {
     @objc func fileOpenInsideOne(_ sender: Any?) { openSelection(insideOnly: true, formatHint: "*") } // IDM_OPEN_INSIDE_ONE 590
     @objc func fileOpenInsideParser(_ sender: Any?) { openSelection(insideOnly: true, formatHint: "#") } // IDM_OPEN_INSIDE_PARSER 591
     @objc func fileOpenOutside(_ sender: Any?) {                                                    // IDM_OPEN_OUTSIDE 542
-        // Inside an archive this needs the temp-file open flow of the `extract` scope
-        // (PROGRESS §4.6). The panel sits earlier in the responder chain, so it hands the very
-        // same selector to the next responder that implements it instead of shadowing it.
-        if snapshot?.isArchive == true, forwardToNextResponder(#selector(fileOpenOutside(_:)), sender: sender) {
-            return
-        }
         openSelectionOutside()
     }
 

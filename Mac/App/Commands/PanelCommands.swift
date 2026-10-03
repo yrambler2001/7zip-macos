@@ -132,20 +132,7 @@ extension MainWindowController {
 extension MainWindowController: OperationContextProviding {
 
     func currentOperationContext() -> OperationContext? {
-        let panel = focusedPanel
-        guard let snapshot = panel.snapshot, let folder = panel.currentFolderForContext() else { return nil }
-        let rowIndices = panel.operatedRowIndices()
-        let rows = rowIndices.map { panel.rows[$0] }
-        return OperationContext(folder: folder,
-                                displayPath: snapshot.fullPath,
-                                isArchive: snapshot.isArchive,
-                                isFileSystem: snapshot.isFileSystem,
-                                indices: rows.map { $0.engineIndex },
-                                names: rows.map { $0.name },
-                                paths: snapshot.isFileSystem ? rows.map { $0.fullPath } : [],
-                                folderPath: snapshot.isFileSystem ? snapshot.fullPath : "",
-                                otherPanelPath: otherPanel(of: panel)?.snapshot?.fullPath,
-                                window: window)
+        focusedPanel.operationContext(rowIndices: focusedPanel.operatedRowIndices())
     }
 
     func refreshAfterOperation() {
@@ -154,5 +141,28 @@ extension MainWindowController: OperationContextProviding {
 
     func refreshAllPanels() {
         for panel in panels { panel.refreshAfterOperation() }
+    }
+}
+
+extension PanelViewController {
+
+    /// The frozen `OperationContext` for an explicit set of this panel's rows. `ActiveContext`
+    /// hands commands the focused panel's operated items; the panel uses this when it has to
+    /// name the rows itself -- Open Outside of several archive members, one at a time.
+    func operationContext(rowIndices: [Int]) -> OperationContext? {
+        guard let snapshot, let folder = currentFolderForContext() else { return nil }
+        let picked = rowIndices.filter { $0 >= 0 && $0 < rows.count }.map { rows[$0] }
+        let window = hostWindow
+        let controller = window?.windowController as? MainWindowController
+        return OperationContext(folder: folder,
+                                displayPath: snapshot.fullPath,
+                                isArchive: snapshot.isArchive,
+                                isFileSystem: snapshot.isFileSystem,
+                                indices: picked.map { $0.engineIndex },
+                                names: picked.map { $0.name },
+                                paths: snapshot.isFileSystem ? picked.map { $0.fullPath } : [],
+                                folderPath: snapshot.isFileSystem ? snapshot.fullPath : "",
+                                otherPanelPath: controller?.otherPanel(of: self)?.snapshot?.fullPath,
+                                window: window)
     }
 }
