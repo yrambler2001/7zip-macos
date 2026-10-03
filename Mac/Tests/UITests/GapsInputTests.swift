@@ -4,11 +4,8 @@
 // they cannot show is that a real right click, a real mouse drag and a real button press reach the
 // same code. Every case here synthesizes input, so the class belongs to the **input shard**.
 //
-// Written by `mac/uiverify`. **Not yet executed**: on the day it was written the machine could not
-// enable XCUITest automation mode at all ("Timed out while enabling automation mode";
-// `automationmodetool`: "This device requires user authentication"), so these compile but have never
-// run. `Mac/docs/reports/uiverify.md` lists them as the first thing to run once a human has
-// authenticated automation mode.
+// Written by `mac/uiverify` (Mac/docs/reports/uiverify.md). The icon-view drag needed a product fix
+// first: the collection view's items were not in the accessibility tree at all.
 //
 // Not here, on purpose:
 //   * the Help buttons (opsgaps). Their only test hook is in process (`HelpTopics.opener`), which
