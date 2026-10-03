@@ -335,7 +335,8 @@ enum DialogKit {
     static let margin: CGFloat = 20
 
     /// Fills the window with `content` inset by the standard margin and sizes the window
-    /// to fit, then centres it over `parent` (or on screen).
+    /// to fit, then centres it on its owner: `parent`, or the key / main window when `parent` is
+    /// nil (`center(_:over:)`), and on the screen only when the app shows no window.
     static func install(_ content: NSView, in window: NSWindow, parent: NSWindow?, minimumWidth: CGFloat) {
         let host = NSView()
         host.translatesAutoresizingMaskIntoConstraints = false
@@ -364,13 +365,49 @@ enum DialogKit {
         // a shape the spec asks for).
         window.contentMinSize = size
         host.layoutSubtreeIfNeeded()
-        if let parent {
-            let frame = parent.frame
-            let windowSize = window.frame.size
-            window.setFrameOrigin(NSPoint(x: frame.midX - windowSize.width / 2,
-                                          y: frame.midY - windowSize.height / 2))
-        } else {
-            window.center()
+        center(window, over: parent)
+    }
+
+    // MARK: placement
+
+    /// The window a dialog belongs to: `parent` when it is on screen, else the key window, else the
+    /// main window, else the app's own main 7-Zip window -- never `window` itself. nil only when the
+    /// app shows no window at all (7zG / command mode before anything is up).
+    ///
+    /// Every 7zFM dialog is `MY_MODAL_DIALOG_STYLE` with `DS_CENTER` and is created with an owner,
+    /// so Windows centres it on that owner (the main window, or the dialog it was opened from).
+    /// Several call sites here have no window at hand and passed nil -- the progress dialog, the
+    /// Tools-menu dialogs, Compress Options without a sheet parent, Options -- and those were
+    /// centred on the **screen** while Copy / Move / Create Folder sat on the main window
+    /// (requests.md, `polish` -> `opsinfra`). Resolving the owner here fixes all of them at once.
+    static func owner(for window: NSWindow?, parent: NSWindow?) -> NSWindow? {
+        func usable(_ candidate: NSWindow?) -> NSWindow? {
+            guard let candidate, candidate !== window, candidate.isVisible || candidate.isMiniaturized,
+                  candidate.styleMask.contains(.titled) else { return nil }
+            return candidate
         }
+        if let parent = usable(parent) { return parent }
+        if let key = usable(NSApp.keyWindow) { return key }
+        if let main = usable(NSApp.mainWindow) { return main }
+        if let ours = usable((NSApp.delegate as? AppDelegate)?.mainWindowController?.window) { return ours }
+        return NSApp.orderedWindows.first { usable($0) != nil && $0.windowController is MainWindowController }
+    }
+
+    /// Centres `window` on its owner (see `owner(for:parent:)`), kept inside the owner's screen as
+    /// `CenterWindow` keeps a dialog inside the work area; on the screen when there is no owner.
+    static func center(_ window: NSWindow, over parent: NSWindow?) {
+        guard let owner = owner(for: window, parent: parent) else {
+            window.center()
+            return
+        }
+        let frame = owner.frame
+        let size = window.frame.size
+        var origin = NSPoint(x: (frame.midX - size.width / 2).rounded(),
+                             y: (frame.midY - size.height / 2).rounded())
+        if let visible = (owner.screen ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
+            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+        }
+        window.setFrameOrigin(origin)
     }
 }

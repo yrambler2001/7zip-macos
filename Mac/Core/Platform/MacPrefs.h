@@ -26,7 +26,14 @@ extern const char * const kAppID;   // "com.yrambler2001.7zip" (the default doma
 // the work directory) -- goes through this one domain.
 extern const char * const kSuiteEnvVar;   // "SEVENZIP_DEFAULTS_SUITE"
 
-// The domain actually in use (kAppID unless the environment variable is set).
+// The domain used when the environment variable is not set: the running application's own
+// bundle identifier, so two copies built with different PRODUCT_BUNDLE_IDENTIFIERs keep separate
+// settings (Mac/docs/test-support-contract.md, "nothing keyed on a hard-coded bundle identifier").
+// kAppID when the main bundle is not an application (the xctest runner, an .appex) or has no
+// identifier, so the unit tests and the extensions keep the shipping domain.
+AString DefaultApplicationID();
+
+// The domain actually in use (DefaultApplicationID() unless the environment variable is set).
 AString ApplicationID();
 
 bool GetUInt32(const char *key, UInt32 &value);

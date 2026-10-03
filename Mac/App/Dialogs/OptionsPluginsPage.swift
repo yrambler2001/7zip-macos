@@ -24,8 +24,8 @@ final class OptionsPluginsPage: OptionsPageBase, NSTableViewDataSource, NSTableV
         super.loadView()
         table.addTableColumn(OptionsUI.column("name", "Format", width: 110))
         table.addTableColumn(OptionsUI.column("update", "Create", width: 56))
-        table.addTableColumn(OptionsUI.column("ext", "Extensions", width: 260))
-        table.addTableColumn(OptionsUI.column("flags", "Capabilities", width: 170))
+        table.addTableColumn(OptionsUI.column("ext", "Extensions", width: 210))
+        table.addTableColumn(OptionsUI.column("flags", "Capabilities", width: 150))
         table.usesAlternatingRowBackgroundColors = true
         table.style = .fullWidth
         table.rowHeight = 18

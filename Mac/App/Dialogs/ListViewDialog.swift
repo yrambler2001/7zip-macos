@@ -92,7 +92,8 @@ private final class ListViewDialogTable: NSTableView {
     @objc func copy(_ sender: Any?) { keyHandler?.tableCopySelection(self) }
 }
 
-private final class ListViewDialogController: NSObject, NSTableViewDataSource, ListViewDialogTableKeyHandler {
+private final class ListViewDialogController: NSObject, NSTableViewDataSource, NSTableViewDelegate,
+                                              ListViewDialogTableKeyHandler {
 
     let window: NSWindow
     private let table = ListViewDialogTable()             // IDL_LISTVIEW 100
@@ -147,6 +148,7 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, L
         table.style = .plain
         table.usesAutomaticRowHeights = false
         table.dataSource = self
+        table.delegate = self
         table.keyHandler = self
         table.target = self
         table.doubleAction = #selector(rowActivated(_:))    // LVN_ITEMACTIVATE
@@ -201,6 +203,38 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, L
             return row < values.count ? values[row] : ""
         }
         return strings[row]
+    }
+
+    // MARK: NSTableViewDelegate
+
+    /// A view-based row: an `NSTableCellView` with a real text field, so each row is an
+    /// accessibility cell with a static text that VoiceOver reads and XCUITest resolves -- the
+    /// cell-based list exposed no row text at all (requests.md, `opsgaps` -> `panel`; the same fix
+    /// `mac/opsgaps` made in `HashListDialogView`).
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let identifier = NSUserInterfaceItemIdentifier("ListViewCell." + (tableColumn?.identifier.rawValue ?? "strings"))
+        let cell: NSTableCellView
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+            cell = reused
+        } else {
+            cell = NSTableCellView()
+            cell.identifier = identifier
+            let field = NSTextField(labelWithString: "")
+            field.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+            field.lineBreakMode = .byTruncatingTail
+            field.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(field)
+            cell.textField = field
+            NSLayoutConstraint.activate([
+                field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            ])
+        }
+        let text = self.tableView(tableView, objectValueFor: tableColumn, row: row) as? String ?? ""
+        cell.textField?.stringValue = text
+        cell.setAccessibilityLabel(text)
+        return cell
     }
 
     // MARK: actions
