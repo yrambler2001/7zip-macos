@@ -1,30 +1,30 @@
-# Verification run — 2026-10-03 14:40:05 +0200
+# Verification run — 2026-10-03 15:24:27 +0200
 
-* scope / branch: `uiverify`  (commit `8fb530d`)
+* scope / branch: `release`  (commit `6dafc18`)
 * configuration: Debug (clean)
-* command: `Mac/scripts/verify.sh`  → exit 0
+* command: `Mac/scripts/verify.sh`  → exit 65
 * toolchain: `DEVELOPER_DIR=/Applications/Xcode.app`, Xcode 26.6
 
 | result | step | time | detail |
 |---|---|---|---|
-| ok | clean build (Debug) | 40s | OK: ~/things/a.noindex/7zip/.worktrees/uiverify/Mac/build/Debug/7-Zip.app -> ~/things/a.noindex/7zip/.worktrees/uiverify/Mac/build/DerivedData/Build/Products/Debug/7-Zip.app |
-| ok | all tests (sharded) | 704s | OK: tests passed |
+| ok | clean build (Debug) | 52s | OK: ~/things/a.noindex/7zip/.worktrees/release/Mac/build/Debug/7-Zip.app -> ~/things/a.noindex/7zip/.worktrees/release/Mac/build/DerivedData/Build/Products/Debug/7-Zip.app |
+| **FAIL** | all tests (sharded) | 30s | rc=65: BUILD-FOR-TESTING FAILED (rc=65); log: ~/things/a.noindex/7zip/.worktrees/release/Mac/build/build-for-testing.log |
 
 ## Parity (Mac/docs/PROGRESS.md)
 
 ```
 scope          done  total    pct
-scaffold         49     57    86%
-fsfolder         56     58    97%
+scaffold         55     57    96%
+fsfolder         58     58   100%
 panel           108    108   100%
-extract          56     57    98%
-compress         51     52    98%
-tools            39     40    98%
-options          45     46    98%
-finder           32     36    89%
-packaging        11     22    50%
+extract          57     57   100%
+compress         52     52   100%
+tools            40     40   100%
+options          46     46   100%
+finder           34     36    94%
+packaging        20     22    91%
 icons            20     20   100%
-TOTAL           467    496    94%
+TOTAL           490    496    99%
 ```
 
 Logs: `Mac/build/build-Debug.log`, `Mac/build/test-SevenZipKitTests.log`,

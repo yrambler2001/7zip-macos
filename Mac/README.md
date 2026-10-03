@@ -34,11 +34,10 @@ Everything the Windows file manager does with archives, in a Mac window:
   Services and 40 file associations with their own document icons.
 * **93 languages**, the official 7-Zip translations, switchable while the app runs.
 
-What is missing, partial or deliberately different is listed in **`Mac/docs/parity.md`**. The three
-that will be noticed first: there is **no bundled help** (Help buttons open the online
-documentation), the **7-Zip commands on the panel's own right-click menu are greyed out** (use the
-File menu, the toolbar, or Finder's 7-Zip menu instead), and **drag and drop works in the Details
-view only**.
+* **The 7-Zip help pages**, bundled, opened in your browser from every Help button.
+
+What is partial or deliberately different is listed in **`Mac/docs/parity.md`**; the short
+version is under *Known limitations* below.
 
 ---
 
@@ -89,10 +88,29 @@ Mac/scripts/package.sh --identity "Developer ID Application: Your Name (TEAMID)"
 
 That builds with the hardened runtime and a secure timestamp, signs the app, its framework and
 all three extensions, signs the disk image, submits it with `xcrun notarytool --wait` and staples
-the ticket. Store the credentials once with
-`xcrun notarytool store-credentials my-notary-profile --apple-id … --team-id … --password …`, or
-pass `--apple-id` plus `NOTARY_PASSWORD` instead. Without a Developer ID the notarization step is
-skipped with a printed note rather than failing; asking for it anyway exits 3 and says why.
+the ticket. Without a Developer ID the notarization step is skipped with a printed note rather
+than failing; asking for it anyway exits 3 and says why.
+
+The whole path for a person who has the Apple Developer account, in order:
+
+```sh
+# 1. Once: a "Developer ID Application" certificate in the login keychain (Xcode ▸ Settings ▸
+#    Accounts ▸ Manage Certificates ▸ +), then check that codesign sees it:
+security find-identity -v -p codesigning
+# 2. Once: an app-specific password (appleid.apple.com ▸ Sign-In and Security), stored for notarytool:
+xcrun notarytool store-credentials 7zip-notary --apple-id you@example.com --team-id TEAMID
+# 3. Every release:
+Mac/scripts/package.sh -i "Developer ID Application: Your Name (TEAMID)" -T TEAMID -p 7zip-notary
+# 4. Check what a downloaded copy will see:
+spctl --assess --type open --context context:primary-signature -v Mac/build/7-Zip-26.03.dmg
+xcrun stapler validate Mac/build/7-Zip-26.03.dmg
+```
+
+The app needs **no** hardened-runtime exception: it uses no JIT, loads no plug-ins and sends no
+Apple events. That was checked by running an ad-hoc copy with `--options runtime` (only library
+validation had to be relaxed for that local test, because ad-hoc signatures carry no Team ID; a
+Developer ID signature gives the app and its framework the same one). The extensions keep their
+sandbox entitlement and nothing asks for `get-task-allow`; `package.sh` asserts both.
 
 ---
 
@@ -103,9 +121,10 @@ export DEVELOPER_DIR=/Applications/Xcode.app     # every script does this itself
 Mac/scripts/build.sh                             # Debug, ad-hoc signed -> Mac/build/Debug/7-Zip.app
 Mac/scripts/build.sh --release                   # Release
 Mac/scripts/run.sh                               # build, then open the app
-Mac/scripts/test.sh                              # 286 unit tests
+Mac/scripts/test.sh                              # the unit tests (~390)
+Mac/scripts/test.sh -H                           # the app-hosted tests (~100)
 Mac/scripts/test.sh --all                        # unit tests + the XCUITest suite
-Mac/scripts/verify.sh                            # clean build + both suites + a written report
+Mac/scripts/verify.sh                            # clean build + every suite + a written report
 Mac/scripts/package.sh                           # the disk image
 Mac/scripts/parity-check.sh                      # how much of the checklist is done
 ```
@@ -207,20 +226,18 @@ for, and those show a good deal of English alongside their own language. The ful
 
 The honest list is `Mac/docs/parity.md`. The short version:
 
-* **No help.** Nothing is bundled; Help buttons open 7-zip.org or the system help viewer.
-* **The panel's own right-click menu has a 7-Zip section whose items are greyed out.** The same
-  commands work from the File menu, the toolbar and Finder's 7-Zip menu.
-* **Drag and drop works in the Details view only**, not in the three icon view modes. Dropping
-  files on the window background offers to compress the panel's *selection*, not what you dropped.
-* **Open Outside does nothing for an item inside an archive** (it works for ordinary files).
-* Extraction does **not** propagate `com.apple.quarantine` to extracted files except for files you
-  open from inside an archive.
-* The **splitter position of the two-panel layout is sometimes restored wrong** (panel 1 takes
-  almost the whole window). Drag it back; it is only the restore that misbehaves.
-* Some dialogs (**Copy/Move, Benchmark, Properties**) draw their bottom button row clipped against
-  the window edge. The buttons still work, and Return and Escape still do OK and Cancel.
+* **Opening several archives from Finder at once**: the first one opens in the front window, the
+  others in windows of their own (Windows opens one window per archive).
+* **Re-launching the app** (Dock, Finder) brings its window forward instead of opening a new one,
+  as Mac apps do; `open -n -a 7-Zip` starts a second window.
+* **Right-to-left languages are not mirrored** — the text is right, the layout is left-to-right.
+* **About a quarter of the translations are incomplete upstream** and fall back to English for
+  what they miss.
 * **Alternate data streams and NT security descriptors are hidden**, deliberately: they have no
   macOS equivalent. POSIX mode, owner, group and link target are shown instead.
+* **The Finder menu, a drag into Finder, a drop on the Dock icon and the Dock-tile progress** are
+  tested up to the macOS boundary but have not been looked at by a person on a signed build
+  (`Mac/docs/reports/release.md` lists the checks).
 * `7z.exe`-style command-line use exists (`7-Zip.app/Contents/MacOS/7-Zip a archive.7z files…`)
   and covers the 7zG grammar, but it is a GUI app in command mode, not a console tool. For
   scripting, build the real console binary:
@@ -240,8 +257,9 @@ The honest list is `Mac/docs/parity.md`. The short version:
 | `Mac/docs/02-engine-api.md` | which engine sources are compiled and how the bridge calls them |
 | `Mac/docs/03-shell-integration-inventory.md` | the Windows shell extension and the macOS mechanisms that replace it |
 | `Mac/docs/04-toolchain.md` | build recipe and toolchain traps |
-| `Mac/docs/HANDOFF.md` | what a fresh machine needs |
-| `Mac/docs/upstream-patches.md` | every change made to upstream C/C++ (ten files, all guarded) |
+| `Mac/docs/HANDOFF.md` | what a fresh machine needs, the scope status and how to resume |
+| `Mac/docs/reports/release.md` | the last pass: what was closed, the decisions left, the manual checks |
+| `Mac/docs/upstream-patches.md` | every change made to upstream C/C++ (15 files, all guarded) |
 | `Mac/docs/api/*.md` | the public API each part of the app exposes |
 | `Mac/docs/reports/*.md` | what each piece of work did, verified and left undone |
 | `Mac/docs/reports/screenshots/` | screenshots taken by the UI tests |

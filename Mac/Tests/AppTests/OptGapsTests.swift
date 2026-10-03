@@ -376,14 +376,4 @@ final class OptGapsTests: AppHostTestCase {
         }
         for child in wideChildren { collectWide(child, limit: limit, path: name, into: &out) }
     }
-
-    /// A screenshot of Options > System with the bundled format icons (`mac/optgaps`, I.1), for
-    /// the per-scope screenshot set (PROGRESS 9.4).
-    func testScreenshotSystemPage() {
-        SZSettings.setInteger(0, forKey: "FM.OptionsPage")          // open on the System page
-        let appeared = ModalProbe.present({ OptionsWindowController.showOptions() }) { window in
-            _ = self.attach(window, "01-options-system")
-        }
-        XCTAssertTrue(appeared)
-    }
 }

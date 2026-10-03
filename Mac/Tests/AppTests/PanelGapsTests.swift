@@ -528,6 +528,17 @@ final class PanelGapsTests: AppHostTestCase {
         XCTAssertEqual(controller.fileMenuRule(#selector(MenuActions.fileSplit(_:))), false,
                        "Split is for a file-system file only")
     }
+    /// A screenshot of the icon view with drag and drop and the accessibility cells
+    /// (`mac/panelgaps`, `mac/uiverify`), for the per-scope screenshot set (PROGRESS 9.4).
+    func testScreenshotLargeIcons() {
+        let scratch = makeScratch("shot")
+        let controller = makeWindow(panels: 1)
+        let panel = controller.focusedPanel
+        navigate(panel, to: scratch)
+        panel.setListViewMode(0)
+        XCTAssertFalse((panel.iconView?.collectionView.accessibilityChildren() ?? []).isEmpty)
+        if let window = controller.window { _ = attach(window, "01-large-icons") }
+    }
 }
 
 // MARK: - a drag without a mouse
@@ -566,15 +577,4 @@ private final class StubDraggingInfo: NSObject, NSDraggingInfo {
     var springLoadingHighlight: NSSpringLoadingHighlight { .none }
     func resetSpringLoading() {}
 
-    /// A screenshot of the icon view with drag and drop and the accessibility cells
-    /// (`mac/panelgaps`, `mac/uiverify`), for the per-scope screenshot set (PROGRESS 9.4).
-    func testScreenshotLargeIcons() {
-        let scratch = makeScratch("shot")
-        let controller = makeWindow(panels: 1)
-        let panel = controller.focusedPanel
-        navigate(panel, to: scratch)
-        panel.setListViewMode(0)
-        XCTAssertFalse((panel.iconView?.collectionView.accessibilityChildren() ?? []).isEmpty)
-        if let window = controller.window { _ = attach(window, "01-large-icons") }
-    }
 }
