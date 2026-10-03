@@ -29,12 +29,13 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
         guard let pid = PanelViewController.propID(of: tableColumn) else { return nil }
         let isName = pid == .name
         let identifier = NSUserInterfaceItemIdentifier(isName ? "name" : "text")
-        let cell: NSTableCellView
-        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+        let cell: PanelCellView
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? PanelCellView {
             cell = reused
         } else {
-            cell = NSTableCellView()
+            cell = PanelCellView()
             cell.identifier = identifier
+            cell.isNameCell = isName
             let text = NSTextField(labelWithString: "")
             text.lineBreakMode = .byTruncatingTail
             text.translatesAutoresizingMaskIntoConstraints = false
@@ -64,7 +65,7 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
         if isName {
             cell.textField?.stringValue = item.displayName
             cell.textField?.alignment = .left
-            cell.imageView?.image = icon(for: item)
+            cell.baseImage = icon(for: item)
             cell.textField?.isEditable = false                    // label editing starts on F2 only
         } else {
             cell.textField?.stringValue = item.cells[pid] ?? ""
@@ -72,8 +73,10 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
                 cell.textField?.alignment = PanelFormat.alignment(for: info.varType, propID: pid)
             }
         }
-        // kpidIsDeleted rows are drawn in red (OnCustomDraw, 01 §3.6).
-        cell.textField?.textColor = item.isDeleted ? .systemRed : .labelColor
+        // kpidIsDeleted rows are drawn in red (OnCustomDraw, 01 §3.6); a highlighted cell is white
+        // on the highlight (PanelSelectionStyle).
+        cell.isDeleted = item.isDeleted
+        cell.applyColors(highlighted: cellIsHighlighted(row: row, isName: isName))
         return cell
     }
 
@@ -91,6 +94,7 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
             focusedIndex = tableView.selectedRow
         }
         refreshStatusBar()                                        // OnItemChanged (01 §3.12)
+        refreshSelectionAppearance()
     }
 
     func tableViewColumnDidMove(_ notification: Notification) { saveColumnLayout() }
@@ -251,6 +255,12 @@ final class PanelIconView: NSView {
         collectionView.selectionIndexPaths = paths
     }
 
+    /// Re-colour every visible item (selection, focus or key-window change; PanelSelectionStyle).
+    func refreshItemAppearance() {
+        guard !isHidden else { return }
+        for item in collectionView.visibleItems() { (item as? PanelCollectionItem)?.updateAppearance() }
+    }
+
     func scrollItemToVisible(_ index: Int) {
         guard let count = panel?.rows.count, index >= 0, index < count else { return }
         collectionView.scrollToItems(at: [IndexPath(item: index, section: 0)], scrollPosition: .nearestHorizontalEdge)
@@ -271,6 +281,8 @@ extension PanelIconView: NSCollectionViewDataSource, NSCollectionViewDelegate {
         let cell = PanelCollectionItem()
         guard let panel, indexPath.item < panel.rows.count else { return cell }
         let row = panel.rows[indexPath.item]
+        cell.panel = panel
+        cell.index = indexPath.item
         cell.configure(name: row.displayName,
                        icon: isLargeIcons ? panel.largeIcon(for: row) : panel.icon(for: row),
                        large: isLargeIcons, isDeleted: row.isDeleted, mySelected: panel.isMySelected(indexPath.item))
@@ -342,6 +354,13 @@ final class PanelCollectionView: NSCollectionView {
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
         if ok, let panel { panel.delegate?.panelDidBecomeActive(panel) }
+        if ok { panel?.refreshSelectionAppearance() }       // the selection shows with the focus
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { panel?.refreshSelectionAppearance() }
         return ok
     }
 
@@ -386,9 +405,14 @@ final class PanelCollectionItem: NSCollectionViewItem {
 
     static let identifier = NSUserInterfaceItemIdentifier("PanelCollectionItem")
 
+    weak var panel: PanelViewController?
+    var index = -1
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private var mySelected = false
+    private var isDeleted = false
+    private var baseImage: NSImage?
+    private var large = false
 
     override func loadView() {
         let root = ItemBackgroundView()
@@ -410,13 +434,43 @@ final class PanelCollectionItem: NSCollectionViewItem {
     }
 
     func configure(name: String, icon image: NSImage, large: Bool, isDeleted: Bool, mySelected: Bool) {
-        icon.image = image
+        baseImage = image
         label.stringValue = name
         view.setAccessibilityLabel(name)
-        label.textColor = isDeleted ? .systemRed : .labelColor
+        self.isDeleted = isDeleted
         self.mySelected = mySelected
+        self.large = large
         layout(large: large)
+        updateAppearance()
+    }
+
+    /// The icon modes draw selection as the list control does in LVS_ICON / LVS_SMALLICON /
+    /// LVS_LIST (selcolors-data/win/*-large-*, *-small-*, *-list-*): the icon blended with the
+    /// highlight, the label's text on the highlight in white, nothing while the list is unfocused.
+    var drawsHighlight: Bool {
+        (isSelected && (panel?.listHasKeyboardFocus ?? true)) || highlightState == .asDropTarget
+    }
+
+    func updateAppearance() {
+        guard isViewLoaded else { return }
+        let lit = drawsHighlight
+        label.textColor = lit ? PanelSelectionStyle.highlightText : PanelSelectionStyle.normalText(isDeleted: isDeleted)
+        if let baseImage { icon.image = lit ? PanelSelectionStyle.blended(baseImage) : baseImage }
         view.needsDisplay = true
+    }
+
+    /// The label rect (LVIR_LABEL): the text's width plus 2 pt either side, centred under a large
+    /// icon, left-aligned after a small one.
+    fileprivate var labelRect: NSRect {
+        let frame = label.frame
+        let width = min(frame.width, label.intrinsicContentSize.width) + 2 * PanelSelectionStyle.labelPadding
+        let x = large ? frame.midX - width / 2 : frame.minX - PanelSelectionStyle.labelPadding
+        return NSRect(x: x, y: frame.minY, width: width, height: frame.height).intersection(view.bounds)
+    }
+
+    fileprivate var drawsFocusRectangle: Bool {
+        guard let panel, index >= 0 else { return false }
+        return panel.focusedIndex == index && panel.listHasKeyboardFocus
     }
 
     private var installedConstraints: [NSLayoutConstraint] = []
@@ -450,10 +504,13 @@ final class PanelCollectionItem: NSCollectionViewItem {
     }
 
     override var isSelected: Bool {
-        didSet { view.needsDisplay = true }
+        didSet { updateAppearance() }
     }
 
-    fileprivate var drawsSelection: Bool { isSelected }
+    override var highlightState: NSCollectionViewItem.HighlightState {
+        didSet { updateAppearance() }
+    }
+
     fileprivate var drawsMySelection: Bool { mySelected }
 
     /// Selection and the AlternativeSelection background, drawn like the table's row view.
@@ -469,13 +526,18 @@ final class PanelCollectionItem: NSCollectionViewItem {
         override func isAccessibilitySelected() -> Bool { owner?.isSelected ?? false }
 
         override func draw(_ dirtyRect: NSRect) {
-            if owner?.drawsMySelection == true {
-                NSColor(calibratedRed: 1.0, green: 192.0 / 255.0, blue: 192.0 / 255.0, alpha: 1.0).setFill()
+            guard let owner else { return }
+            if owner.drawsMySelection {
+                PanelSelectionStyle.mySelected.setFill()
                 bounds.fill()
             }
-            if owner?.drawsSelection == true {
-                NSColor.selectedContentBackgroundColor.setFill()
-                bounds.fill()
+            let label = owner.labelRect
+            if owner.drawsHighlight {
+                PanelSelectionStyle.highlight.setFill()
+                label.fill()
+            }
+            if owner.drawsFocusRectangle {
+                PanelSelectionStyle.drawFocusRectangle(label, onHighlight: owner.drawsHighlight)
             }
         }
     }

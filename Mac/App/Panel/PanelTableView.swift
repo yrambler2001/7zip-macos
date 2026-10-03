@@ -38,8 +38,28 @@ final class PanelTableView: NSTableView {
     }
 
     private func redrawRowViews() {
-        enumerateAvailableRowViews { view, _ in view.needsDisplay = true }
+        if let panel { panel.refreshSelectionAppearance() } else {
+            enumerateAvailableRowViews { view, _ in view.needsDisplay = true }
+        }
     }
+
+    /// The selection is drawn only while the list has the keyboard focus, which it loses with the
+    /// window's key status too (no LVS_SHOWSELALWAYS, selcolors).
+    private var keyObservers: [NSObjectProtocol] = []
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        keyObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        keyObservers = []
+        guard let window else { return }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            keyObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
+                [weak self] _ in self?.redrawRowViews()
+            })
+        }
+    }
+
+    deinit { keyObservers.forEach { NotificationCenter.default.removeObserver($0) } }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -94,57 +114,118 @@ final class PanelTableHeaderView: NSTableHeaderView {
     }
 }
 
-/// Custom draw (OnCustomDraw, PanelListNotify.cpp:698-757) plus the FullRow setting.
+/// Custom draw (OnCustomDraw, PanelListNotify.cpp:698-757) plus the FullRow setting, drawn as the
+/// Windows list control draws it (PanelSelectionStyle.swift, selcolors.md).
 final class PanelRowView: NSTableRowView {
 
     weak var panel: PanelViewController?
     var rowIndex = -1
     var isMySelected = false
 
+    override var isSelected: Bool { didSet { if isSelected != oldValue { updateCellColors() } } }
+    override var isEmphasized: Bool { didSet { if isEmphasized != oldValue { updateCellColors() } } }
+    override var isTargetForDropOperation: Bool {
+        didSet { if isTargetForDropOperation != oldValue { updateCellColors(); needsDisplay = true } }
+    }
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        if let cell = subview as? PanelCellView { cell.applyColors(highlighted: highlightCovers(cell)) }
+    }
+
+    /// The selection fill is drawn: selected while the list has the keyboard focus, or the drop
+    /// target of a drag (LVIS_DROPHILITED looks the same).
+    var drawsHighlight: Bool {
+        guard let panel else { return isSelected }
+        return (isSelected && panel.listHasKeyboardFocus) || isTargetForDropOperation
+    }
+
+    private func highlightCovers(_ cell: PanelCellView) -> Bool {
+        drawsHighlight && (cell.isNameCell || Settings.fullRow)
+    }
+
+    func updateCellColors() {
+        for case let cell as PanelCellView in subviews { cell.applyColors(highlighted: highlightCovers(cell)) }
+    }
+
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         if isMySelected {
-            NSColor(calibratedRed: 1.0, green: 192.0 / 255.0, blue: 192.0 / 255.0, alpha: 1.0).setFill()
+            PanelSelectionStyle.mySelected.setFill()
             bounds.fill()
         }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
         drawFocusRectangle()
     }
 
-    /// The list control's dotted focus rectangle around a focused item that is not selected
-    /// (a folder just opened: "0 / N object(s) selected", winmatch). Only while the list has the
-    /// keyboard focus, as on Windows; around the name cell unless FullRow is on.
-    private func drawFocusRectangle() {
-        guard let panel, !isSelected, rowIndex >= 0, panel.focusedIndex == rowIndex else { return }
-        let table = panel.tableView
-        guard window?.firstResponder === table, table.numberOfColumns > 0 else { return }
-        var rect = bounds
-        if !Settings.fullRow {
-            rect = table.rect(ofColumn: 0)
-            rect.origin.y = bounds.minY
-            rect.size.height = bounds.height
-            rect = rect.intersection(bounds)
+    /// The name column's rect in this row, or nil when it is hidden.
+    private var nameColumnRect: NSRect? {
+        guard let table = panel?.tableView else { return nil }
+        guard let index = table.tableColumns.firstIndex(where: { PanelViewController.propID(of: $0) == .name }) else { return nil }
+        var rect = table.rect(ofColumn: index)
+        rect.origin.y = bounds.minY
+        rect.size.height = bounds.height
+        return rect
+    }
+
+    /// Where the label starts (after the icon) and where the name's text ends, from the name cell
+    /// itself when it is on screen.
+    private var labelSpan: (start: CGFloat, textEnd: CGFloat)? {
+        guard let column = nameColumnRect else { return nil }
+        var start = column.minX + PanelSelectionStyle.nameIconSlot
+        var end = column.maxX
+        if let table = panel?.tableView,
+           let index = table.tableColumns.firstIndex(where: { PanelViewController.propID(of: $0) == .name }),
+           let cell = table.view(atColumn: index, row: rowIndex, makeIfNecessary: false) as? NSTableCellView,
+           let field = cell.textField {
+            let frame = field.convert(field.bounds, to: self)
+            start = frame.minX - PanelSelectionStyle.labelPadding
+            end = min(end, frame.minX + min(field.intrinsicContentSize.width, frame.width)
+                      + PanelSelectionStyle.labelPadding)
         }
-        let path = NSBezierPath(rect: rect.insetBy(dx: 0.5, dy: 0.5))
-        path.lineWidth = 1
-        path.setLineDash([1, 1], count: 2, phase: 0)
-        NSColor.labelColor.setStroke()
-        path.stroke()
+        return (max(column.minX, start), end)
+    }
+
+    /// Where the fill goes (and the focus rectangle): from the label to the end of the row
+    /// (FullRow) or the label only (LVIR_LABEL: the name's text plus 2 pt either side).
+    var highlightRect: NSRect {
+        guard panel != nil else { return bounds }
+        guard let span = labelSpan else { return Settings.fullRow ? bounds : .zero }
+        let end = Settings.fullRow ? bounds.maxX : span.textEnd
+        return NSRect(x: span.start, y: bounds.minY, width: max(0, end - span.start), height: bounds.height)
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
-        // LVS_EX_FULLROWSELECT off: only the name column is highlighted, as on Windows.
-        if Settings.fullRow || panel == nil {
-            super.drawSelection(in: dirtyRect)
-            return
+        guard panel != nil else { super.drawSelection(in: dirtyRect); return }
+        guard drawsHighlight else { return }                 // no LVS_SHOWSELALWAYS
+        fillHighlight()
+    }
+
+    override func drawDraggingDestinationFeedback(in dirtyRect: NSRect) {
+        guard panel != nil else { super.drawDraggingDestinationFeedback(in: dirtyRect); return }
+        fillHighlight()
+    }
+
+    private func fillHighlight() {
+        PanelSelectionStyle.highlight.setFill()
+        if Settings.fullRow, let column = nameColumnRect, column.minX > bounds.minX {
+            // The name column was dragged away from the left: the columns before it are filled too.
+            NSRect(x: bounds.minX, y: bounds.minY, width: column.minX - bounds.minX, height: bounds.height).fill()
+            highlightRect.fill()
+        } else {
+            highlightRect.fill()
         }
-        guard let table = panel?.tableView, table.numberOfColumns > 0 else {
-            super.drawSelection(in: dirtyRect)
-            return
-        }
-        var rect = table.rect(ofColumn: 0)
-        rect.origin.y = bounds.minY
-        rect.size.height = bounds.height
-        NSColor.selectedContentBackgroundColor.setFill()
-        rect.intersection(bounds).fill()
+    }
+
+    /// The list control's dotted focus rectangle around the focused item, selected or not, while
+    /// the list has the keyboard focus (winmatch, selcolors): around the label, or around the
+    /// full-row fill with FullRow.
+    private func drawFocusRectangle() {
+        guard let panel, rowIndex >= 0, panel.focusedIndex == rowIndex, panel.listHasKeyboardFocus,
+              panel.tableView.numberOfColumns > 0 else { return }
+        PanelSelectionStyle.drawFocusRectangle(highlightRect, onHighlight: drawsHighlight)
     }
 }
