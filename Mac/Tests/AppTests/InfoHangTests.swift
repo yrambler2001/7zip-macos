@@ -160,7 +160,12 @@ final class InfoHangTests: AppHostTestCase {
         controller.window?.makeKeyAndOrderFront(nil)
         controller.window?.makeFirstResponder(controller.focusedPanel.tableView)
         if !NSApp.sendAction(action, to: nil, from: button) {
-            NSApp.sendAction(action, to: controller.focusedPanel, from: button)
+            // The chain the key window would have walked: the list, its panel, the window
+            // controller, then the app delegate.
+            let chain: [AnyObject?] = [controller.focusedPanel, controller, NSApp.delegate]
+            let target = chain.compactMap { $0 }.first { ($0 as? NSObject)?.responds(to: action) ?? false }
+            XCTAssertNotNil(target, "nobody handles \(action)")
+            NSApp.sendAction(action, to: target, from: button)
         }
     }
 
@@ -303,5 +308,47 @@ final class InfoHangTests: AppHostTestCase {
         XCTAssertEqual(titles, ["Properties", "Name", "Properties"], "Properties -> item viewer -> Properties")
         XCTAssertEqual(step, 3)
         assertResponsive(controller, "after the viewer and Properties")
+    }
+
+    // MARK: - the other toolbar buttons (Add, Extract, Test, Copy, Move, Delete)
+
+    /// Every toolbar button opens a modal window; closing it with the title-bar button or Cmd+W
+    /// must end that session and do nothing else (IDCANCEL): no archive written, nothing copied,
+    /// moved or deleted. Test ends in a result alert (OK).
+    func testEveryToolbarDialogEndsItsSessionWhenClosed() throws {
+        let scratch = makeScratch()
+        let controller = makeWindow(at: scratch)
+        let fm = FileManager.default
+        let before = Set((try? fm.contentsOfDirectory(atPath: scratch)) ?? [])
+        var failures: [String] = []
+        let plan: [(String, String, [CloseWay])] = [
+            ("sz.add", "a.txt", [.closeButton, .commandW]),
+            ("sz.extract", "test.7z", [.closeButton, .commandW]),
+            ("sz.copy", "a.txt", [.closeButton, .commandW]),
+            ("sz.move", "a.txt", [.closeButton, .commandW]),
+            ("sz.test", "test.7z", [.okButton]),
+        ]
+        for (id, name, ways) in plan {
+            failures += runMatrix(controller, location: id, picks: [(name, .name(name))], ways: ways) {
+                self.clickToolbar(id, controller)
+            }
+        }
+        // Delete to the Trash on disk asks nothing (FOF_ALLOWUNDO, PanelOperations.swift); inside
+        // an archive it asks with an NSAlert, which has no close box: Escape is its IDCANCEL.
+        try? fm.copyItem(atPath: scratch + "/test.7z", toPath: scratch + "/del.7z")
+        var done = false
+        controller.focusedPanel.navigate(to: scratch + "/del.7z") { _ in done = true }
+        XCTAssertTrue(wait(for: "inside del.7z") { done && controller.focusedPanel.snapshot?.isArchive == true })
+        let item = controller.focusedPanel.rows.first { !$0.isParentRow }?.name ?? ""
+        let countBefore = controller.focusedPanel.rows.count
+        failures += runMatrix(controller, location: "sz.delete (archive)", picks: [(item, .name(item))],
+                              ways: [.escape]) { self.clickToolbar("sz.delete", controller) }
+        XCTAssertEqual(controller.focusedPanel.rows.count, countBefore, "Escape on the delete question deleted")
+        controller.focusedPanel.navigate(to: scratch) { _ in done = true }
+        try? fm.removeItem(atPath: scratch + "/del.7z")
+        let after = Set((try? fm.contentsOfDirectory(atPath: scratch)) ?? [])
+        XCTAssertEqual(after, before, "closing a dialog must not run its operation")
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+        assertResponsive(controller, "after every toolbar dialog")
     }
 }
