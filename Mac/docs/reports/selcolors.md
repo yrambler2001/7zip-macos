@@ -183,12 +183,20 @@ All runs used `DEVELOPER_DIR=/Applications/Xcode.app`.
 |---|---|
 | `Mac/scripts/build.sh` | clean, no warnings in `Mac/` |
 | `Mac/scripts/test.sh` | 387 passed, 0 failed |
-| `Mac/scripts/test.sh -H` | 145 passed, 0 failed (one case skips by design: `testOnlyTheFocusedListDrawsItsSelection` needs the key window, which a hosted run in the background does not get; the input-shard test covers it) |
+| `Mac/scripts/test.sh -H` | 145 passed, 0 failed, 5 skipped (4 pre-existing; in this branch one case skips by design: `testOnlyTheFocusedListDrawsItsSelection` needs the key window, which a hosted run in the background does not get; the input-shard test covers it) |
 | `Mac/scripts/test.sh -u` | see §7 |
 
 ## 7. UI suite
 
-UI_RESULTS_PLACEHOLDER
+`Mac/scripts/test.sh -u`: probe shards 6 + 6 passed; input shard 45 passed, 2 failed, including
+`SelColorsInputTests` (passed). The two failures are
+`NewWindowUITests.testReopenWithAWindowOpenOpensAnotherWindow` and
+`testReopenWithNoVisibleWindowOpensOne`, the same two `winmatch.md` §10 traced to a second 7-Zip
+instance: during this run one was running from
+`Mac/build/DerivedData/Build/Products/Release/7-Zip.app` in the main checkout (PID 74429, started
+22:59, before this run; not started by this agent and left alone). The reopen event does not
+produce a window in the shard's app while it runs. Neither test touches the list drawing. Re-run
+them once that instance is quit.
 
 ## 8. The Windows machine
 
