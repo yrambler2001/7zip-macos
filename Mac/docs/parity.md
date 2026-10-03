@@ -27,6 +27,10 @@ exercised in Finder** on this machine, because Automation permission was never g
 annotated in place; nothing was renumbered and no evidence was deleted. Section F lists them with
 what was measured before the fix and what is left. The checklist therefore reads **390 of 496**.
 
+**Update, 2026-10-03 (`mac/panelgaps`).** Items 1, 5 and 6 below are closed and item 9 mostly;
+each is annotated in place and section G says how. Four panel-section boxes were ticked; the
+checklist now reads **403 of 496** (the other nine came from branches merged since the audit).
+
 ---
 
 ## A. Complete — at parity
@@ -227,15 +231,15 @@ pages (`-slp`); HtmlHelp `.chm`; `Benchmark 2`; every `IDD_*_2` small-screen dia
 memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb names.
 
 **Unfinished — real gaps, roughly in the order they would be missed.**
-1. The handlers behind the panel context menu's 7-Zip commands (`01 §2.9`).
+1. ~~The handlers behind the panel context menu's 7-Zip commands (`01 §2.9`).~~ **Done 2026-10-03 (G.1).**
 2. Bundled HTML help, and the Options Help button (`01 §9 #17`).
 3. Quarantine on ordinary extraction, and zone propagation from the outermost archive
    (`01 §9 #23`).
 4. ~~`-scrc` on `x` / `t`~~ (**done 2026-09-20, F.2**), and `t -thash` from the panel
    (`03 §2.6`, `01 §8.6`) — the panel half is filed for its owning scope in `requests.md`.
-5. Open Outside for items inside an archive; Diff across two panels (`01 §3.8, §3.11`).
-6. Drag and drop in the three icon view modes; the dropped-file list for background drops
-   (`01 §3.15`).
+5. ~~Open Outside for items inside an archive; Diff across two panels (`01 §3.8, §3.11`).~~ **Done 2026-10-03 (G.2).**
+6. ~~Drag and drop in the three icon view modes; the dropped-file list for background drops
+   (`01 §3.15`).~~ **Done 2026-10-03 (G.3).**
 7. Raw properties (`IArchiveGetRawProps`) in the columns and in Properties (`01 §3.2, §3.11`).
 8. Dock-tile progress, and the exception→message mapping for a failed operation
    (`01b §4.17`, `01 §8.7`) — **the command-mode half is done 2026-09-20 (F.1)**: every failure a
@@ -243,7 +247,7 @@ memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb
    `E_OUTOFMEMORY` the IDS_MEM_ERROR text `HResultToMessage` gives it, so the Progress dialog's own
    final message matches Windows for those two. `SZExtractor` and `OperationRunner`'s generic alert
    are filed in `requests.md`.
-9. File-menu enable and hide rules (`01 §2.1`).
+9. File-menu enable and hide rules (`01 §2.1`) — **done 2026-10-03 (G.4)** except the Ver* (7vc) items and the small-screen variant.
 10. ~~Exit code 8 and the 7zG exception ladder; `EnumerateDirItemsAndSort` for `-i!` wildcards~~
     (`03 §2.2, §2.7`) — **done 2026-09-20 (F.1)**.
 11. ~~`-sfx<module>`~~ (**done 2026-09-20, F.3**); the Compress dialog's per-format Browse filter
@@ -371,3 +375,40 @@ same way because the app is inside `NSApp.runModal` while still handling
 Exit codes are verified by running the built binary from a shell instead — 25 cases in
 `Mac/docs/reports/cmdmode.md` section 4.2 — and the two dialogs command mode may show are
 screenshotted through the file manager, where the same code builds them.
+
+---
+
+## G. Closed by `mac/panelgaps` — 2026-10-03
+
+Report: `Mac/docs/reports/panelgaps.md`. Tests: `Mac/Tests/AppTests/PanelGapsTests.swift` (app-hosted).
+
+### G.1 — D item 1, the context menu's 7-Zip verbs (`01 §2.8-§2.9`)
+
+Before: every verb was drawn grayed, because `PanelContextCommands` had no implementer.
+Now `MainWindowController` implements all of them (`Mac/App/Commands/PanelContextActions.swift`) by
+calling the File-menu / toolbar commands (`ExtractCommands`, `CompressCommands`), Open archive binds
+the panel, and the CRC submenu also has C12 `SHA-256 -> x.sha256` and C13 `Test archive : Checksum`
+(the Finder command lines, run through `CommandExecutor`) — which is also the panel half of D item 4's
+`t -thash`. Shown-or-not follows ContextMenu.cpp: needExtract, Shift = extended verbs,
+`Extract to "*/"` for several archives, the "Compress to … and email" twins. Left: the panel menu
+still has its own builder instead of `FinderMenuModel`.
+
+### G.2 — D item 5, Open Outside in an archive and Diff across panels (`01 §3.8, §3.11`)
+
+Open Outside (and Enter on a non-archive member) extracts the item to a `7zO` folder and opens it,
+through `ItemOpenCommands.openOutside(context:)`. IDM_DIFF with one item selected in each panel is
+`CApp::DiffFiles`: the other panel's selected item, else the same relative path there; a non-FS panel
+is 6008.
+
+### G.3 — D item 6, drag and drop in the icon modes, and the background drop (`01 §3.15`)
+
+Large Icons / Small Icons / List drag out (file URLs, archive promises) and accept drops (folder item
+or the panel's folder) through the Details view's own code. A drop on the window background now
+compresses the dropped files instead of the selection (`AreThereNamesFromTemp` kept).
+
+### G.4 — D item 9, File-menu rules (`01 §2.1`)
+
+Split / Combine only for one FS file, Link only for one item, Diff hidden without a Diff tool and
+disabled in a hash folder, on top of the panel's existing read-only / hash rules. Not done: Ver*
+(7vc) items, the small-screen "drop disabled items" variant.
+
