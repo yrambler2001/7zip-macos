@@ -116,6 +116,11 @@ associations with 27 document icons and their UTIs; and association switching fr
 The full `CArcCmdLineParser` switch set, `#map` refusals with the upstream strings, list-file
 transport, `-thash`, `-seml`, and command dispatch.
 
+**Update, 2026-10-03 (`mac/navgaps`).** B items 20, 21 and 22 (Ver\*) are closed, and the open
+behaviour of a panel now matches 7zFM: the "Opening" progress, the per-level open text, passwords per
+archive level, the command-line open's "Error" box; section K says how. The checklist reads
+**467 of 496**.
+
 ---
 
 ## B. Partial — it works, with a limitation worth knowing
@@ -196,10 +201,13 @@ transport, `-thash`, `-seml`, and command dispatch.
     `Extraction.*` do not. (`03 §6.4`)
 20. **The toolbar** persists its mask and visibility but renders SF Symbols, so "Large Buttons"
     and "Show Buttons Text" do not reproduce the Windows 48×36 / 24×24 bitmaps. (`01 §1.3`)
+    **Closed 2026-10-03 (`mac/navgaps`), see K.4.**
 21. **The status bar** is one four-part label rather than four sections at fixed widths.
     (`01 §1.2`)
+    **Closed 2026-10-03 (`mac/navgaps`), see K.4.**
 22. **File-menu enable rules** for Split, Combine, Link, Diff and the version-control items are not
     evaluated the way `01 §2.1` specifies. (The version-control items are hidden.)
+    **Closed 2026-10-03 (`mac/navgaps`), see K.4.**
 23. **Right-to-left languages are not mirrored** (AppKit only mirrors an app that declares an RTL
     localization, and this app carries none), and composite one-field strings — the status line,
     the Copy dialog's info block — come out with their segments in reverse order. Nothing is
@@ -554,3 +562,47 @@ the copy; the parent is rewritten through a temp file and is never touched on fa
 in the tests). Cancel in that progress dialog now works (`CopyFromFile` had no update callback).
 Difference from Windows: binding a path *inside* the same nested archive closes and reopens the
 chain (one question) instead of reusing it.
+
+---
+
+## K. Closed by `mac/navgaps` — 2026-10-03
+
+`Mac/docs/reports/navgaps.md` has the detail and the tests.
+
+### K.1 — opening an archive in a panel (`01 §6.7`, PROGRESS 153, 155)
+
+An archive open now runs under 7zFM's "Opening" progress: nothing for 500 ms, then a window named
+"Opening <archive>" with the files / bytes the handler reports and Cancel, which stops the open
+silently. A failed open says what OpenAsArc_Msg says -- "Cannot open encrypted archive '...'. Wrong
+password?" for a wrong password, the error text for a real error, and **nothing** for a file that
+simply is not an archive (Enter then starts it, Open Inside does nothing, the address bar shows its
+folder). An archive one of whose levels cannot be opened (a split set of a broken 7z) is entered and
+the level's text is shown. Warnings of a level that did open are, as in 7zFM, not shown on entering.
+
+### K.2 — passwords per archive level (`01 §8.7`, `01b §4.16`, PROGRESS 168)
+
+Each archive level keeps its own password; an archive never inherits another's. Moving inside the
+same archive does not ask again.
+
+### K.3 — the command-line open (`01 §1.1`, PROGRESS 78)
+
+`7-Zip <file>` that cannot open the file shows "Cannot open file '<path>' as archive" plus the
+level text and closes the window (the app ends with it, as 7zFM does); a path that does not exist
+shows its nearest folder. A file opened from Finder into an already open window shows the box as a
+sheet and keeps the window.
+
+### K.4 — B 20, 21, 22: toolbar, status bar, Ver\*
+
+The toolbar draws 7-Zip's own bitmaps, 48x36 with "Large Buttons", 24x24 without, and disappears
+when both toolbars are off; the splitter is 4 pt. Each panel's status bar has 7zFM's four parts at
+220 / 320 / 420. Ver Edit / Commit / Revert / Diff appear under 7zFM's rule (Diff tool and `FM.7vc`
+set, one file selected) and work; "read-only" is the owner's write permission.
+
+### K.5 — smaller items
+
+Masks, the copy-onto-itself checks and name lookups follow the volume's case sensitivity (PROGRESS
+140). "Use for removable drives only" in Options > Folders is honoured (a guarded `WorkDir.cpp`
+hunk, PROGRESS 169). Temp folders are `7zO<8 hex>` (PROGRESS 69). Auto Refresh starts on in every
+launch, as 7zFM never saves it (PROGRESS 642). Raw-property columns (SHA-1, checksums) start wide
+enough for their hex.
+
