@@ -1,0 +1,101 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+  <META http-equiv="Content-Type" content="text/html; charset=Windows-1252">
+  <TITLE>Delete Temporary Files</TITLE>
+  <LINK href="style.css" rel="stylesheet" type="text/css">
+</HEAD>
+
+<BODY>
+
+<H1>Delete Temporary Files</H1>
+
+<P>This window shows the temporary folders and files created by 7-Zip in
+   the user's "Temp" folder on a Windows system. The user can delete temporary files in this window.
+</P>
+
+<P>This window can be opened from the 7-Zip menu <B>Tools / Delete Temporary Files...</B>.</P>
+
+<P>Typically, the current user's temporary folder in Windows has the following path:</P>
+<PRE class="example">
+C:\Users\user_name\AppData\Local\Temp\
+</PRE>
+<P>where user_name is the name of the current user.</P>
+
+
+<P>7-Zip can create temporary folders in the "Temp" folder with the following names:</P>
+<UL>
+<LI>7zO{HEX_DIGITS} : (for example, 7zO6789ABCD) :
+  7-Zip creates such a temporary folder, and 7-Zip extracts the file to this folder,
+    when the user opens an archive in 7-Zip and tries to open any file from the open archive.
+    7-Zip typically deletes this folder and temporary file, when the user closes the
+    external program that was launched to open file extracted from the archive.
+<LI>7zE{HEX_DIGITS} : (for example, 7zE6789ABCD) : 7-Zip creates such a temporary folder
+  and extracts files from the archive into this folder
+  when the user performs a drag-and-drop operation from an open archive in 7-Zip to Explorer.
+  7-Zip waits for Windows to copy the extracted files from the created temporary folder to
+  the destination folder, and then 7-Zip deletes the temporary files and folder.
+  Note: the folder 7zE{HEX_DIGITS} can be created also for some other 7-Zip operations.
+</UL>
+
+<P>In some cases 7-Zip doesn't delete temporary files automatically.
+   Such case is possible if 7-Zip had to close the archive, when external application
+   still works with open file extracted from this archive.
+   Thus, such temporary files can take up space in the "Temp" folder indefinitely.
+</P>
+<P>The "Delete Temporary Files" window shows all temporary folders created by 7-Zip in
+   user's Temp folder. It shows only folders that use 7-Zip's name patterns
+   such as 7zO{HEX_DIGITS} or  7zE{HEX_DIGITS}.
+   Therefore, the "Delete Temporary Files" window does not display temporary folders and files,
+   created by other programs (not 7-Zip).
+</P>
+
+<P>If the list of folders in the window is empty, this means
+that there are no 7-Zip's temporary files. And you can close this window without
+additional actions.</P>
+
+<P>If you see some folders in the list, you can check the displayed temporary folders and files.</P>
+
+<P> Note : the value in column "Modified" indicates when the temporary folder was created.
+    And you can evaluate at what point in time you performed certain operations with these files.
+
+<P> By default, the sort order of items in the list can be set to the column "Modified",
+    but you can change the sort order by clicking the column names.
+
+</P> If some folder has only one sub-item (a folder or file inside another folder),
+    7-Zip shows the name of that sub-item in the "Name-2" column in the same row where
+    it displays the folder name.
+    For example, in one Name-2 column you can see the names of files opened inside different archives.
+</P>
+
+<P>Note: It's possible that you had another copies of temporary files in you main archives.
+     But it is also possible that some files have been changed. And the temporary
+     copy may be different from your main copy inside the archive.
+     You can compare Size and Modified timestamp values of the files.
+</P>
+
+<P>If you want to copy some temporary files to another location,
+   you can do this using Explorer or 7-Zip File Manager.
+   You can select desired folder item or empty space in the list and use the context menu
+   command which will open the selected folder or selected file in another program.</P>
+<P>Context menu commands in the list of files:</P>
+<UL>
+<LI><B>Open Outside:</B> opens the selected folder using Explorer or opens the selected file using Windows.
+<LI><B>Open Outside : 7-Zip</B> : opens the selected folder or selected file using another copy of 7-Zip File Manager.
+</UL>
+
+<P>If you are sure that you do not need some of the shown temporary files and folders,
+   you can select them and delete them with the "Delete" button.
+   Note that this command permanently deletes files. And these files will not be placed
+   to Recycle Bin. Thus, you will not be able to recover these deleted files.
+</P>
+
+<P>Note: If you have an open archive in the main 7-Zip window, and some file was opened
+  from this open archive, and then you open "Delete Temporary Files" window,
+  7-Zip shows the temporary folder and files created for currently open archive.
+  Do not delete temporary files related to the currently open archive,
+  because 7-Zip can still use these temporary files.
+</P>
+
+</BODY>
+</HTML>

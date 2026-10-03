@@ -382,12 +382,15 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         close()
     }
 
-    /// OnNotifyHelp: the .chm topic of the active page (01 section 9 #17 -- the help book is a
-    /// later scope, so the topic is logged instead of opened).
-    @objc private func helpPressed(_ sender: Any?) {
-        let topic = (tabView.selectedTabViewItem?.viewController as? OptionsPageBase)?.helpTopic ?? "fm/options.htm"
-        NSLog("7-Zip: help topic %@ (7-zip.chm is not bundled yet)", topic)
-        NSSound.beep()
+    /// OnNotifyHelp (PSN_HELP -> each page's OnNotifyHelp -> ShowHelpWindow(k*Topic)): the
+    /// active page's topic in the bundled help (01 section 9 #17, opsgaps).
+    @objc func helpPressed(_ sender: Any?) {
+        Help.show(topic: currentHelpTopic)
+    }
+
+    /// The kHelpTopic of the page on screen.
+    var currentHelpTopic: String {
+        (tabView.selectedTabViewItem?.viewController as? OptionsPageBase)?.helpTopic ?? Help.options
     }
 
     func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {

@@ -398,11 +398,9 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func showHelp() {
-        // kHelpTopic (ExtractDialog.cpp:414). 01 §9 #17: the .chm becomes the bundled HTML /
-        // the online help page with the same topic path.
-        if let url = URL(string: "https://7-zip.org/fm/plugins/7-zip/extract.htm") {
-            NSWorkspace.shared.open(url)
-        }
+        // IDHELP: kHelpTopic "fm/plugins/7-zip/extract.htm" (ExtractDialog.cpp:414-418). 01 §9 #17:
+        // the .chm is bundled as HTML, see `Help`.
+        Help.show(topic: Help.extract)
     }
 
     /// NormalizeDirPathPrefix: a non-empty path gets a trailing "/".

@@ -984,10 +984,8 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
     }
 
     @objc private func helpPressed(_ sender: NSButton) {
-        // kHelpTopic = "fm/plugins/7-zip/add.htm" (CompressDialog.cpp:1254)
-        if let url = URL(string: "https://www.7-zip.org/fm/plugins/7-zip/add.htm") {
-            NSWorkspace.shared.open(url)
-        }
+        // IDHELP: kHelpTopic = "fm/plugins/7-zip/add.htm" (CompressDialog.cpp:1254-1259), bundled help
+        Help.show(topic: Help.add)
     }
 
     @objc private func cancelPressed(_ sender: NSButton) {

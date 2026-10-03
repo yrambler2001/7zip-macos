@@ -8,6 +8,8 @@
 #import "Internal/SZCallbackAdapters.h"
 #import "Internal/SZFolder+Internal.h"
 
+#include <sys/xattr.h>
+
 @implementation SZOperationSummary {
 @public
     uint64_t _filesProcessed;
@@ -105,6 +107,8 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
 - (BOOL)copyItemsAtIndexes:(NSArray<NSNumber *> *)indexes
                     toPath:(NSString *)destinationPath
                   moveMode:(BOOL)moveMode
+                  zoneMode:(SZZoneIDMode)zoneMode
+            zoneSourcePath:(NSString *)zoneSourcePath
                   progress:(id<SZProgressDelegate>)progress
                      error:(NSError **)error
 {
@@ -128,6 +132,34 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
         cb->OverwriteMode = NExtract::NOverwriteMode::kAsk;
         if ([progress respondsToSelector:@selector(progressSetStatus:)])
             [progress progressSetStatus:moveMode ? SZProgressStatusMoving : SZProgressStatusCopying];
+        // PanelCopy.cpp:76-92: the zone mode and the zone bytes are set before every CopyTo,
+        // so an earlier call's policy never leaks into this one.
+        {
+            CMyComPtr<IFolderSetZoneIdMode> setZoneMode;
+            ops.QueryInterface(IID_IFolderSetZoneIdMode, &setZoneMode);
+            if (setZoneMode)
+                RINOK(setZoneMode->SetZoneIdMode((NExtract::NZoneIdMode::EEnum)zoneMode))
+        }
+        {
+            CMyComPtr<IFolderSetZoneIdFile> setZoneFile;
+            ops.QueryInterface(IID_IFolderSetZoneIdFile, &setZoneFile);
+            if (setZoneFile)
+            {
+                CByteBuffer zoneBuf;
+                if (zoneMode != SZZoneIDModeNone && zoneSourcePath.length != 0)
+                {
+                    const char *src = zoneSourcePath.fileSystemRepresentation;
+                    const ssize_t size = getxattr(src, "com.apple.quarantine", NULL, 0, 0, 0);
+                    if (size > 0 && size < (1 << 15))
+                    {
+                        zoneBuf.Alloc((size_t)size);
+                        if (getxattr(src, "com.apple.quarantine", zoneBuf, (size_t)size, 0, 0) != size)
+                            zoneBuf.Free();
+                    }
+                }
+                RINOK(setZoneFile->SetZoneIdFile(zoneBuf, (UInt32)zoneBuf.Size()))
+            }
+        }
         CRecordVector<UInt32> indices;
         SZIndexVector(indexes, indices);
         return ops->CopyTo(BoolToInt(moveMode != NO), indices.ConstData(), indices.Size(),
@@ -141,7 +173,34 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
                   progress:(id<SZProgressDelegate>)progress
                      error:(NSError **)error
 {
-    return [self copyItemsAtIndexes:indexes toPath:destinationPath moveMode:NO progress:progress error:error];
+    return [self copyItemsAtIndexes:indexes toPath:destinationPath moveMode:NO
+                           zoneMode:SZFolder.registryZoneMode zoneSourcePath:nil
+                           progress:progress error:error];
+}
+
+- (BOOL)copyItemsAtIndexes:(NSArray<NSNumber *> *)indexes
+                    toPath:(NSString *)destinationPath
+                  zoneMode:(SZZoneIDMode)zoneMode
+            zoneSourcePath:(NSString *)zoneSourcePath
+                  progress:(id<SZProgressDelegate>)progress
+                     error:(NSError **)error
+{
+    return [self copyItemsAtIndexes:indexes toPath:destinationPath moveMode:NO
+                           zoneMode:zoneMode zoneSourcePath:zoneSourcePath
+                           progress:progress error:error];
+}
+
++ (SZZoneIDMode)registryZoneMode
+{
+    // CPanel::CopyTo: `if (ci.WriteZone != (UInt32)(Int32)-1) options.ZoneIdMode = ci.WriteZone`
+    CContextMenuInfo ci;
+    ci.Load();
+    switch ((Int32)ci.WriteZone)
+    {
+        case 1: return SZZoneIDModeAll;
+        case 2: return SZZoneIDModeOffice;
+        default: return SZZoneIDModeNone;
+    }
 }
 
 - (BOOL)moveItemsAtIndexes:(NSArray<NSNumber *> *)indexes
@@ -149,7 +208,9 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
                   progress:(id<SZProgressDelegate>)progress
                      error:(NSError **)error
 {
-    return [self copyItemsAtIndexes:indexes toPath:destinationPath moveMode:YES progress:progress error:error];
+    return [self copyItemsAtIndexes:indexes toPath:destinationPath moveMode:YES
+                           zoneMode:SZFolder.registryZoneMode zoneSourcePath:nil
+                           progress:progress error:error];
 }
 
 - (BOOL)copyItemsNamed:(NSArray<NSString *> *)itemNames

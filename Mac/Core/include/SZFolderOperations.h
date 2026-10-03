@@ -19,6 +19,7 @@
 #import <SevenZipKit/SZFolder.h>
 #import <SevenZipKit/SZProgressDelegate.h>
 #import <SevenZipKit/SZTypes.h>
+#import <SevenZipKit/SZExtractor.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -51,9 +52,30 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark Copy / move (IFolderOperations::CopyTo, IArchiveFolder path for archives)
 
+/// CPanel::CopyTo with an explicit zone policy (opsgaps): `zoneMode` goes to
+/// IFolderSetZoneIdMode and, when `zoneSourcePath` names a file carrying
+/// `com.apple.quarantine`, its bytes go to IFolderSetZoneIdFile -- pass the *outermost*
+/// archive on disk for a nested archive (Get_ZoneId_Stream_from_ParentFolders,
+/// PanelCopy.cpp:156). nil = the archive folder reads its own archive file. A file-system
+/// folder ignores both (it has no IFolderSetZoneIdMode).
+- (BOOL)copyItemsAtIndexes:(NSArray<NSNumber *> *)indexes
+                    toPath:(NSString *)destinationPath
+                  zoneMode:(SZZoneIDMode)zoneMode
+            zoneSourcePath:(nullable NSString *)zoneSourcePath
+                  progress:(nullable id<SZProgressDelegate>)progress
+                     error:(NSError **)error
+    NS_SWIFT_NAME(copyItems(at:toPath:zoneMode:zoneSourcePath:progress:));
+
+/// `Options.WriteZoneIdExtract` as an SZZoneIDMode: -1 (unset) and 0 are None, 1 All,
+/// 2 Office files only (CContextMenuInfo::WriteZone).
+@property (class, nonatomic, readonly) SZZoneIDMode registryZoneMode;
+
 /// Copies the items to `destinationPath` (a directory; created if missing).
 /// Inside an archive this is CAgentFolder::CopyTo: always "ask" overwrite mode and the
 /// panel's current paths, which is what F5 in 7zFM does (01 3.10).
+/// Quarantine: like CPanel::CopyTo with NeedRegistryZone (PanelCopy.cpp:188-198), the mode is
+/// `Options.WriteZoneIdExtract` and the archive's own `com.apple.quarantine` bytes are
+/// propagated to the copied files (01 9 #23); use the `zoneMode:` variant to choose.
 - (BOOL)copyItemsAtIndexes:(NSArray<NSNumber *> *)indexes
                     toPath:(NSString *)destinationPath
                   progress:(nullable id<SZProgressDelegate>)progress

@@ -87,47 +87,90 @@ final class AboutDialog: NSObject {
     }
 }
 
-/// ShowHelpWindow(topic) (FileManager/HelpUtils.cpp): Windows opens `7-zip.chm::/<topic>`.
-/// On macOS the same topic paths are looked up in the bundled HTML help
-/// (`<bundle>/Contents/Resources/Help/<topic>`) and, when that is missing, on the 7-Zip
-/// documentation site (01-fm-feature-inventory.md 9 #17).
+/// ShowHelpWindow(topic) (FileManager/HelpUtils.cpp): Windows opens `7-zip.chm::/<topic>` in
+/// HtmlHelp. The port bundles the same pages, unpacked from that very `7-zip.chm` by
+/// `Mac/scripts/fetch-assets.sh` (pinned hash), at `<bundle>/Contents/Resources/Help/`, and opens
+/// the topic's page in the default web browser (01-fm-feature-inventory.md 9 #17, opsgaps).
+///
+/// Why a browser and not an Apple Help Book: a help book needs its own `.help` bundle, an
+/// `hiutil` index rebuilt on every content change, and Help Viewer's registration cache, which is
+/// keyed by bundle identifier and goes stale for ad-hoc signed and renamed copies (the test
+/// apps); the CHM pages are plain HTML 3.2 that any browser renders, anchors included. Opening a
+/// `file://` URL through the browser application (rather than `NSWorkspace.open(url)`, which
+/// hands a `.htm` to whatever owns that type and drops the `#anchor`) keeps the `kHelpTopic`
+/// fragment, e.g. `fm/options.htm#editor`.
 enum Help {
 
-    static let start = "start.htm"                       // kHelpTopic of About
-    static let contents = "FM/index.htm"                 // kFMHelpTopic (F1)
-    static let benchmark = "fm/benchmark.htm"
-    static let tempFiles = "fm/temp.htm"
+    // Every kHelpTopic of the Windows sources, verbatim (CHM paths are case-insensitive, so the
+    // `FM/` spellings resolve to the bundled lower-case `fm/` folder).
+    static let start = "start.htm"                                // AboutDialog.cpp:25
+    static let contents = "FM/index.htm"                          // kFMHelpTopic, MyLoadMenu.cpp:38 (IDM_HELP_CONTENTS 960)
+    static let benchmark = "fm/benchmark.htm"                     // BenchmarkDialog.cpp:37
+    static let tempFiles = "fm/temp.htm"                          // BrowseDialog2.cpp:979
     static let options = "fm/options.htm"
-    static let add = "fm/plugins/7-zip/add.htm"
-    static let extract = "fm/plugins/7-zip/extract.htm"
+    static let add = "fm/plugins/7-zip/add.htm"                   // CompressDialog.cpp:1254
+    static let addOptions = "fm/plugins/7-zip/add.htm#options"    // kHelpTopic_Options, CompressDialog.cpp:1255
+    static let extract = "fm/plugins/7-zip/extract.htm"           // ExtractDialog.cpp:414
+    static let optionsSystem = "FM/options.htm#system"            // kSystemTopic, SystemPage.cpp:39
+    static let optionsMenu = "fm/options.htm#sevenZip"            // kMenuTopic, MenuPage.cpp:41
+    static let optionsFolders = "fm/options.htm#folders"          // kFoldersTopic, FoldersPage.cpp
+    static let optionsEditor = "FM/options.htm#editor"            // kEditTopic, EditPage.cpp:28
+    static let optionsSettings = "FM/options.htm#settings"        // kSettingsTopic, SettingsPage.cpp:45
+    static let optionsLanguage = "fm/options.htm#language"        // kLangTopic, LangPage.cpp:28
+    static let plugins = "fm/plugins/index.htm"
 
+    /// Where the 7zFM pages live on the web, used only when a build carries no bundled help.
     private static let onlineBase = "https://documentation.help/7-Zip/"
 
-    /// Opens the topic in the bundled help, else in the default browser.
-    static func show(topic: String) {
-        if let local = bundledURL(for: topic) {
-            NSWorkspace.shared.open(local)
-            return
-        }
-        // The site keeps the same file names but no directories; fall back to the index for
-        // a topic that is not a plain page.
+    /// Test hook: replaces the browser launch. Main thread only.
+    static var opener: ((URL) -> Void)?
+
+    /// The URL `show(topic:)` opens: the bundled page (with its anchor) or the online fallback.
+    static func url(for topic: String) -> URL? {
+        if let local = bundledURL(for: topic) { return local }
+        // The site keeps the same file names but no directories.
         let name = (topic as NSString).lastPathComponent
         let anchorless = name.components(separatedBy: "#").first ?? name
-        if let url = URL(string: onlineBase + anchorless) {
-            NSWorkspace.shared.open(url)
-        }
+        return URL(string: onlineBase + anchorless)
+    }
+
+    /// Opens the topic in the bundled help, else on the documentation site.
+    static func show(topic: String) {
+        guard let url = url(for: topic) else { NSSound.beep(); return }
+        if let opener { opener(url); return }
+        open(url)
     }
 
     /// `<bundle>/Contents/Resources/Help/<topic>` when the documentation was bundled.
-    static func bundledURL(for topic: String) -> URL? {
-        guard let resources = Bundle.main.resourceURL else { return nil }
-        let page = topic.components(separatedBy: "#").first ?? topic
+    static func bundledURL(for topic: String, in bundle: Bundle = .main) -> URL? {
+        guard let resources = bundle.resourceURL else { return nil }
+        let parts = topic.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        // HtmlHelp is case-insensitive; the bundled tree is the CHM's own lower-case names.
+        let page = String(parts.first ?? "").lowercased()
+        guard !page.isEmpty, !page.contains("..") else { return nil }
         let candidate = resources.appendingPathComponent("Help").appendingPathComponent(page)
         guard FileManager.default.fileExists(atPath: candidate.path) else { return nil }
-        if let anchor = topic.components(separatedBy: "#").dropFirst().first,
-           let url = URL(string: candidate.absoluteString + "#" + anchor) {
-            return url
+        if parts.count > 1, !parts[1].isEmpty,
+           var components = URLComponents(url: candidate, resolvingAgainstBaseURL: false) {
+            components.fragment = String(parts[1])
+            return components.url ?? candidate
         }
         return candidate
+    }
+
+    /// The default browser keeps a file URL's fragment; Launch Services' per-type handler for
+    /// `.htm` may not, so ask for the `https` handler and give the URL to it.
+    private static func open(_ url: URL) {
+        let workspace = NSWorkspace.shared
+        guard url.isFileURL, let probe = URL(string: "https://www.7-zip.org/"),
+              let browser = workspace.urlForApplication(toOpen: probe) else {
+            workspace.open(url)
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        workspace.open([url], withApplicationAt: browser, configuration: configuration) { _, error in
+            if error != nil { DispatchQueue.main.async { NSWorkspace.shared.open(url) } }
+        }
     }
 }

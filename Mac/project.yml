@@ -65,6 +65,11 @@ targetTemplates:
       - path: Resources/SFX
         type: folder
         buildPhase: resources
+      # opsgaps: the HTML help unpacked from 7-zip.chm by fetch-assets.sh, kept as a folder
+      # so Contents/Resources/Help/<kHelpTopic> resolves (01 section 9 #17).
+      - path: Resources/Help
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: SevenZipKit
         embed: true
@@ -561,6 +566,11 @@ targets:
       - path: Resources/Icons
         buildPhase: resources
       - path: Resources/SFX
+        type: folder
+        buildPhase: resources
+      # opsgaps: the HTML help unpacked from 7-zip.chm by fetch-assets.sh, kept as a folder
+      # so Contents/Resources/Help/<kHelpTopic> resolves (01 section 9 #17).
+      - path: Resources/Help
         type: folder
         buildPhase: resources
     dependencies:
