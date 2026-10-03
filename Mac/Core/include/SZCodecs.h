@@ -35,6 +35,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) uint32_t flags;               ///< raw NArcInfoFlags
 @property (nonatomic, readonly) uint32_t timeFlags;
 @property (nonatomic, readonly) NSInteger signatureCount;
+/// CArcInfoEx::Signatures and SignatureOffset: the byte strings that identify the format.
+@property (nonatomic, readonly, copy) NSArray<NSData *> *signatures;
+@property (nonatomic, readonly) NSUInteger signatureOffset;
 
 @end
 
@@ -52,6 +55,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable SZFormatInfo *)formatForExtension:(NSString *)extension NS_SWIFT_NAME(format(forExtension:));   ///< CCodecs::FindFormatForExtension
 + (nullable SZFormatInfo *)formatForArchiveName:(NSString *)path NS_SWIFT_NAME(format(forArchiveName:));      ///< CCodecs::FindFormatForArchiveName
 + (nullable SZFormatInfo *)formatNamed:(NSString *)name NS_SWIFT_NAME(format(named:));               ///< CCodecs::FindFormatForArchiveType
+/// The formats whose signature matches `header` (the first bytes of a file) at the format's
+/// signature offset, in engine order. Lookup by signature, as the open's first pass does it.
++ (NSArray<SZFormatInfo *> *)formatsMatchingHeader:(NSData *)header NS_SWIFT_NAME(formats(matchingHeader:));
 /// Every extension of every format, lowercase.
 @property (class, nonatomic, readonly) NSSet<NSString *> *allExtensions;
 

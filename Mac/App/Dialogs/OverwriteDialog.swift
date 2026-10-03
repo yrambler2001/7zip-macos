@@ -53,6 +53,7 @@ final class OverwriteDialog: NSObject {
 
         let header = DialogKit.label(Lang.text(3501, "Destination folder already contains processed file."))
         header.maximumNumberOfLines = 2                                      // IDT_OVERWRITE_HEADER 3501
+        // IDT_OVERWRITE_QUESTION_BEGIN 3502
         let questionBegin = DialogKit.label(Lang.text(3502, "Would you like to replace the existing file"))
         let questionEnd = DialogKit.label(Lang.text(3503, "with this one?"))  // IDT_OVERWRITE_QUESTION_END 3503
 

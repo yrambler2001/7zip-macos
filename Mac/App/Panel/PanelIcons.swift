@@ -1,8 +1,7 @@
 // PanelIcons.swift -- the panel's icon rule (SetItemText, PanelListNotify.cpp:152-522, and
-// LoadFullPathAndShow, PanelFolderChange.cpp:406-520): the real file-system icon
-// (IFolderGetSystemIconIndex, which the bridge leaves to the app -- Mac/docs/requests.md) for
-// file-system, volume and root items, and the extension cache inside archives unless
-// ShowRealFileIcons is on. The address bar shows the Computer, volume or archive-file icon.
+// LoadFullPathAndShow, PanelFolderChange.cpp:406-520): the real icon (IFolderGetSystemIconIndex,
+// which the bridge leaves to the app -- Mac/docs/requests.md) for volume and root items, and for
+// file-system items when ShowRealFileIcons is on; the icon by extension otherwise. The address bar shows the Computer, volume or archive-file icon.
 
 import AppKit
 import SevenZipKit
@@ -16,10 +15,15 @@ enum PanelIcons {
                      large: Bool) -> NSImage {
         let size = large ? largeSize : smallSize
         if row.isParentRow { return resized(Icons.folder, size) }
-        // Real icons: FS folders, the volumes list and the root always; archives only when the
-        // user asked for them (ShowRealFileIcons) -- and there the file does not exist, so the
-        // extension cache is all there is.
-        if !row.fullPath.isEmpty {
+        // Real icons: the volumes list and the root always; a file-system folder only when the
+        // user asked for them (ShowRealFileIcons, IDX_SETTINGS_SHOW_REAL_FILE_ICONS 2502): 7zFM
+        // queries IFolderGetSystemIconIndex only `if (!Is_Slow_Icon_Folder() || _showRealFileIcons)`
+        // (PanelItems.cpp:587), and Is_Slow_Icon_Folder() is IsFSFolder(). Off -- the Windows
+        // default -- an FS item gets its icon by extension, like an archive item.
+        let realIcon = showsRealIcons(isFileSystem: snapshot?.isFileSystem ?? false,
+                                      isVolumesFolder: snapshot?.isVolumesFolder ?? false,
+                                      isRoot: snapshot?.isRoot ?? false)
+        if realIcon, !row.fullPath.isEmpty {
             let key = "\(large ? "L" : "S")\(row.fullPath)"
             if let cached = cache[key] { return cached }
             let image = NSWorkspace.shared.icon(forFile: row.fullPath)
@@ -34,6 +38,14 @@ enum PanelIcons {
             }
         }
         return resized(Icons.icon(forName: row.name, isDirectory: row.isDirectory), size)
+    }
+
+    /// `!Is_Slow_Icon_Folder() || _showRealFileIcons` (PanelItems.cpp:587, Panel.h:708): only a
+    /// file-system folder is a "slow icon" folder; the root and the volumes list always show
+    /// real icons.
+    static func showsRealIcons(isFileSystem: Bool, isVolumesFolder: Bool, isRoot: Bool) -> Bool {
+        let slowIconFolder = isFileSystem && !isVolumesFolder && !isRoot
+        return !slowIconFolder || Settings.showRealFileIcons
     }
 
     /// The folder icon left of the address bar: Computer for the root, the volume icon for the

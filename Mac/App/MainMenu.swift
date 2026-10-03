@@ -173,6 +173,8 @@ enum MainMenu {
     // MARK: Edit (IDM_EDIT 501)
 
     private static func editMenu() -> NSMenuItem {
+        // IDM_EDIT_CUT / IDM_EDIT_COPY / IDM_EDIT_PASTE are commented out of 7zFM's Edit menu
+        // resource, so they are not built here either (01 §2.2).
         let menu = NSMenu(title: Lang.menuTitle(idmEdit, "&Edit"))
         let a = MenuActions.self
         item(menu, 600, lang: 600, "Select &All\tShift+[Grey +]", key: "a", mods: [.command], action: #selector(a.editSelectAll(_:)))          // IDM_SELECT_ALL (also Ctrl+A)

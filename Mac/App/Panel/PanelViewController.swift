@@ -56,6 +56,11 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     }
     /// Set while an operation owns the folder on another thread (CDisableTimerProcessing).
     private(set) var isOperating = false
+    /// > 0 while this panel's queue is blocked waiting for a block it put on the main thread (the
+    /// archive open's progress, a nested write-back): the queue cannot run a park block then, and
+    /// does not need to, because it is not touching the folder. `parkPanels(showing:)` skips it.
+    /// Main thread only.
+    var queueHeldForMain = 0
     /// Set once the nested archives of the chain were closed for good (window close / quit), so
     /// the write-back question is asked only once (PanelNestedArchives.swift).
     var nestedArchivesClosedForShutdown = false
@@ -405,6 +410,73 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         isOperating = false
         release.signal()
         return result
+    }
+
+    // MARK: - Parking for the command scopes
+
+    static let parkTimeout: TimeInterval = 2
+
+    /// What `parkPanels(showing:)` hands back: the worker waits for the park, the main thread
+    /// releases it once `OperationRunner.run` has returned.
+    final class FolderParking {
+        fileprivate let panels: [PanelViewController]
+        private let parked = DispatchSemaphore(value: 0)
+        private let released = DispatchSemaphore(value: 0)
+
+        fileprivate init(panels: [PanelViewController]) {
+            self.panels = panels
+            for panel in panels {
+                panel.isOperating = true                    // CDisableTimerProcessing
+                panel.queue.async { [parked, released] in
+                    parked.signal()
+                    released.wait()
+                }
+            }
+        }
+
+        /// Worker side: returns once every affected panel queue is idle in its park block. A queue
+        /// that does not get there within `parkTimeout` is busy with a block that is itself waiting
+        /// for the main thread (which the operation's own modal session is holding), so the
+        /// operation goes ahead rather than deadlock; its park block still runs, and returns at
+        /// once, when the queue gets to it.
+        func waitUntilParked() {
+            let deadline = DispatchTime.now() + PanelViewController.parkTimeout
+            for _ in panels where parked.wait(timeout: deadline) == .timedOut {
+                NSLog("7-Zip: a panel queue did not park within %.1f s", PanelViewController.parkTimeout)
+                return
+            }
+        }
+
+        /// Main side, after the operation.
+        func release() {
+            for panel in panels { panel.isOperating = false }
+            for _ in panels { released.signal() }
+        }
+    }
+
+    /// The `runFolderOperation` ownership rule for a command scope that got its folder from
+    /// `ActiveContext` (extract, compress, temp-open): every panel whose archive chain contains the
+    /// folder's archive is parked, so no refresh, sort or navigation block of that panel touches a
+    /// folder of the same archive while the operation's worker does (opsinfra api §1; the
+    /// engine's COM reference counts are not atomic). A file-system folder needs nothing: it is
+    /// not shared with the panel's own objects. Main thread only.
+    static func parkPanels(showing folder: SZFolder) -> FolderParking {
+        guard let archive = folder.archive else { return FolderParking(panels: []) }
+        let panels = NSApp.windows
+            .compactMap { $0.windowController as? MainWindowController }
+            .flatMap { $0.panels }
+            .filter { $0.queueHeldForMain == 0 }
+            .filter { panel in
+                var level = panel.archiveLevel.current
+                var seen = 0
+                while let current = level, seen < 64 {
+                    if current === archive { return true }
+                    level = current.outerFolder?.archive
+                    seen += 1
+                }
+                return false
+            }
+        return FolderParking(panels: panels)
     }
 
     /// Reads everything the main thread needs from the folder (queue only).

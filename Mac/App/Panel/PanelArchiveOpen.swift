@@ -102,6 +102,8 @@ extension PanelViewController {
     func runArchiveOpen<T>(name: String, _ open: @escaping (SZProgressDelegate) throws -> T) -> Result<T, Error> {
         var result: Result<T, Error> = .failure(NSError(domain: SZErrorDomain, code: SZError.Code.cancelled.rawValue))
         let body = { [self] in
+            queueHeldForMain += 1                           // the panel queue waits for this block
+            defer { queueHeldForMain -= 1 }
             var options = OperationRunner.Options(title: Lang.text(3303, "Opening"))   // IDS_OPENNING
             options.initialStatus = .opening
             options.parentWindow = hostWindow

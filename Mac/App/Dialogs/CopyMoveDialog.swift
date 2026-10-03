@@ -125,7 +125,10 @@ private final class CopyMoveDialogController: NSObject {
     /// OnButtonSetPath (CopyDialog.cpp:84-97): MyBrowseForFolder(IDS_SET_FOLDER 6007, current
     /// text); the answer is a dir prefix and replaces the text.
     @objc private func browseClicked() {
-        let title = Lang.text(6007, "Specify a location for output folder")
+        // IDS_SET_FOLDER has no built-in English string on Windows (01b §4.5); every call site
+        // (Copy, Split, Combine, Link) uses the same fallback, the line of the English template
+        // `Lang/en.ttt`.
+        let title = Lang.text(6007, "Select destination folder.")
         guard let path = BrowseDialog.forFolder(title: title, initialPath: combo.stringValue, parent: window) else {
             return
         }

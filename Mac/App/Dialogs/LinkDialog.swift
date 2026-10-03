@@ -127,7 +127,7 @@ final class LinkDialog: NSObject {
         footnote.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         footnote.textColor = .secondaryLabelColor
 
-        let link = DialogKit.button(Lang.text(7701, "Link"), target: self, action: #selector(linkClicked), key: "\r")
+        let link = DialogKit.button(Lang.text(7701, "Link"), target: self, action: #selector(linkClicked), key: "\r")  // IDB_LINK_LINK 7701
         let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked),
                                       key: "\u{1b}")
         let buttons = NSStackView(views: [NSView(), link, cancel])
@@ -170,7 +170,7 @@ final class LinkDialog: NSObject {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.message = Lang.text(6007, "Specify a folder:")     // IDS_SET_FOLDER
+        panel.message = Lang.text(6007, "Select destination folder.")     // IDS_SET_FOLDER
         if !combo.stringValue.isEmpty {
             panel.directoryURL = URL(fileURLWithPath: combo.stringValue)
         }

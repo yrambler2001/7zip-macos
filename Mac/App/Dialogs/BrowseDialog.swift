@@ -7,7 +7,8 @@
 // of MAX_PATH or more, cases that do not exist on macOS. NSOpenPanel / NSSavePanel provide
 // what the custom dialog's controls did: parent navigation (IDB_BROWSE_PARENT 110), "New
 // Folder" (IDB_BROWSE_CREATE_DIR 112), the list (IDL_BROWSE 100), the path field
-// (IDE_BROWSE_PATH 102) and the type filter (IDC_BROWSE_FILTER 103).
+// (IDE_BROWSE_PATH 102), the current-folder label (IDT_BROWSE_FOLDER 101) and the type filter
+// (IDC_BROWSE_FILTER 103).
 
 import AppKit
 import UniformTypeIdentifiers

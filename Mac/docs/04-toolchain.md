@@ -578,6 +578,17 @@ flag column is `+` = enabled ("use"), `-` = disabled ("ignore"), blank = default
 11. `spctl --assess` rejects ad-hoc bundles; that only matters once the app leaves this machine
     (a downloaded copy gets a quarantine attribute and Gatekeeper blocks it). Distribution
     requires Developer ID + notarization (`notarytool`, `stapler` are present; no certificate is).
+12. **Entitlements, two silent traps** (found by `finder`, requests row `finder` → every scope):
+    Xcode 15+ drives `com.apple.security.app-sandbox` from the **`ENABLE_APP_SANDBOX`** build
+    setting and strips the key from `CODE_SIGN_ENTITLEMENTS` when that setting is NO, so an appex
+    signs unsandboxed and pluginkit never loads it; and XcodeGen's `entitlements: { path: … }`
+    without `properties:` **overwrites** that file with an empty dict on every generation. Keep
+    every entitlement key in `Mac/project.yml` under `entitlements.properties`, and set
+    `ENABLE_APP_SANDBOX: YES` on each appex target. `temporary-exception.*` entitlements do not
+    survive ad-hoc signing. `Mac/scripts/package.sh` asserts the sandbox key on every appex of the
+    built product.
+13. **Release needs `CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO`** (`packaging`): otherwise Xcode adds
+    `com.apple.security.get-task-allow`, which the notary service rejects.
 
 ---
 

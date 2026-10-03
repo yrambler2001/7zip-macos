@@ -478,10 +478,24 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
 
     /// Runs `body` on the main thread and blocks the worker until it answers. Safe from the
     /// main thread too (a question raised before the dialog exists).
+    ///
+    /// Not `DispatchQueue.main.sync`: when the runner was started from inside a main-queue block
+    /// (a `DispatchQueue.main.async` caller, a `main.sync` from another queue), the main queue is
+    /// busy with that block for the whole modal session, and the nested run loop never delivers
+    /// a second main-queue block -- the worker's question then waited for ever (requests.md,
+    /// navgaps -> every scope). A run-loop block in the common modes is delivered by the modal
+    /// session, the event-tracking loop and the post-cancel spin alike.
     private func onMain<T>(_ body: @escaping () -> T) -> T {
         if Thread.isMainThread { return body() }
-        var value: T!
-        DispatchQueue.main.sync { value = body() }
-        return value
+        var value: T?
+        let done = DispatchSemaphore(value: 0)
+        let mainLoop = CFRunLoopGetMain()
+        CFRunLoopPerformBlock(mainLoop, CFRunLoopMode.commonModes.rawValue) {
+            value = body()
+            done.signal()
+        }
+        CFRunLoopWakeUp(mainLoop)
+        done.wait()
+        return value!
     }
 }

@@ -62,7 +62,9 @@ extension PanelViewController {
         let chain = Self.archiveChain(of: folder).filter { $0.tempFilePath != nil }
         guard chain.contains(where: { $0.tempFileWasChanged }) || TempOpenManager.shared.openCount > 0,
               !chain.isEmpty else { return }
+        queueHeldForMain += 1
         queue.sync { _ = self.leaveNestedArchives(from: self.folder, to: nil) }
+        queueHeldForMain -= 1
     }
 
     /// OpenParentArchiveFolder for one level. True when the parent was updated.
@@ -70,6 +72,8 @@ extension PanelViewController {
         guard let copyPath = archive.tempFilePath, archive.outerFolder != nil else { return false }
         var updated = false
         Self.onMain { [self] in
+            queueHeldForMain += 1                   // the panel queue waits for this block
+            defer { queueHeldForMain -= 1 }
             // An item of this archive still open in an editor: its pending save goes into the
             // nested copy first, so the write-back below carries it.
             TempOpenManager.shared.finishSessions(inside: archive)

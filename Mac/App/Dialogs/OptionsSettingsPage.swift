@@ -48,18 +48,25 @@ final class OptionsSettingsPage: OptionsPageBase {
     override func loadView() {
         super.loadView()
         flags = [
+            // IDX_SETTINGS_SHOW_DOTS 2501
             Flag(langID: 2501, fallback: "Show \"..\" item", get: { Settings.showDots },
                  set: { Settings.showDots = $0 }, note: ""),
+            // IDX_SETTINGS_SHOW_REAL_FILE_ICONS 2502
             Flag(langID: 2502, fallback: "Show real file icons", get: { Settings.showRealFileIcons },
                  set: { Settings.showRealFileIcons = $0 }, note: ""),
+            // IDX_SETTINGS_FULL_ROW 2504
             Flag(langID: 2504, fallback: "Full row select", get: { Settings.fullRow },
                  set: { Settings.fullRow = $0 }, note: ""),
+            // IDX_SETTINGS_SHOW_GRID 2505
             Flag(langID: 2505, fallback: "Show grid lines", get: { Settings.showGrid },
                  set: { Settings.showGrid = $0 }, note: ""),
+            // IDX_SETTINGS_SINGLE_CLICK 2506
             Flag(langID: 2506, fallback: "Single-click to open an item", get: { Settings.singleClick },
                  set: { Settings.singleClick = $0 }, note: ""),
+            // IDX_SETTINGS_ALTERNATIVE_SELECTION 2507
             Flag(langID: 2507, fallback: "Alternative selection mode", get: { Settings.alternativeSelection },
                  set: { Settings.alternativeSelection = $0 }, note: ""),
+            // IDX_SETTINGS_SHOW_SYSTEM_MENU 2503
             Flag(langID: 2503, fallback: "Show system menu", get: { Settings.showSystemMenu },
                  set: { Settings.showSystemMenu = $0 },
                  note: "macOS: adds Finder's own commands (Open With, Show in Finder, Quick Look, Get Info) "

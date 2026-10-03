@@ -1003,3 +1003,72 @@ enum SevenZipFailureLadder {
         return String(digits)
     }
 }
+
+// MARK: - The Compress dialog's update mode from the action set (UpdateGUI.cpp:284-312, :446-453)
+
+/// `NCompressDialog::NUpdateMode`: the four action sets the dialog's "Update mode" combo can show.
+enum SevenZipDialogUpdateMode: Int {
+    case add = 0, update = 1, fresh = 2, sync = 3
+}
+
+extension SevenZipCommandLine {
+
+    /// `NUpdateArchive::NPairAction`: 0 ignore, 1 copy, 2 compress, 3 compress as anti.
+    private static let actionSets: [(SevenZipDialogUpdateMode, [Int])] = [
+        (.add, [1, 1, 2, 2, 2, 2, 2]),      // k_ActionSet_Add    (UpdateAction.cpp)
+        (.update, [1, 1, 2, 1, 2, 1, 2]),   // k_ActionSet_Update
+        (.fresh, [1, 1, 0, 1, 2, 1, 2]),    // k_ActionSet_Fresh
+        (.sync, [1, 0, 2, 1, 2, 1, 2]),     // k_ActionSet_Sync
+    ]
+
+    /// The action set of `Commands.Front()` after `ParseUpdateCommandString`
+    /// (ArchiveCommandLine.cpp:866-945): the command's default set (`a` = Add, `u` = Update); each
+    /// `-u` string without a `!newArchive` tail is applied to a fresh copy of that **default** set
+    /// (`actionSet = defaultActionSet`, :921) and replaces the first command's, so the last one
+    /// wins. Pairs are `<state><action>`, state one of "pqrxyzw", action 0-3. Nil when a `-u`
+    /// string does not parse.
+    var updateActionSet: [Int]? {
+        let defaultSet: [Int]
+        switch command {
+        case .add: defaultSet = Self.actionSets[0].1
+        case .update: defaultSet = Self.actionSets[1].1
+        default: return nil
+        }
+        var base = defaultSet
+        let states = Array("pqrxyzw")
+        let notSupported = [2, 2, 1, -1, -1, -1, -1]       // kUpdatePairStateNotSupportedActions
+        for text in updateActions where text != "-" {
+            var set = defaultSet
+            let chars = Array(text)
+            var i = 0
+            var post = ""
+            while i < chars.count {
+                let c = Character(chars[i].lowercased())
+                guard chars[i].isASCII, let state = states.firstIndex(of: c) else {
+                    post = String(chars[i...])
+                    break
+                }
+                i += 1
+                guard i < chars.count, let digit = chars[i].wholeNumberValue, chars[i].isASCII,
+                      (0..<4).contains(digit), notSupported[state] != digit else { return nil }
+                set[state] = digit
+                i += 1
+            }
+            if post.isEmpty {
+                base = set                                    // Commands[0].ActionSet = actionSet
+            } else if !post.hasPrefix("!") || post.count == 1 {
+                return nil                                    // "incorrect update switch command"
+            }
+            // `!<archive>` adds another archive command; the dialog only shows the first one.
+        }
+        return base
+    }
+
+    /// `FindActionSet(options.Commands.Front().ActionSet)` (UpdateGUI.cpp:298-304, :446-453): the
+    /// dialog's update mode, or nil when the set is none of the four -- UpdateGUI then fails
+    /// with E_NOTIMPL before the dialog opens.
+    var dialogUpdateMode: SevenZipDialogUpdateMode? {
+        guard let set = updateActionSet else { return nil }
+        return Self.actionSets.first { $0.1 == set }?.0
+    }
+}

@@ -34,17 +34,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 7zFM loads codecs at first use; loading here is cheap (no file access) and makes
-        // format lookups available to the panels immediately.
-        do {
-            try SZCodecs.loadCodecs()
-        } catch {
-            NSLog("7-Zip: codecs failed to load: %@", error.localizedDescription)
-        }
-
+        // 7zFM does not load codecs at startup: `LoadGlobalCodecs()` in WinMain2 is commented out,
+        // "we will load Global_Codecs at first use instead" (FM.cpp:738-743, 01 §1.1). The window
+        // is created first; the format table is built on a worker right after, and every engine
+        // entry point (`SZArchiveOpener`, `SZExtractor`, `SZUpdater`, `SZHasher`, `SZBenchmark`)
+        // still loads it itself on first use, so nothing depends on this call having finished.
         let controller = MainWindowController()
         mainWindowController = controller
         controller.showWindow(nil)
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try SZCodecs.loadCodecs()
+            } catch {
+                NSLog("7-Zip: codecs failed to load: %@", error.localizedDescription)
+            }
+        }
+        // Not Windows parity (01 §1.1: `DeleteOldTempFiles` has no caller): remove the `7zO*` /
+        // `7zE*` folders an earlier run left behind (`TempOpenJanitor.swift`).
+        TempOpenJanitor.sweepAtLaunch()
 
         // 7zFM.exe [path] [-t<arcType>]  (FM.cpp:639-702): a path names the folder or archive
         // panel 0 starts in. Other switches are not parsed by 7zFM either.
@@ -67,7 +74,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // WM_CLOSE order (FM.cpp:1028-1047, 01 §1.1 "Shutdown"): first `g_ExitEventLauncher.Exit`
+        // -- every temp-file watcher is finished, which here means the "file was modified, update
+        // the archive?" question is asked for each edited item and its watcher stopped --, then
+        // `g_App.Save()` and `SaveWindowInfo`. `finishAll` is idempotent, so the manager's own
+        // willTerminate observer finds nothing left to do.
+        TempOpenManager.shared.finishAll()
         mainWindowController?.saveState()   // g_App.Save() + SaveWindowInfo (FM.cpp:1028-1047)
         Settings.synchronize()
+        // `FreeGlobalCodecs()` (FM.cpp:776) is left to process exit: a Cmd+Q can arrive while an
+        // operation's worker still holds the codecs, and freeing them under it would crash.
     }
 }

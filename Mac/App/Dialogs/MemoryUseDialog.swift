@@ -171,7 +171,7 @@ final class MemoryUseDialog: NSObject {
                         saveLimit: needSave)
         if needSave {
             // NExtract::Save_LimitGB (ExtractCallback.cpp:1075)
-            SZSettings.setInteger(Int(limit), forKey: "Extraction.MemLimit")
+            Settings.extractMemLimitGB = Int(limit)   // through Settings, so the Options page hears it
         }
         NSApp.stopModal()
     }

@@ -93,6 +93,19 @@ owns; everything else is read-only for it.
 | `tools` | `Mac/Core/SZHasher.mm`, `SZBenchmark.mm` + headers, `Mac/App/Dialogs/Hash*.swift`, `Benchmark*.swift`, `Split*.swift`, `Combine*.swift`, `Link*.swift`, `About*.swift`, `Mac/App/Commands/ToolsCommands.swift` |
 | `finder` | `Mac/FinderSync/*`, `Mac/QuickAction/*`, `Mac/App/Info.plist`, `Mac/App/Integration/*`, `Mac/App/CommandLine*.swift` |
 | `packaging` | `Mac/scripts/package.sh`, `Mac/README.md`, signing settings |
+| `icons` | `Mac/Resources/Icons/`, `Mac/Resources/Assets.xcassets/AppIcon.appiconset`, `doc-*.imageset`, `AboutLogo.imageset`, `Mac/scripts/make-icons.{sh,py,swift}`, `Mac/docs/api/icons.md` |
+
+Paths added after the table was first written (requests rows `tools`, `icons`, `finder`, `navgaps`
+→ orchestrator; recorded by `mac/release`):
+
+| Scope | Also owns |
+|---|---|
+| `tools` | `Mac/Core/SZSplitFile.{h,mm}`, `Mac/Core/Internal/SZToolsEngine.h`, `Mac/App/Dialogs/ToolsTempFilesDialog.swift` |
+| `finder` | `Mac/App/CommandLineEntry.swift` (the `CommandLine*.swift` slot), `Mac/QuickAction/**`, `Mac/docs/api/finder.md`; `Mac/App/Integration/AppDelegate+Integration.swift` is the extension that keeps `AppDelegate.swift` untouched |
+| `fsfolder` | `Mac/Core/Platform/MacVolume.cpp` (navgaps: volume kind for "removable drives only") |
+| `panel` | `Mac/App/Panel/PanelArchiveOpen.swift`, `PanelNestedArchives.swift`, `Mac/App/Commands/PanelVerCtrl.swift` (all inside the existing `Panel*` globs), the 14 `toolbar-*.imageset` in `Mac/Resources/Assets.xcassets` |
+| `extract` | `Mac/App/Support/TempOpenJanitor.swift` (inside the `TempOpen*` glob) |
+| orchestrator | `Mac/App/AppDelegate.swift`, `Mac/App/Support/OperationContext.swift`, `Mac/docs/test-support-contract.md`, `Mac/Core/Platform/*` other than `MacVolume.cpp` |
 
 Shared files where **additive-only** edits are allowed by any scope (append or insert; never
 reorder or reformat, so merges stay trivial):

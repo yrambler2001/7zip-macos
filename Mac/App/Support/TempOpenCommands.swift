@@ -184,7 +184,12 @@ enum ItemOpenCommands {
         // quarantine attribute is propagated unless the user turned the option off.
         let zoneMode: SZZoneIDMode = Settings.writeZoneIdExtract == 0 ? .none : .all
 
+        runnerOptions.password = folder.archive?.password        // fl.Password of this level
+        let parking = PanelViewController.parkPanels(showing: folder)
+        defer { parking.release() }
         let result = OperationRunner.run(runnerOptions) { runner -> SZTempFile in
+            parking.waitUntilParked()
+            defer { PanelViewController.rememberPassword(of: runner, in: folder) }
             let levels = folder.arcProps?.levelCount ?? 1
             return try SZTempOpen.extractItem(at: index, of: folder, archiveFilePath: archivePath,
                                               archiveLevelCount: levels, zoneMode: zoneMode,

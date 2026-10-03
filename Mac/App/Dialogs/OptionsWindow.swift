@@ -319,6 +319,10 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         guard let window else { return }
         let content = NSView()
 
+        // The small-screen templates IDD_SYSTEM_2, IDD_MENU_2, IDD_FOLDERS_2, IDD_EDIT_2,
+        // IDD_SETTINGS_2, IDD_LANG_2 -- and likewise IDD_BENCH_2, IDD_COMPRESS_2, IDD_EXTRACT_2,
+        // IDD_OVERWRITE_2, IDD_PROGRESS_2 of the other dialogs -- are not ported: macOS always gets
+        // the full-size dialog (01 §9 #14, PROGRESS "Not applicable on macOS").
         // Page order = OptionsDialog.cpp:13-20. The Plugins page is macOS-only (informational:
         // 26.03 has no plugin chooser, 03 section 3.4) and comes last so the Windows order holds.
         pages = [

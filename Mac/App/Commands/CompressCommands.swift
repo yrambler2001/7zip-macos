@@ -191,8 +191,12 @@ enum CompressCommands {
 
         let folder = context.folder
         let outcome: Result<Void, Error>
+        // The panels showing this archive are parked while the worker rewrites it / uses its folder.
+        let parking = PanelViewController.parkPanels(showing: folder)
+        defer { parking.release() }
         if internalPath.isEmpty {
             outcome = OperationRunner.run(options) { runner in
+                parking.waitUntilParked()
                 _ = try SZUpdater.addPaths(paths, toArchiveAt: archivePath, options: nil,
                                            progress: runner)
             }
@@ -200,6 +204,7 @@ enum CompressCommands {
             // CopyFrom wants names relative to one folder; group by parent directory.
             let groups = Dictionary(grouping: paths) { ($0 as NSString).deletingLastPathComponent }
             outcome = OperationRunner.run(options) { runner in
+                parking.waitUntilParked()
                 for (directory, members) in groups {
                     try folder.copyItems(named: members.map { ($0 as NSString).lastPathComponent },
                                          fromFolderPath: directory, moveMode: false, progress: runner)
