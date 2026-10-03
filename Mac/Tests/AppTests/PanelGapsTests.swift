@@ -549,7 +549,12 @@ final class PanelGapsTests: AppHostTestCase {
         let panel = controller.focusedPanel
         navigate(panel, to: scratch)
         panel.setListViewMode(0)
-        XCTAssertFalse((panel.iconView?.collectionView.accessibilityChildren() ?? []).isEmpty)
+        // Nothing is selected in a folder just opened (winmatch), so no selection change forces
+        // the collection view's layout here; its items appear with the next layout pass.
+        XCTAssertTrue(wait(for: "icon items") {
+            controller.window?.contentView?.layoutSubtreeIfNeeded()
+            return !(panel.iconView?.collectionView.accessibilityChildren() ?? []).isEmpty
+        })
         if let window = controller.window { _ = attach(window, "01-large-icons") }
     }
 }

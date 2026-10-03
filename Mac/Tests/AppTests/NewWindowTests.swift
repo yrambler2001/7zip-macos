@@ -163,12 +163,13 @@ final class NewWindowTests: AppHostTestCase {
     func testToolbarToggleInOneWindowLeavesTheOtherAlone() throws {
         let first = delegate.openNewWindow()
         let second = delegate.openNewWindow()
-        let before = try XCTUnwrap(second.window?.toolbar).items.map(\.itemIdentifier)
-        XCTAssertNotEqual(first.window?.toolbar?.identifier, second.window?.toolbar?.identifier)
+        let before = second.toolbarView.buttons.map(\.title)
+        XCTAssertFalse(before.isEmpty)
+        XCTAssertFalse(first.toolbarView === second.toolbarView)
         first.viewArchiveToolbar(nil)               // IDM_VIEW_ARCHIVE_TOOLBAR 750
         first.viewArchiveToolbar(nil)
         first.viewStandardToolbar(nil)              // IDM_VIEW_STANDARD_TOOLBAR 751
-        XCTAssertEqual(second.window?.toolbar?.items.map(\.itemIdentifier), before,
+        XCTAssertEqual(second.toolbarView.buttons.map(\.title), before,
                        "the other window's toolbar changed with this one's")
         first.viewStandardToolbar(nil)
     }

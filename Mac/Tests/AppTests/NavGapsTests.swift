@@ -335,17 +335,19 @@ final class NavGapsTests: AppHostTestCase {
             XCTAssertEqual(large.size, NSSize(width: 48, height: 36))
             XCTAssertEqual(small.size, NSSize(width: 24, height: 24))
         }
-        let toolbar = try XCTUnwrap(controller.window?.toolbar)
-        XCTAssertTrue(toolbar.isVisible)
-        XCTAssertEqual(toolbar.items.first?.image?.size, NSSize(width: 48, height: 36), "Large Buttons is on")
+        // The 7zFM strip (FMToolbar.swift, winmatch): the button size follows the bitmap size.
+        let toolbar = controller.toolbarView
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertFalse(toolbar.isHidden)
+        XCTAssertEqual(toolbar.buttonSize.height, 36 + 6 + 16, "Large Buttons is on")
         _ = attach(try XCTUnwrap(controller.window), "navgaps-03-toolbar-bitmaps")
         controller.viewToolbarsLargeButtons(nil)
-        XCTAssertEqual(toolbar.items.first?.image?.size, NSSize(width: 24, height: 24))
+        XCTAssertEqual(toolbar.buttonSize.height, 24 + 6 + 16)
         controller.viewArchiveToolbar(nil)
         controller.viewStandardToolbar(nil)
-        XCTAssertFalse(toolbar.isVisible, "no logical toolbar, no toolbar")
+        XCTAssertTrue(toolbar.isHidden, "no logical toolbar, no toolbar")
         controller.viewStandardToolbar(nil)
-        XCTAssertTrue(toolbar.isVisible)
+        XCTAssertFalse(toolbar.isHidden)
         XCTAssertEqual(PanelSplitView().dividerThickness, 4)
     }
 

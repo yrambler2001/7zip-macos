@@ -4,10 +4,13 @@
 import Cocoa
 import SevenZipKit
 
-final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitViewDelegate, NSToolbarDelegate,
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitViewDelegate,
                                  NSMenuItemValidation, NSUserInterfaceValidations, PanelDelegate {
 
     private let splitView = PanelSplitView()
+    /// The 7zFM toolbar strip (FMToolbar.swift): a flat Windows-style bar at the top of the
+    /// content, not an NSToolbar, so macOS draws no glass capsules around the buttons (winmatch).
+    let toolbarView = FMToolbarView()
     /// index 0 always exists; 1 is created on demand (SwitchOnOffOnePanel).
     private(set) var panels: [PanelViewController] = []
     private(set) var numPanels = 1
@@ -51,7 +54,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     /// (`ErrorAlert`, `Mac/docs/reports/fastui.md` section 6.10).
     var panelHostWindow: NSWindow? { window }
 
-    // Toolbar identifiers (App.cpp g_ArchiveButtons / g_StandardButtons)
+    // Toolbar item identifiers (App.cpp g_ArchiveButtons / g_StandardButtons)
     private static let archiveItems: [NSToolbarItem.Identifier] = [.szAdd, .szExtract, .szTest]
     private static let standardItems: [NSToolbarItem.Identifier] = [.szCopy, .szMove, .szDelete, .szInfo]
 
@@ -114,9 +117,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         splitView.translatesAutoresizingMaskIntoConstraints = false
         let content = MainWindowContentView()
         content.controller = self
+        toolbarView.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(toolbarView)
         content.addSubview(splitView)
         NSLayoutConstraint.activate([
-            splitView.topAnchor.constraint(equalTo: content.topAnchor),
+            // CApp::MoveSubWindows: the toolbar across the top, the panels under it.
+            toolbarView.topAnchor.constraint(equalTo: content.topAnchor),
+            toolbarView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            toolbarView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            splitView.topAnchor.constraint(equalTo: toolbarView.bottomAnchor),
             splitView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             splitView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
@@ -134,17 +143,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     }
 
     private func buildToolbar() {
-        // One identifier per window: AppKit mirrors `insertItem` / `removeItem` into every live
-        // toolbar with the same identifier, so with several windows (MainWindows.swift) a toolbar
-        // toggle in one window -- each has its own Toolbars mask, as each 7zFM process had -- would
-        // be replayed into the others and raise "already contains an item" there.
-        let toolbar = NSToolbar(identifier: "7zFMToolbar-" + UUID().uuidString)
-        toolbar.delegate = self
-        toolbar.allowsUserCustomization = false
-        toolbar.displayMode = (toolbarsMask & 1) != 0 ? .iconAndLabel : .iconOnly
-        toolbar.isVisible = (toolbarsMask & 12) != 0
-        window?.toolbar = toolbar
-        window?.toolbarStyle = .expanded
+        reloadToolbars()
     }
 
     private var visibleToolbarItems: [NSToolbarItem.Identifier] {
@@ -237,13 +236,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         // CPanel's destructor closes every archive level: a modified nested archive is offered
         // for write-back into its parent (PanelNestedArchives.swift, 01 §3.8).
         for panel in panels { panel.closeNestedArchivesForShutdown() }
-        // A closed window needs no toolbar, and leaving one behind is not free: `NSToolbar`'s
-        // `removeItem(at:)` indexes the *displayed* items, while `toolbar.items` still holds every
-        // item, so anything that rebuilds toolbars by walking `NSApp.windows` -- which
-        // `OptionsPostApply.reloadLangItems()` does, and step 3 of `sevenzip://test/reset` calls --
-        // throws `NSInternalInconsistencyException` on a window that has no layout any more. Filed
-        // for `options` in `Mac/docs/requests.md`; this is the half that belongs here.
-        window?.toolbar = nil
         MainWindows.didClose(self)
     }
 
@@ -500,36 +492,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         captureSplitterRatio()
     }
 
-    // MARK: - NSToolbarDelegate (App.cpp CreateToolbar / ReloadToolbars)
+    // MARK: - Toolbar (App.cpp CreateToolbar / AddButton / ReloadToolbars, 01 §1.3)
 
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { visibleToolbarItems }
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.archiveItems + Self.standardItems }
-
-    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-        let (label, symbol, action): (String, String, Selector)
-        switch itemIdentifier {
-        case .szAdd: (label, symbol, action) = (Lang.text(7200, "Add"), "plus.rectangle.on.folder", #selector(MenuActions.toolbarAddToArchive(_:)))         // kMenuCmdID_Toolbar_Add 1070, IDS_ADD
-        case .szExtract: (label, symbol, action) = (Lang.text(7201, "Extract"), "arrow.down.doc", #selector(MenuActions.toolbarExtractArchives(_:)))       // kMenuCmdID_Toolbar_Extract 1071, IDS_EXTRACT
-        case .szTest: (label, symbol, action) = (Lang.text(7202, "Test"), "checkmark.seal", #selector(MenuActions.toolbarTestArchives(_:)))              // kMenuCmdID_Toolbar_Test 1072, IDS_TEST
-        case .szCopy: (label, symbol, action) = (Lang.text(7203, "Copy"), "doc.on.doc", #selector(MenuActions.fileCopyTo(_:)))                          // IDM_COPY_TO 546, IDS_BUTTON_COPY
-        case .szMove: (label, symbol, action) = (Lang.text(7204, "Move"), "arrow.right.doc.on.clipboard", #selector(MenuActions.fileMoveTo(_:)))        // IDM_MOVE_TO 547, IDS_BUTTON_MOVE
-        case .szDelete: (label, symbol, action) = (Lang.text(7205, "Delete"), "trash", #selector(MenuActions.fileDelete(_:)))                           // IDM_DELETE 548, IDS_BUTTON_DELETE
-        case .szInfo: (label, symbol, action) = (Lang.text(7206, "Info"), "info.circle", #selector(MenuActions.fileProperties(_:)))                    // IDM_PROPERTIES 551, IDS_BUTTON_INFO
+    /// The button for an item: its label (IDS_* via LangString) and the selector it sends.
+    static func toolbarSpec(_ id: NSToolbarItem.Identifier, large: Bool) -> FMToolbarItemSpec? {
+        let (label, action): (String, Selector)
+        switch id {
+        case .szAdd: (label, action) = (Lang.text(7200, "Add"), #selector(MenuActions.toolbarAddToArchive(_:)))          // kMenuCmdID_Toolbar_Add 1070, IDS_ADD
+        case .szExtract: (label, action) = (Lang.text(7201, "Extract"), #selector(MenuActions.toolbarExtractArchives(_:))) // kMenuCmdID_Toolbar_Extract 1071, IDS_EXTRACT
+        case .szTest: (label, action) = (Lang.text(7202, "Test"), #selector(MenuActions.toolbarTestArchives(_:)))         // kMenuCmdID_Toolbar_Test 1072, IDS_TEST
+        case .szCopy: (label, action) = (Lang.text(7203, "Copy"), #selector(MenuActions.fileCopyTo(_:)))                  // IDM_COPY_TO 546, IDS_BUTTON_COPY
+        case .szMove: (label, action) = (Lang.text(7204, "Move"), #selector(MenuActions.fileMoveTo(_:)))                  // IDM_MOVE_TO 547, IDS_BUTTON_MOVE
+        case .szDelete: (label, action) = (Lang.text(7205, "Delete"), #selector(MenuActions.fileDelete(_:)))              // IDM_DELETE 548, IDS_BUTTON_DELETE
+        case .szInfo: (label, action) = (Lang.text(7206, "Info"), #selector(MenuActions.fileProperties(_:)))              // IDM_PROPERTIES 551, IDS_BUTTON_INFO
         default: return nil
         }
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
-        // App.cpp AddButton: the 7-Zip bitmaps, 48x36 IDB_* with "Large Buttons", else the 24x24
-        // IDB_*2 (01 §1.3, §9 #15), RGB(255,0,255) masked. SF Symbols only if an asset is missing.
-        let large = (toolbarsMask & 2) != 0
-        item.image = Self.toolbarBitmap(itemIdentifier, large: large)
-            ?? NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-        item.target = nil          // responder chain; disabled while nobody implements the action
-        item.action = action
-        item.isBordered = true
-        return item
+        // AddButton: the 7-Zip bitmaps, 48x36 IDB_* with "Large Buttons", else the 24x24 IDB_*2
+        // (01 §1.3, §9 #15), RGB(255,0,255) masked.
+        return FMToolbarItemSpec(identifier: id.rawValue, label: label,
+                                 image: toolbarBitmap(id, large: large), action: action)
     }
 
     /// The toolbar bitmap for an item: IDB_ADD 100 ... IDB_INFO 106 (48x36) or IDB_ADD2 150 ...
@@ -543,14 +524,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         return NSImage(named: "toolbar-\(name)-\(large ? "large" : "small")")
     }
 
-    private func reloadToolbars() {
-        guard let toolbar = window?.toolbar else { return }
-        while !toolbar.items.isEmpty { toolbar.removeItem(at: 0) }
-        for (i, id) in visibleToolbarItems.enumerated() { toolbar.insertItem(withItemIdentifier: id, at: i) }
-        toolbar.displayMode = (toolbarsMask & 1) != 0 ? .iconAndLabel : .iconOnly
+    /// ReloadToolbars: the archive buttons, then the standard ones, back to back; labels per
+    /// "Show Buttons Text", bitmaps per "Large Buttons". Also the language switch's re-label.
+    func reloadToolbars() {
+        let large = (toolbarsMask & 2) != 0
+        let specs = visibleToolbarItems.compactMap { Self.toolbarSpec($0, large: large) }
         // MoveSubWindows: the toolbar takes room only while one of the two toolbars is on (01 §1.2).
-        toolbar.isVisible = (toolbarsMask & 12) != 0
+        toolbarView.configure(specs, showText: (toolbarsMask & 1) != 0, large: large)
         Settings.toolbarsMask = toolbarsMask
+    }
+
+    /// Tests: take the Toolbars mask from the settings again and rebuild the strip.
+    func resetToolbarsForTest() {
+        toolbarsMask = Settings.toolbarsMask
+        reloadToolbars()
     }
 
     // MARK: - Menu commands on the window (OnMenuCommand, MyLoadMenu.cpp:805-964)

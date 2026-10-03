@@ -266,6 +266,9 @@ behaviour of a panel now matches 7zFM: the "Opening" progress, the per-level ope
 archive level, the command-line open's "Error" box; section K says how. The checklist reads
 **467 of 496**.
 
+**Update, 2026-10-03 (`mac/winmatch`).** The five differences `mac/wincompare` filed are closed,
+the app icon is the original FM.ico and the toolbar is 7zFM's flat strip; section N says how.
+
 ---
 
 ## F. Closed after the audit — 2026-09-20, `mac/cmdmode`
@@ -612,3 +615,26 @@ diffed. `reports/wincompare.md` has the item-by-item tables and the paired scree
   - `Add to "arc_2.7z"`;
   - the grayed single-level combo.
 - **Filed:** five rows in `requests.md`.
+
+## N. Matched to the real 7zFM — 2026-10-03, `mac/winmatch`
+
+The five rows `wincompare` filed are closed, and two user decisions are built.
+`reports/winmatch.md` has the detail and the paired captures.
+
+- **A folder just opened** is focused, not selected: the status bar reads "0 / N object(s)
+  selected", and the dotted focus rectangle sits on the first item. Nothing is operated until
+  something is selected (AlternativeSelection's cursor excepted). F5 then copies the whole folder
+  (OperSmart), and the File menu grays only what CFileMenu::Load grays.
+- **The English with no language file** is the .rc resources' text: "Add to Archive",
+  "Solid Block size:", "Show Password". It is generated from the two `resource.rc` files, and a
+  dialog-scoped lookup covers the five IDs whose dialogs disagree.
+- **The Extract dialog** has IDD_EXTRACT's controls only. **The finished progress window** has no
+  extra status line. **About** has OK and www.7-zip.org, and F1 opens the start page, as on
+  Windows.
+- **The app icon** is FM.ico itself: the nearest frame for each size, nearest-neighbour, no macOS
+  mask. Its 32 px slot is pixel-identical to the icon Windows shows for 7zFM.exe. The document
+  icons keep their macOS page form.
+- **The toolbar** is 7zFM's flat strip, not an NSToolbar. The bitmaps sit over their labels, the
+  buttons are the same size with no separators, and hover and pressed are flat rectangles in
+  comctl32's colours. Buttons are never disabled and wrap when the window is narrow. "Large
+  Buttons" and "Show Buttons Text" still work.

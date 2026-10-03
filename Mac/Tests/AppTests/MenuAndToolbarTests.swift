@@ -153,16 +153,18 @@ final class MenuAndToolbarTests: AppHostTestCase {
     func testToolbarButtons() {
         let controller = MainWindowController()
         defer { controller.window?.close() }
-        guard let toolbar = controller.window?.toolbar else { return XCTFail("the window has no toolbar") }
-        let titles = toolbar.items.map(\.label)
+        // The 7zFM strip (FMToolbar.swift, winmatch), not an NSToolbar.
+        let buttons = controller.toolbarView.buttons
+        let titles = buttons.map(\.title)
         XCTAssertEqual(titles, ["Add", "Extract", "Test", "Copy", "Move", "Delete", "Info"],
                        "toolbar items: \(titles)")
-        for item in toolbar.items {
-            XCTAssertNotNil(item.action, "toolbar item '\(item.label)' sends nothing")
+        for button in buttons {
+            XCTAssertNotNil(button.action, "toolbar button '\(button.title)' sends nothing")
+            XCTAssertTrue(button.isEnabled)
         }
         // The compress scope implemented Add, so it must be wired, not a placeholder
         // (kMenuCmdID_Toolbar_Add 1070).
-        XCTAssertEqual(toolbar.items.first?.action.map(NSStringFromSelector), "toolbarAddToArchive:",
+        XCTAssertEqual(buttons.first?.action.map(NSStringFromSelector), "toolbarAddToArchive:",
                        "Add must send the toolbar Add selector")
     }
 }

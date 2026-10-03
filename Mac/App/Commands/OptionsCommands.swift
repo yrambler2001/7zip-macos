@@ -35,16 +35,11 @@ enum OptionsPostApply {
     /// the toolbar items so every title comes from the new lang file.
     static func reloadLangItems() {
         NSApp.mainMenu = MainMenu.build()
-        for window in NSApp.windows {
-            // Only windows that are on screen (or in the Dock): `removeItem(at:)` on the toolbar of
-            // a window that has been closed raises NSInternalInconsistencyException although
-            // `items` still lists them (requests.md, `modalfix` -> `options`). A closed main
-            // window is not reopened -- File > New Window builds a fresh one with fresh items.
-            guard window.isVisible || window.isMiniaturized else { continue }
-            guard let toolbar = window.toolbar else { continue }
-            let ids = toolbar.items.map(\.itemIdentifier)
-            while !toolbar.items.isEmpty { toolbar.removeItem(at: 0) }
-            for (i, id) in ids.enumerated() { toolbar.insertItem(withItemIdentifier: id, at: i) }
+        // ReloadToolbars: every open window's strip (FMToolbar.swift) takes the new labels. A
+        // closed window is skipped -- File > New Window builds a fresh one (winmatch; the NSToolbar
+        // this replaced raised on a closed window, requests.md `modalfix` -> `options`).
+        for controller in MainWindows.controllers where !controller.isClosed {
+            controller.reloadToolbars()
         }
     }
 
