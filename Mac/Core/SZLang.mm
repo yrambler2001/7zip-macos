@@ -11,6 +11,7 @@
 
 @implementation SZLanguageInfo
 - (instancetype)initWithCode:(NSString *)code path:(NSString *)path english:(NSString *)english native:(NSString *)native count:(NSInteger)count
+                    comments:(NSArray<NSString *> *)comments missing:(NSArray<NSString *> *)missing extra:(NSArray<NSString *> *)extra
 {
   self = [super init];
   if (!self)
@@ -20,6 +21,9 @@
   _englishName = [english copy];
   _nativeName = [native copy];
   _stringCount = count;
+  _comments = [comments copy];
+  _missingLines = [missing copy];
+  _extraLines = [extra copy];
   return self;
 }
 - (NSString *)description
@@ -70,6 +74,7 @@ static const wchar_t *SZResourceOnlyString(UInt32 langID)
   NSString *_currentCode;
   NSArray<NSString *> *_comments;
   NSArray<SZLanguageInfo *> *_available;
+  NSArray<NSString *> *_failedFiles;
 }
 
 + (void)load
@@ -228,30 +233,105 @@ static const wchar_t *SZResourceOnlyString(UInt32 langID)
   return NO;
 }
 
+static NSString *SZLangLine(UInt32 langID, const wchar_t *text)
+{
+  // LangPage.cpp:228-240: n.Add_UInt32(id); n += " : "; n += text;
+  NSString *body = text ? SZStringFromWChars(text, (unsigned)wcslen(text)) : @"";
+  return [NSString stringWithFormat:@"%u : %@", (unsigned)langID, body];
+}
+
+- (NSArray<SZLanguageInfo *> *)languagesInDirectory:(NSString *)dir failedFiles:(NSArray<NSString *> **)failedFiles
+{
+  NSArray<NSString *> *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:NULL] ?: @[];
+  NSMutableArray *result = [NSMutableArray array];
+  NSMutableArray<NSString *> *failed = [NSMutableArray array];
+  for (NSString *file in [files sortedArrayUsingSelector:@selector(compare:)])
+  {
+    // LangPage.cpp:108-115: only *.txt, compared case-blind.
+    if ([[file pathExtension] caseInsensitiveCompare:@"txt"] != NSOrderedSame)
+      continue;
+    NSString *path = [dir stringByAppendingPathComponent:file];
+    BOOL isDir = NO;
+    if ([[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDir] && isDir)
+      continue;
+    CLang lang;
+    if (!lang.Open([path fileSystemRepresentation], "7-Zip"))
+    {
+      [failed addObject:file];
+      continue;
+    }
+    const wchar_t *en = lang.Get(1);
+    const wchar_t *native = lang.Get(2);
+
+    NSMutableArray<NSString *> *comments = [NSMutableArray array];
+    FOR_VECTOR (k, lang.Comments)
+      [comments addObject:SZStringFromUString(lang.Comments[k])];
+
+    // The merge walk of LangPage.cpp:197-245 over the two sorted id lists.
+    NSMutableArray<NSString *> *missing = [NSMutableArray array];
+    NSMutableArray<NSString *> *extra = [NSMutableArray array];
+    unsigned numLines = lang._ids.Size();
+    {
+      std::lock_guard<std::mutex> lock(_mutex);
+      if (!_english.IsEmpty())
+      {
+        numLines = 0;
+        unsigned i1 = 0, i2 = 0;
+        for (;;)
+        {
+          const bool d1 = i1 < _english._ids.Size();
+          const bool d2 = i2 < lang._ids.Size();
+          if (!d1 && !d2)
+            break;
+          const UInt32 id1 = d1 ? _english._ids[i1] : (UInt32)0 - 1;
+          const UInt32 id2 = d2 ? lang._ids[i2] : (UInt32)0 - 1;
+          if (d1 && d2 && id1 == id2)
+          {
+            i1++;
+            i2++;
+            numLines++;
+            continue;
+          }
+          const bool id1IsSmaller = d1 && (!d2 || id1 < id2);
+          if (id1IsSmaller)
+          {
+            [missing addObject:SZLangLine(id1, _english.Get_by_index(i1))];
+            i1++;
+          }
+          else
+          {
+            [extra addObject:SZLangLine(id2, lang.Get_by_index(i2))];
+            i2++;
+          }
+        }
+        numLines += (unsigned)extra.count;   // langInfo.NumLines = numLines + ExtraLines.Size()
+      }
+    }
+    [result addObject:[[SZLanguageInfo alloc] initWithCode:[file stringByDeletingPathExtension] path:path
+                                                   english:en ? SZStringFromWChars(en, (unsigned)wcslen(en)) : @""
+                                                    native:native ? SZStringFromWChars(native, (unsigned)wcslen(native)) : @""
+                                                     count:numLines
+                                                  comments:comments missing:missing extra:extra]];
+  }
+  if (failedFiles)
+    *failedFiles = failed;
+  return result;
+}
+
 - (NSArray<SZLanguageInfo *> *)availableLanguages
 {
   if (_available)
     return _available;
-  NSString *dir = [SZLang langDirectoryPath];
-  NSArray<NSString *> *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:NULL] ?: @[];
-  NSMutableArray *result = [NSMutableArray array];
-  for (NSString *file in [files sortedArrayUsingSelector:@selector(compare:)])
-  {
-    if (![[file pathExtension] isEqualToString:@"txt"])
-      continue;
-    NSString *path = [dir stringByAppendingPathComponent:file];
-    CLang lang;
-    if (!lang.Open([path fileSystemRepresentation], "7-Zip"))
-      continue;
-    const wchar_t *en = lang.Get(1);
-    const wchar_t *native = lang.Get(2);
-    [result addObject:[[SZLanguageInfo alloc] initWithCode:[file stringByDeletingPathExtension] path:path
-                                                   english:en ? SZStringFromWChars(en, (unsigned)wcslen(en)) : @""
-                                                    native:native ? SZStringFromWChars(native, (unsigned)wcslen(native)) : @""
-                                                     count:lang._ids.Size()]];
-  }
-  _available = result;
-  return result;
+  NSArray<NSString *> *failed = nil;
+  _available = [self languagesInDirectory:[SZLang langDirectoryPath] failedFiles:&failed];
+  _failedFiles = failed ?: @[];
+  return _available;
+}
+
+- (NSArray<NSString *> *)failedLanguageFiles
+{
+  [self availableLanguages];
+  return _failedFiles;
 }
 
 + (NSArray<NSString *> *)systemLanguageCandidates

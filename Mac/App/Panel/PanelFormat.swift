@@ -23,15 +23,17 @@ enum PanelFormat {
     /// together fit the dialog's kCopyDialog_NumInfoLines = 11 lines.
     static func itemsInfo(rows: [PanelRow]) -> String {
         var lines: [String] = []
-        for row in rows.prefix(5) { lines.append(row.name) }
+        // Each name and each "label: value" pair is bidi-isolated, so a right-to-left translation
+        // keeps "label: value" order in the left-to-right dialog (`Bidi`, requests.md).
+        for row in rows.prefix(5) { lines.append(Bidi.isolate(row.name)) }
         if rows.count > 5 { lines.append("...") }
         let folders = rows.reduce(0) { $1.isDirectory ? $0 + 1 : $0 }
         let files = rows.count - folders
         let size = rows.reduce(UInt64(0)) { $0 &+ $1.size }
         lines.append("")
-        if folders > 0 { lines.append(Lang.text(1031, "Folders") + ": \(folders)") }
-        if files > 0 { lines.append(Lang.text(1032, "Files") + ": \(files)") }
-        lines.append(Lang.text(1007, "Size") + ": " + Formatting.size(size))
+        if folders > 0 { lines.append(Bidi.labelValue(Lang.text(1031, "Folders"), "\(folders)")) }
+        if files > 0 { lines.append(Bidi.labelValue(Lang.text(1032, "Files"), "\(files)")) }
+        lines.append(Bidi.labelValue(Lang.text(1007, "Size"), Formatting.size(size)))
         return lines.joined(separator: "\n")
     }
 }

@@ -72,6 +72,11 @@ FOUNDATION_EXPORT NSString * const SZSettingsStateDirectoryEnvironmentVariable; 
 /// The domain actually in use right now.
 @property (class, nonatomic, readonly) NSString *applicationID;
 
+/// The domain used when SEVENZIP_DEFAULTS_SUITE is not set: the running application's bundle
+/// identifier, or SZSettingsDefaultApplicationID outside an application bundle (the unit-test
+/// runner, the extensions). `NMacPrefs::DefaultApplicationID()`.
+@property (class, nonatomic, readonly) NSString *defaultApplicationID;
+
 /// YES when SEVENZIP_DEFAULTS_SUITE names a domain other than the default one.
 @property (class, nonatomic, readonly) BOOL usesOverrideSuite;
 

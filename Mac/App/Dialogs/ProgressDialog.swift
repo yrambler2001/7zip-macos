@@ -162,8 +162,9 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
                                                       toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 30))
 
         window.delegate = self
+        // Centred on the window the operation was started from (the key / main window), as
+        // CProgressDialog is created with the main window as its owner -- not on the screen.
         DialogKit.install(stack, in: window, parent: nil, minimumWidth: 560)
-        window.center()
         updateTitle(percent: nil, fileName: "")
     }
 

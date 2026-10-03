@@ -92,6 +92,9 @@ private final class CopyMoveDialogController: NSObject {
         let labels: [NSView] = lines.map { line in
             let field = NSTextField(labelWithString: String(line))
             field.alignment = .left
+            // The info lines arrive bidi-isolated (PanelFormat.itemsInfo); a left-to-right base
+            // keeps "Files: 1" in that order in Arabic or Hebrew too (`Bidi`, requests.md).
+            Bidi.makeLeftToRight(field)
             field.usesSingleLineMode = true
             field.maximumNumberOfLines = 1
             field.lineBreakMode = .byTruncatingTail

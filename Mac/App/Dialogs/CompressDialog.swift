@@ -24,6 +24,10 @@ struct CompressDialogInput {
     var updateMode: SZUpdateMode = .add
     var pathMode: SZCompressPathMode = .relative
     var sfxMode = false
+    /// `-sfx<module>` resolved by the caller (`SZUpdater.resolvedSFXModulePath`); nil = the
+    /// bundled `7z.sfx`. Carried to `CompressDialogResult.sfxModulePath` unchanged, so a module
+    /// named on the command line survives an `-ad` round trip (03 section 2.6, 01b section 4.23).
+    var sfxModulePath: String?
     var openShareForWrite = false
     var deleteAfterCompressing = false
     /// Adding to an archive that already exists: volumes are refused
@@ -908,26 +912,35 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
     }
 
     @objc private func browseForArchive(_ sender: NSButton) {
-        // OnButtonSetArchive (:879-1016): a save panel with one filter per listed format.
+        // OnButtonSetArchive (:879-1016): a save panel with one filter per listed format, the
+        // "Archive:" aggregate and "All Files"; "exe" only in SFX mode (01b section 4.23).
         let panel = NSSavePanel()
-        panel.title = Lang.text(4070, "Browse")
+        panel.title = Lang.text(4070, "Browse")                  // IDS_COMPRESS_SET_ARCHIVE_BROWSE
         panel.canCreateDirectories = true
         panel.directoryURL = URL(fileURLWithPath: directoryPrefix, isDirectory: true)
         panel.nameFieldStringValue = archiveCombo.stringValue
-        if model.sfxMode {
-            panel.allowedContentTypes = []
-            panel.allowsOtherFileTypes = true
-        } else {
-            panel.allowsOtherFileTypes = true
-        }
+        let chooser = browseFilterChooser(for: panel)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let path = url.path
+        let filter = chooser.selected
+        let path = CompressBrowseFilter.resolvedPath(url.path, filter: filter, sfx: model.sfxMode) {
+            self.formats[$0].mainExtension
+        }
         directoryPrefix = (path as NSString).deletingLastPathComponent + "/"
         var name = (path as NSString).lastPathComponent
-        // The chosen filter's extension is appended when missing, and the format combo is
-        // switched when the typed extension names a different format (:1000-1016).
-        if let info = SZCodecs.format(forArchiveName: name),
-           let i = formats.firstIndex(where: { $0.index == info.index }), i != formatIndexInList {
+        if let index = filter.formatListIndex {
+            // The format was confirmed by the filter: the combo follows it (:1008-1014).
+            if index != formatIndexInList {
+                saveOptionsInMemory()
+                formatIndexInList = index
+                isUpdatingControls = true
+                formatCombo.selectItem(at: index)
+                isUpdatingControls = false
+                formatChanged(isChanged: true)
+            }
+        } else if !model.sfxMode, let info = SZCodecs.format(forArchiveName: name),
+                  let i = formats.firstIndex(where: { $0.index == info.index }), i != formatIndexInList {
+            // The aggregate / All Files filters: a typed extension that names another format
+            // switches the combo (macOS addition, the Windows dialog keeps the format).
             saveOptionsInMemory()
             formatIndexInList = i
             isUpdatingControls = true
@@ -939,6 +952,20 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         }
         archiveCombo.stringValue = name
         folderLabel.stringValue = directoryPrefix
+        // The name now carries this format's extension: the next format switch strips that one.
+        previousFormatIndexInList = formatIndexInList
+        previousWasSFX = model.sfxMode
+    }
+
+    /// The filter list of OnButtonSetArchive for the current format list and SFX state, installed
+    /// on `panel` as an accessory pop-up. Internal so a test can inspect it without running the panel.
+    func browseFilterChooser(for panel: NSSavePanel) -> CompressBrowseFilterChooser {
+        let list = CompressBrowseFilter.filters(
+            formats: formats.map { ($0.name, $0.extensions, $0.mainExtension) },
+            selectedFormat: formatIndexInList, sfx: model.sfxMode,
+            archiveLabel: Lang.text(4001, "Archive:"),               // IDT_COMPRESS_ARCHIVE
+            allFilesLabel: Lang.text(4071, "All Files"))             // IDS_OPEN_TYPE_ALL_FILES
+        return CompressBrowseFilterChooser(filters: list.filters, initial: list.initial, panel: panel)
     }
 
     @objc private func showOptionsSheet(_ sender: NSButton) {
@@ -1078,6 +1105,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         r.updateMode = SZUpdateMode(rawValue: updateModeCombo.indexOfSelectedItem) ?? .add
         r.pathMode = SZCompressPathMode(rawValue: pathModeCombo.indexOfSelectedItem) ?? .relative
         r.sfxMode = model.sfxMode
+        r.sfxModulePath = input.sfxModulePath
         r.openShareForWrite = sharedBox.state == .on
         r.deleteAfterCompressing = deleteBox.state == .on
         r.password = password.isEmpty ? nil : password

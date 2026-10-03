@@ -36,6 +36,11 @@ enum OptionsPostApply {
     static func reloadLangItems() {
         NSApp.mainMenu = MainMenu.build()
         for window in NSApp.windows {
+            // Only windows that are on screen (or in the Dock): `removeItem(at:)` on the toolbar of
+            // a window that has been closed raises NSInternalInconsistencyException although
+            // `items` still lists them (requests.md, `modalfix` -> `options`). A closed main
+            // window is not reopened -- File > New Window builds a fresh one with fresh items.
+            guard window.isVisible || window.isMiniaturized else { continue }
             guard let toolbar = window.toolbar else { continue }
             let ids = toolbar.items.map(\.itemIdentifier)
             while !toolbar.items.isEmpty { toolbar.removeItem(at: 0) }

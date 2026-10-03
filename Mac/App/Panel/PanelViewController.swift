@@ -196,6 +196,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         // status bar (each panel owns one, 01 §1.2)
         statusLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         statusLabel.lineBreakMode = .byTruncatingMiddle
+        Bidi.makeLeftToRight(statusLabel)
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         let status = NSView()
         status.translatesAutoresizingMaskIntoConstraints = false
@@ -879,7 +880,9 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             parts.append(Formatting.size(focused.size))
             parts.append(focused.cells[.mtime] ?? "")
         }
-        statusLabel.stringValue = parts.filter { !$0.isEmpty }.joined(separator: "    ")
+        // Segments isolated and laid out left to right, so a right-to-left translation does not
+        // reverse their order (`Bidi`, requests.md `packaging` -> `panel`, parity.md B 23).
+        statusLabel.stringValue = Bidi.join(parts.filter { !$0.isEmpty }, separator: "    ")
     }
 
     // MARK: - Errors

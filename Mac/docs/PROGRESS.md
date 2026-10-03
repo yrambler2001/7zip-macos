@@ -19,7 +19,7 @@ Rules for implementation agents:
 | 4 | `extract` | `mac/extract` | not started | depends on scaffold |
 | 5 | `compress` | `mac/compress` | not started | depends on scaffold; shares Progress dialog with extract |
 | 6 | `tools` | `mac/tools` | not started | depends on scaffold; hash results reuse the ListView dialog (panel) |
-| 7 | `options` | `mac/options` | review | Options window + all pages + settings facade done; 2 boxes left (lang ID lists, `FM.AutoRefresh` is persisted here) |
+| 7 | `options` | `mac/options` | review | Options window + all pages + settings facade done; lang ID lists closed by `mac/optgaps`; 1 box left (`FM.AutoRefresh` is persisted here) |
 | 8 | `finder` | `mac/finder` | not started | depends on extract, compress, tools for the command handlers |
 | 9 | `packaging` | `mac/packaging` | not started | last; needs every other scope merged |
 | 10 | `icons` | `mac/icons` | review | app icon + 27 document icons generated from the upstream `.ico` resources |
@@ -234,6 +234,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] Part 0: `IDS_N_SELECTED_ITEMS 3002` `"{0} object(s) selected"` with `{0}` = `"<operated> / <total>"` (total excludes `..`), string cached by `ReloadLangItems` (01 §3.12)
 - [x] Part 1: total `kpidSize` of the operated items with space separators, empty when none (01 §3.12)
 - [x] Part 2: size of the focused item only when the selection count > 0 and the focused item is not `..`; part 3: focused item's `kpidMTime` short string under the same condition (01 §3.12)
+  - **[optgaps]:** the four parts are bidi-isolated (FSI ... PDI) in a left-to-right label, so a right-to-left translation keeps their order (`Bidi`, parity.md B 23).
 - [x] `Refresh_StatusBar` also reachable through the deferred `kRefresh_StatusBar` action; `OnItemChanged` triggers it (01 §3.12)
 
 ### 3.6 Keyboard map (`CPanel::OnKeyDown`, list view and address edit)
@@ -341,6 +342,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 
 - [x] Combo dialog (`IDD_COMBO 98`): title, static `IDT_COMBO 100`, editable combo `IDC_COMBO 101` with history strings, OK / Cancel, resizable (01b §4.4)
 - [x] ListView dialog (`IDD_LISTVIEW 99`): 1 or 2 columns, header only for 2 columns, full-row select, `SelectFirst`, `DeleteIsAllowed` (Del removes rows, `StringsWereChanged`), Ctrl+A, Ctrl+C / Ctrl+Ins copies `<string>` or `<string>: <value>` lines, Enter / double-click → OK (1 column) or item info (Alt or 2 columns), `FocusedItemIndex`, resizable 480×320 (01b §4.11)
+  - **[optgaps]:** view-based rows (an `NSTableCellView` with a label per cell), so Properties / Folders History rows are accessibility cells with static texts; `OptGapsTests.testListViewDialogRowsAreRealTextCells`.
 - [x] Edit (text viewer) dialog (`IDD_EDIT_DLG 94`): read-only multiline text, Close, resizable; opened from a ListView row (01b §4.6)
 
 ## 4. extract — Extract dialog and flow, Progress / Overwrite / Password / Messages / Memory dialogs, Test, Open Outside / View / Edit / Diff, drag-out hook
@@ -437,7 +439,8 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] RAM figures: `_ramSize`, `_ramSize_Reduced = max(RAM, 64 MB)`, `_ramUsage_Auto = 80 %` (01b §4.23)
 - [x] Folder line `IDT_COMPRESS_ARCHIVE_FOLDER 130` shows `DirPrefix`; typing / choosing an absolute path moves the folder part there (`ArcPath_WasChanged`) (01b §4.23)
 - [x] "Archive:" `IDT_COMPRESS_ARCHIVE 4001` + name combo `IDC_COMPRESS_ARCHIVE 100` with `Compression.ArcHistory` (max 20); initial text = caller's path without extension + `.<main ext>` (`KeepName` formats keep the original file name, hash formats use the lower-cased method name, SFX → `.exe`); format change swaps the previous extension (`SetArchiveName2`) (01b §4.23)
-- [ ] Browse `IDB_COMPRESS_SET_ARCHIVE 101` → `NSSavePanel` titled `IDS_COMPRESS_SET_ARCHIVE_BROWSE 4070`, one filter per listed format (`k_DontSave_Exts` `xpi odt ods docx xlsx` omitted), an all-main-extensions "Archive" filter, `IDS_OPEN_TYPE_ALL_FILES 4071`; SFX mode offers only `exe`; chosen filter's extension appended when missing and the format combo switched when it differs (01b §4.23)
+- [x] Browse `IDB_COMPRESS_SET_ARCHIVE 101` → `NSSavePanel` titled `IDS_COMPRESS_SET_ARCHIVE_BROWSE 4070`, one filter per listed format (`k_DontSave_Exts` `xpi odt ods docx xlsx` omitted), an all-main-extensions "Archive" filter, `IDS_OPEN_TYPE_ALL_FILES 4071`; SFX mode offers only `exe`; chosen filter's extension appended when missing and the format combo switched when it differs (01b §4.23)
+  - **[optgaps]:** `CompressBrowseFilter` builds the filter list and the post-dialog path rules; the save panel shows it as a "Save as type" accessory pop-up driving `allowedContentTypes`; `OptGapsTests.testCompressBrowseFiltersFollowOnButtonSetArchive`.
 - [x] "Archive format:" `IDT_COMPRESS_FORMAT 4003` / sorted combo `IDC_COMPRESS_FORMAT 104`; selection = `-t` → `Compression.Archiver` → first; change → `SaveOptionsInMem` + `FormatChanged` (re-fill level / solid / params / memuse / threads, enable Solid / Threads / Method / Dictionary / Order / SFX / encryption per format flags, load per-format options) + `SetArchiveName2` (01b §4.23)
 - [x] "Compression level:" `IDT_COMPRESS_LEVEL 4004` / combo `IDC_COMPRESS_LEVEL 102`: one item per `LevelsMask` bit, text `"<n> - <name>"` with `IDS_METHOD_STORE 4050` (0), `_FASTEST 4051` (1), `_FAST 4052` (3), `_NORMAL 4053` (5), `_MAXIMUM 4054` (7), `_ULTRA 4055` (9), even levels number only; per-format `Level` (`-1` → 5, `> 9` → 9), default 5; change → `ResetForLevelChange`, `SetMethod`, `SetSolidBlockSize`, `SetNumThreads`, `SetMemoryUsage` (01b §4.23)
 - [x] "Compression method:" `IDT_COMPRESS_METHOD 4005` / combo `IDC_COMPRESS_METHOD 106`: empty for level 0 (except tar / hash); format method list (7z hides Copy / Deflate / Deflate64, SFX mode = Copy / LZMA / LZMA2 / PPMd); first item `*  <name>` = auto (nothing emitted); per-format `Method`; disabled when the format has no methods (01b §4.23)
@@ -569,11 +572,14 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] "Associate 7-Zip with:" `IDT_SYSTEM_ASSOCIATE 2201` (localised), `+` button `IDB_SYSTEM_CURRENT 101` toggling all rows for the current user; the all-users button `IDB_SYSTEM_ALL 102` and column are dropped (01b §4.21, 03 §3.4, 01 §9 #3)
 - [x] List `IDL_SYSTEM_ASSOCIATE 100`: columns Type (`IDS_PROP_FILE_TYPE`, with the format icon) and `<user name>` ("Current User" fallback); one row per extension of the 39-entry association list (7z zip rar 001 cab iso xz txz lzma tar cpio bz2 bzip2 tbz2 tbz gz gzip tgz tpz zst tzst z taz lzh lha rpm deb arj vhd vhdx wim swm esd fat ntfs dmg hfs xar squashfs apfs) with icons converted from `Archive/Icons/*.ico` (03 §3.1, §6.2)
   - **[packaging audit]:** 40 rows, not 39 (`requests.md` spec correction), and the rows show **system** icons from `NSWorkspace.shared.icon(for:)` (`OptionsSystemPage.swift:204-207`), not the format icons converted from `Archive/Icons/*.ico`. The 27 document icons exist (`icons` scope) but this page does not use them — open as an `icons` -> `options` request.
+  - **[optgaps] closed:** the rows draw `doc-<name>.icns` (real 16 / 32 px reps) through `OptionsSystemPage.formatIcon(for:)`; `OptGapsTests.testSystemPageShowsTheFormatIcons`.
 - [x] Cell text per state: empty = no association, `7-Zip` = this app, `[7-Zip]` = another 7-Zip install, otherwise the current handler's display name (`urlForApplication(toOpen:)`) (03 §3.4)
 - [x] Interaction: click a cell, Space, `+` / `-` / `*`, Ctrl+A / numpad `*` select all, Enter / `+` button toggle; state cycles Clear ⇄ 7-Zip, rows owned by another program return to "Other" unless the whole group is set; `_needSave` + `Changed()` (01b §4.21, 03 §3.4)
   - **[packaging audit]:** a **single** click does not toggle (there is no `table.action`, only `doubleAction`, `OptionsSystemPage.swift:85`) and **Return** is not handled (`onKey` takes `" "`, `+`, `=`, `-`, `*` only). Space, the `+`/`-` buttons and `*`-select-all do work.
+  - **[optgaps] closed:** a plain click on the state column toggles that row (NM_CLICK, `uKeyFlags == 0`), Return toggles the selection or every row (NM_RETURN); `OptGapsTests.testSystemPageClickAndReturnToggleRows`.
 - [x] Apply: for each changed row `NSWorkspace.setDefaultApplication(at:toOpen: UTType)` (7-Zip) or restore the previous handler (Clear); first error reported once; Launch Services re-registered; Help → `FM/options.htm#system` (01b §4.21, 03 §6.1, §6.2)
   - **[packaging audit]:** `NSWorkspace.setDefaultApplication(at:toOpen:)` is called per changed row (`OptionsSystemPage.swift:298`), but Launch Services is **not** re-registered by Apply (only once at first launch, `URLCommands.swift:130-169`) and the Help topic does nothing.
+  - **[optgaps] closed:** when the requests have answered, Apply calls `OptionsSystemPage.associationsDidChange()` (SHChangeNotify(SHCNE_ASSOCCHANGED) -> `lsregister -f` + `NSUpdateDynamicServices`, Services only under `SZ_TEST_SUPPORT`). The Help half was closed by `mac/opsgaps`.
 
 ### 7.3 7-Zip page (`IDD_MENU 2300`, "7-Zip")
 
@@ -607,7 +613,9 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 
 - [x] "Language:" `IDT_LANG_LANG 2102` / combo `IDC_LANG_LANG 100`: first entry built-in English (`"-"`), then every `Lang/*.txt` shown as `<English name (id 1)> : <native name (id 2)>` (fallback = file stem); files that fail to load reported in one "Error in Lang file" box; entries matching the user's locale marked `***` (exact) or `+++` (same primary language); current = `Lang` (01b §4.9, 01 §7.1)
   - **[packaging audit]:** the "reported in one box" clause is not implemented — `SZLang.mm:243-245` skips a file that fails to open with a bare `continue`, with no report. The rest of the line is correct.
-- [ ] Info `IDT_LANG_INFO 101`: `<name> : <lines> / <NumLangLines_EN> = NN%` (`en.ttt` line count, else 443), the file's comment lines, "Missing lines" / "Extra lines" ID lists relative to `en.ttt` (01b §4.9)
+  - **[optgaps] closed:** `SZLang.failedLanguageFiles` names every `*.txt` that does not open and the page shows them in one "Error in Lang file" box (a sheet) on load; `OptGapsTests.testLanguageScanListsMissingAndExtraIdsAndFailedFiles`.
+- [x] Info `IDT_LANG_INFO 101`: `<name> : <lines> / <NumLangLines_EN> = NN%` (`en.ttt` line count, else 443), the file's comment lines, "Missing lines" / "Extra lines" ID lists relative to `en.ttt` (01b §4.9)
+  - **[optgaps]:** `SZLanguageInfo.comments` / `.missingLines` / `.extraLines` (LangPage.cpp's merge walk), shown by `OptionsLanguagePage.langInfoText` with `------ Missing lines: N :` / `------ Extra lines: N :` and at most 50 rows each, in a scrolling text view; `OptGapsTests.testLanguageInfoShowsTheIdLists`.
 - [x] Change → `_needSave`; Apply → save `Lang`, `ReloadLang`, `LangWasChanged` so the menu / toolbars / panels re-localise; Help → `fm/options.htm#language` (01b §4.9)
 
 ### 7.8 Settings persistence (`UserDefaults`, keys named after the registry values; tri-state `CBoolPair` = absent / false / true)

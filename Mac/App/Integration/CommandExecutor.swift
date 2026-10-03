@@ -456,6 +456,7 @@ enum CommandExecutor {
             input.password = command.password
             input.pathMode = SZCompressPathMode(rawValue: command.fullPathMode ?? 0) ?? .relative
             input.sfxMode = command.sfxModule != nil
+            input.sfxModulePath = sfxModulePath
             input.openShareForWrite = command.openShareForWrite
             input.deleteAfterCompressing = command.deleteAfterCompressing
             input.parentWindow = parentWindow
@@ -479,6 +480,7 @@ enum CommandExecutor {
             // `a -sfx …` without `-ad` silently wrote a plain archive. `UpdateGUI.cpp:561-565`
             // fills the default module whether the dialog ran or not.
             result.sfxMode = sfxModulePath != nil
+            result.sfxModulePath = sfxModulePath
             result.deleteAfterCompressing = command.deleteAfterCompressing
             result.openShareForWrite = command.openShareForWrite
             result.setArcMTime = command.setArchiveMTime ? true : nil

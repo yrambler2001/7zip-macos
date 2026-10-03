@@ -1082,6 +1082,7 @@ struct CompressDialogResult {
     var updateMode: SZUpdateMode = .add
     var pathMode: SZCompressPathMode = .relative
     var sfxMode = false
+    var sfxModulePath: String?            // nil = the bundled 7z.sfx (CompressDialogInput.sfxModulePath)
     var openShareForWrite = false
     var deleteAfterCompressing = false
     var password: String?
@@ -1180,6 +1181,7 @@ struct CompressDialogResult {
         options.pathMode = pathMode
         options.nameMode = .smart
         options.sfxMode = sfxMode
+        if sfxMode, let sfxModulePath { options.sfxModulePath = sfxModulePath }
         options.volumeSizes = volumeSizes.map { NSNumber(value: $0) }
         options.password = (password?.isEmpty ?? true) ? nil : password
         options.deleteAfterCompressing = deleteAfterCompressing

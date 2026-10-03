@@ -257,9 +257,18 @@ extension PanelViewController {
         options.initialStatus = move ? .moving : .copying
         options.titleFileName = snap.archivePath
         options.password = rememberedPassword
+        // Get_ZoneId_Stream_from_ParentFolders (PanelCopy.cpp:156-180): the zone comes from the
+        // outermost archive on disk, so an item copied out of a nested archive is quarantined like
+        // its top-level parent even when the inner archive's temp file lost the attribute
+        // (requests.md, `opsgaps` -> `panel`; 01 section 9 #23).
+        let zoneSource: String? = snap.isArchive && !snap.archivePath.isEmpty ? snap.archivePath : nil
         let result = runFolderOperation(options) { folder, runner -> Bool in
             if move {
                 try folder.moveItems(at: engineIndices, toPath: destination, progress: runner)
+            } else if let zoneSource {
+                try folder.copyItems(at: engineIndices, toPath: destination,
+                                     zoneMode: SZFolder.registryZoneMode, zoneSourcePath: zoneSource,
+                                     progress: runner)
             } else {
                 try folder.copyItems(at: engineIndices, toPath: destination, progress: runner)
             }

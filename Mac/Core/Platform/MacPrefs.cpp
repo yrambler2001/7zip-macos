@@ -19,12 +19,41 @@ const char * const kSuiteEnvVar = "SEVENZIP_DEFAULTS_SUITE";
 
 static NWindows::NSynchronization::CCriticalSection g_AppIDCS;
 
+static AString MainApplicationBundleID()
+{
+  CFBundleRef bundle = CFBundleGetMainBundle();
+  if (!bundle)
+    return AString();
+  CFTypeRef type = CFBundleGetValueForInfoDictionaryKey(bundle, CFSTR("CFBundlePackageType"));
+  if (!type || CFGetTypeID(type) != CFStringGetTypeID()
+      || CFStringCompare((CFStringRef)type, CFSTR("APPL"), 0) != kCFCompareEqualTo)
+    return AString();
+  CFStringRef ident = CFBundleGetIdentifier(bundle);
+  if (!ident || CFStringGetLength(ident) == 0)
+    return AString();
+  char buf[512];
+  if (!CFStringGetCString(ident, buf, sizeof(buf), kCFStringEncodingUTF8))
+    return AString();
+  return AString(buf);
+}
+
+AString DefaultApplicationID()
+{
+  // The main bundle cannot change during the process's life: resolve it once.
+  static const AString s_default = []()
+  {
+    const AString id = MainApplicationBundleID();
+    return id.IsEmpty() ? AString(kAppID) : id;
+  }();
+  return s_default;
+}
+
 AString ApplicationID()
 {
   const char *env = getenv(kSuiteEnvVar);
   if (env && *env)
     return AString(env);
-  return AString(kAppID);
+  return DefaultApplicationID();
 }
 
 // The CFString of the current domain. The environment variable is re-read on every call so a

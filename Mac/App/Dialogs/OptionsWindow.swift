@@ -87,12 +87,62 @@ class OptionsPageBase: NSViewController, OptionsPage {
             content.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             content.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
         ])
+        OptionsUI.capWrappingLabels(in: content)
+    }
+
+    /// A wrapping label's intrinsic width is its text on **one** line until it has been told how
+    /// wide it may be, so every note on a page used to ask for 700-1000 pt and the Options window's
+    /// fitting size came out at up to 1018 pt in a 660 pt window (requests.md, `fastui` ->
+    /// `options`). `capWrappingLabels` gives each one a page-sized cap when the page is built; here,
+    /// after every layout pass, a label narrower than that is told its real width so its height is
+    /// measured for the lines it actually wraps into (the Windows pages are fixed-size dialogs whose statics wrap at
+    /// their template width, 01b section 4.22).
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        var changed = false
+        OptionsUI.forEachWrappingLabel(in: view) { field in
+            // Never more than the cap: a label told its own full width feeds that width back into
+            // the page's fitting size, which then only ever grows with the window.
+            let width = min(field.frame.width, OptionsUI.wrappingLabelWidth)
+            if width > 1, abs(field.preferredMaxLayoutWidth - width) > 0.5 {
+                field.preferredMaxLayoutWidth = width
+                changed = true
+            }
+        }
+        if changed { view.needsLayout = true }
     }
 }
 
 // MARK: - Small control factory (dialog controls keep their Windows resource id in a comment)
 
 enum OptionsUI {
+
+    /// The widest a wrapping label may ask to be: the content width of a page in the 660 pt
+    /// Options window, less some room for a label that shares a row.
+    static let wrappingLabelWidth: CGFloat = 520
+
+    /// Every text field in `view` that wraps onto more than one line.
+    static func forEachWrappingLabel(in view: NSView, _ body: (NSTextField) -> Void) {
+        for child in view.subviews {
+            if let field = child as? NSTextField, !field.isEditable, field.maximumNumberOfLines != 1,
+               field.cell?.wraps == true || field.lineBreakMode == .byWordWrapping
+                || field.lineBreakMode == .byCharWrapping {
+                body(field)
+            }
+            // A table's cells are laid out by the table, not by the page.
+            if child is NSScrollView || child is NSTableView { continue }
+            forEachWrappingLabel(in: child, body)
+        }
+    }
+
+    /// Caps the one-line intrinsic width of every wrapping label (see `viewDidLayout`).
+    static func capWrappingLabels(in view: NSView) {
+        forEachWrappingLabel(in: view) { field in
+            if field.preferredMaxLayoutWidth == 0 || field.preferredMaxLayoutWidth > wrappingLabelWidth {
+                field.preferredMaxLayoutWidth = wrappingLabelWidth
+            }
+        }
+    }
 
     static func label(_ langID: UInt32, _ fallback: String) -> NSTextField {
         let f = NSTextField(labelWithString: Lang.text(langID, fallback))
@@ -183,6 +233,31 @@ enum OptionsUI {
         return scroll
     }
 
+    /// Sizes every column of `table` to its header and to the widest of `texts[id]` (the strings
+    /// its cells will show), plus `extra[id]` for an icon, and lets the last column take what is
+    /// left. A list view column on Windows is sized by the page code the same way
+    /// (`ListView_SetColumnWidth(LVSCW_AUTOSIZE_USEHEADER)`); without it the fixed widths of the
+    /// System and Language pages added up to more than the page and the table squeezed them all,
+    /// cutting "Default application" and "444 / 444 = 100%" (requests.md, `packaging` -> `options`).
+    static func sizeColumnsToContent(_ table: NSTableView, texts: [String: [String]],
+                                     extra: [String: CGFloat] = [:]) {
+        let cellFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let padding: CGFloat = 14
+        for column in table.tableColumns {
+            let id = column.identifier.rawValue
+            var width = column.headerCell.cellSize.width + padding
+            for text in texts[id] ?? [] {
+                let size = (text as NSString).size(withAttributes: [.font: cellFont])
+                width = max(width, ceil(size.width) + padding + (extra[id] ?? 0))
+            }
+            column.minWidth = min(width, 60)
+            column.width = width
+        }
+        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        table.enclosingScrollView?.hasHorizontalScroller = true
+        table.enclosingScrollView?.autohidesScrollers = true
+    }
+
     static func column(_ id: String, _ title: String, width: CGFloat) -> NSTableColumn {
         let c = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
         c.title = title
@@ -207,7 +282,11 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
     private var languageWasChanged = false      // CLangPage::LangWasChanged
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 520),
+        // A property sheet is as large as its largest page (PropertySheet sizes to the biggest
+        // template). 580 pt holds the tallest page -- the 7-Zip page in French, Russian, Hebrew or
+        // Ukrainian once the Finder-extension status has wrapped to three lines, measured at
+        // 566 pt (OptGapsTests.testOptionsPagesFitTheirWindow).
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 580),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.title = Lang.text(2100, "Options")     // IDS_OPTIONS 2100
@@ -228,7 +307,9 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         let wasVisible = controller.window?.isVisible ?? false
         controller.reloadPages()
         controller.showWindow(nil)
-        if !wasVisible { controller.window?.center() }
+        // The property sheet is centred on the main window (PropertySheet with the main window as
+        // its parent), not on the screen.
+        if !wasVisible, let window = controller.window { DialogKit.center(window, over: nil) }
         controller.window?.makeKeyAndOrderFront(nil)
     }
 

@@ -20,18 +20,29 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
     override var fallbackTitle: String { "Language" }
     override var helpTopic: String { "fm/options.htm#language" }
 
-    private struct Entry {
+    struct Entry {
         let code: String            // "" system default, "-" built-in English, else the file stem
         let englishName: String
         let nativeName: String
         let stringCount: Int
         let mark: String            // "***" exact locale match, "+++" same primary language
+        var comments: [String] = []
+        var missingLines: [String] = []
+        var extraLines: [String] = []
     }
 
-    private var entries: [Entry] = []
+    private(set) var entries: [Entry] = []
     private let table = NSTableView()
     private let langLabel = OptionsUI.label(2102, "Language:")      // IDT_LANG_LANG 2102
-    private let infoField = NSTextField(wrappingLabelWithString: "")  // IDT_LANG_INFO 101
+    // IDT_LANG_INFO 101: a static on Windows that the text simply overflows; a read-only text view
+    // here, because ShowLangInfo can list up to 50 missing and 50 extra ids.
+    private let infoView = NSTextView()
+    private var infoScroll: NSScrollView!
+    /// The files that did not load, reported once per page load (LangPage.cpp:262-263).
+    private(set) var reportedLoadErrors: [String] = []
+
+    /// The text IDT_LANG_INFO shows right now (for tests).
+    var infoText: String { infoView.string }
     private var originalCode = ""
     private var appliedCode = ""
     private var needSave = false
@@ -50,18 +61,32 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
         table.dataSource = self
         table.delegate = self
 
-        infoField.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        infoField.textColor = .secondaryLabelColor
-        infoField.isSelectable = true
-        infoField.translatesAutoresizingMaskIntoConstraints = false
-        infoField.heightAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive = true
+        infoView.isEditable = false
+        infoView.isSelectable = true
+        infoView.drawsBackground = false
+        infoView.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        infoView.textColor = .secondaryLabelColor
+        infoView.textContainerInset = NSSize(width: 2, height: 2)
+        infoView.isVerticallyResizable = true
+        infoView.isHorizontallyResizable = false
+        infoView.autoresizingMask = [.width]
+        infoView.textContainer?.widthTracksTextView = true
+        infoScroll = NSScrollView()
+        infoScroll.documentView = infoView
+        infoScroll.hasVerticalScroller = true
+        infoScroll.autohidesScrollers = true
+        infoScroll.drawsBackground = false
+        infoScroll.borderType = .noBorder
+        infoScroll.translatesAutoresizingMaskIntoConstraints = false
+        infoScroll.heightAnchor.constraint(equalToConstant: 110).isActive = true
 
-        let scroll = OptionsUI.scrollTable(table, minHeight: 230)
-        let stack = OptionsUI.vstack([langLabel, scroll, infoField], spacing: 8)
+        let scroll = OptionsUI.scrollTable(table, minHeight: 200)
+        let stack = OptionsUI.vstack([langLabel, scroll, infoScroll], spacing: 8)
         install(stack)
         NSLayoutConstraint.activate([
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            infoField.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            infoScroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            langLabel.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
         ])
     }
 
@@ -75,6 +100,23 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
         table.reloadData()
         selectRow(for: originalCode)
         relabelPage()
+        reportLoadErrors(SZLang.shared.failedLanguageFiles)
+    }
+
+    /// `MessageBoxW(NULL, error, L"Error in Lang file", MB_ICONERROR)` at the end of OnInit
+    /// (LangPage.cpp:262-263): the names of the *.txt files that did not open, space-separated.
+    /// A sheet of the Options window once it is on screen, not an app-modal box.
+    func reportLoadErrors(_ files: [String]) {
+        reportedLoadErrors = files
+        guard !files.isEmpty else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Error in Lang file"
+        alert.informativeText = files.joined(separator: " ")
+        alert.addButton(withTitle: Lang.text(401, "OK"))
+        DispatchQueue.main.async { [weak self] in
+            ErrorAlert.present(alert, on: self?.view.window ?? NSApp.mainWindow)
+        }
     }
 
     private func buildEntries() {
@@ -88,7 +130,7 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
                   stringCount: 0, mark: ""),
             // LangPage.cpp:88-99: the first combo entry is the built-in English resource set.
             Entry(code: "-", englishName: "English", nativeName: "English",
-                  stringCount: englishCount, mark: ""),
+                  stringCount: englishCount, mark: "---"),       // LangPage.cpp:69: Mark = "---"
         ]
         for info in SZLang.shared.availableLanguages {
             let code = info.code.lowercased()
@@ -102,9 +144,28 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
                               englishName: info.englishName.isEmpty ? info.code : info.englishName,
                               nativeName: info.nativeName,
                               stringCount: info.stringCount,
-                              mark: mark))
+                              mark: mark,
+                              comments: info.comments,
+                              missingLines: info.missingLines,
+                              extraLines: info.extraLines))
         }
         entries = list
+        sizeColumns()
+    }
+
+    private func countText(_ entry: Entry) -> String {
+        let total = max(SZLang.shared.englishStringCount, 1)
+        return entry.stringCount > 0 ? "\(entry.stringCount) / \(total) = \(entry.stringCount * 100 / total)%" : ""
+    }
+
+    private func sizeColumns() {
+        OptionsUI.sizeColumnsToContent(table, texts: [
+            "mark": entries.map(\.mark),
+            "english": entries.map(\.englishName),
+            "native": entries.map(\.nativeName),
+            "code": entries.map { $0.code.isEmpty ? "auto" : $0.code },
+            "lines": entries.map(countText),
+        ])
     }
 
     override func relabelPage() {
@@ -120,36 +181,54 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
     }
 
     /// ShowLangInfo (LangPage.cpp:334-358): "<name> : <lines> / <en.ttt lines> = NN%", the file's
-    /// comment lines, and how many IDs are missing or extra relative to the English template.
+    /// comment lines, then "------ Missing lines: N :" and "------ Extra lines: N :" with up to 50
+    /// "<id> : <text>" rows each (AddVectorToString / AddVectorToString2, LangPage.cpp:300-332).
     private func showLangInfo() {
         let row = table.selectedRow
         guard entries.indices.contains(row) else {
-            infoField.stringValue = ""
+            infoView.string = ""
             return
         }
-        let entry = entries[row]
-        let total = max(SZLang.shared.englishStringCount, 1)
-        var lines: [String] = []
+        infoView.string = Self.langInfoText(entries[row], englishCount: SZLang.shared.englishStringCount)
+        infoView.scrollToBeginningOfDocument(nil)
+    }
+
+    static func langInfoText(_ entry: Entry, englishCount: Int) -> String {
+        var s = ""
         switch entry.code {
         case "":
-            lines.append("System default \u{2014} the lang file that matches "
-                         + "\(SZLang.systemLanguageCandidates.joined(separator: ", ")), else built-in English.")
-        case "-":
-            lines.append("Built-in English resources (Lang/en.ttt): \(total) strings.")
+            // macOS addition: the system-default entry has no file of its own.
+            s = "System default \u{2014} the lang file that matches "
+                + "\(SZLang.systemLanguageCandidates.joined(separator: ", ")), else built-in English.\n"
         default:
-            let percent = entry.stringCount * 100 / total
-            lines.append("\(entry.englishName) : \(entry.stringCount) / \(total) = \(percent)%")
-            if entry.stringCount < total {
-                lines.append("Missing lines: \(total - entry.stringCount)")
-            } else if entry.stringCount > total {
-                lines.append("Extra lines: \(entry.stringCount - total)")
+            s = entry.code + " : \(entry.stringCount)"
+            if englishCount != 0 {
+                s += " / \(englishCount) = \(entry.stringCount * 100 / englishCount)%"
             }
+            s += "\n"
         }
-        if entry.code == SZLang.shared.currentLanguageCode {
-            let comments = SZLang.shared.comments.filter { !$0.isEmpty }
-            if !comments.isEmpty { lines.append(contentsOf: comments.prefix(4)) }
+        appendLines(&s, entry.comments)
+        appendSection(&s, "Missing lines", entry.missingLines)
+        appendSection(&s, "Extra lines", entry.extraLines)
+        return s
+    }
+
+    /// AddVectorToString: at most 50 lines, a line longer than 1500 characters skipped, a leading
+    /// ';' (the comment marker) dropped and the rest trimmed.
+    private static func appendLines(_ s: inout String, _ lines: [String]) {
+        for line in lines.prefix(50) {
+            guard line.count <= 1500 else { continue }
+            var a = line
+            if a.hasPrefix(";") { a = String(a.dropFirst()).trimmingCharacters(in: .whitespaces) }
+            s += a + "\n"
         }
-        infoField.stringValue = lines.joined(separator: "\n")
+    }
+
+    /// AddVectorToString2: nothing when empty, else "\n------ <name>: <count> :\n" and the lines.
+    private static func appendSection(_ s: inout String, _ name: String, _ lines: [String]) {
+        guard !lines.isEmpty else { return }
+        s += "\n------ \(name): \(lines.count) :\n"
+        appendLines(&s, lines)
     }
 
     // MARK: Table
@@ -158,15 +237,13 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let entry = entries[row]
-        let total = max(SZLang.shared.englishStringCount, 1)
         let text: String
         switch tableColumn?.identifier.rawValue ?? "" {
         case "mark": text = entry.mark
         case "english": text = entry.englishName
         case "native": text = entry.nativeName
         case "code": text = entry.code.isEmpty ? "auto" : entry.code
-        default:
-            text = entry.stringCount > 0 ? "\(entry.stringCount) / \(total) = \(entry.stringCount * 100 / total)%" : ""
+        default: text = countText(entry)
         }
         let cell = NSTableCellView()
         let field = NSTextField(labelWithString: text)

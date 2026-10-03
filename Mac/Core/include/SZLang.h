@@ -15,6 +15,13 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, copy) NSString *englishName;   ///< string 1
 @property (nonatomic, readonly, copy) NSString *nativeName;    ///< string 2
 @property (nonatomic, readonly) NSInteger stringCount;
+/// The file's comment lines (translator credits), as `CLang::Comments` holds them.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *comments;
+/// The ids en.ttt has and this file lacks, as "<id> : <English text>", in id order
+/// (`CLangInfo::MissingLines`, LangPage.cpp:197-245). Empty when en.ttt is not available.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *missingLines;
+/// The ids this file has and en.ttt does not, as "<id> : <text>" (`CLangInfo::ExtraLines`).
+@property (nonatomic, readonly, copy) NSArray<NSString *> *extraLines;
 @end
 
 @interface SZLang : NSObject
@@ -41,8 +48,17 @@ NS_ASSUME_NONNULL_BEGIN
 /// Header comments of the loaded file (translator credits), as 7zFM's Language page shows them.
 @property (nonatomic, readonly, copy) NSArray<NSString *> *comments;
 
-/// Every Lang/*.txt in the bundle, sorted by code.
+/// Every Lang/*.txt in the bundle that loads, sorted by code.
 @property (nonatomic, readonly, copy) NSArray<SZLanguageInfo *> *availableLanguages;
+/// The Lang/*.txt file names that did **not** load (LangPage.cpp:118-123 collects them for the
+/// "Error in Lang file" box). Computed together with `availableLanguages`.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *failedLanguageFiles;
+/// The scan behind `availableLanguages`, for any directory (tests, custom locations): every
+/// `*.txt` that opens as a 7-Zip lang file, compared id by id with the built-in English table;
+/// the names of the files that do not open go to `failedFiles`.
+- (NSArray<SZLanguageInfo *> *)languagesInDirectory:(NSString *)directory
+                                        failedFiles:(NSArray<NSString *> * _Nullable * _Nullable)failedFiles
+    NS_SWIFT_NAME(languages(inDirectory:failedFiles:));
 @property (class, nonatomic, readonly) NSString *langDirectoryPath;
 /// Number of strings in the English template (k_NumLangLines_EN, for completeness %).
 @property (nonatomic, readonly) NSInteger englishStringCount;

@@ -207,13 +207,7 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         let summaryHeight = CGFloat(min(options.summaryLines.count, 12)) * 14
         window.setContentSize(NSSize(width: 560, height: 322 + summaryHeight))
         host.layoutSubtreeIfNeeded()
-        if let parent = options.parentWindow {
-            let frame = parent.frame
-            let size = window.frame.size
-            window.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2))
-        } else {
-            window.center()
-        }
+        DialogKit.center(window, over: options.parentWindow)   // the owner, not the screen
         applyShowPassword()
         window.initialFirstResponder = pathCombo
     }

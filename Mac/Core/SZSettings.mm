@@ -47,9 +47,14 @@ using namespace NMacPrefs;
   return @(ApplicationID().Ptr());
 }
 
++ (NSString *)defaultApplicationID
+{
+  return @(DefaultApplicationID().Ptr());
+}
+
 + (BOOL)usesOverrideSuite
 {
-  return ![[self applicationID] isEqualToString:SZSettingsDefaultApplicationID];
+  return ![[self applicationID] isEqualToString:[self defaultApplicationID]];
 }
 
 // Read from the environment on every call, exactly as ApplicationID() does, so a test may set

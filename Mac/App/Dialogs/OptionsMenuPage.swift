@@ -111,7 +111,7 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         itemsTable.style = .plain
         itemsTable.dataSource = self
         itemsTable.delegate = self
-        let itemsScroll = OptionsUI.scrollTable(itemsTable, minHeight: 170)
+        let itemsScroll = OptionsUI.scrollTable(itemsTable, minHeight: 120)
 
         let zoneRow = OptionsUI.hstack([zoneLabel, zoneCombo])
         let stack = OptionsUI.vstack([

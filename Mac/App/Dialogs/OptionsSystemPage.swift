@@ -14,11 +14,13 @@ import UniformTypeIdentifiers
 import SevenZipKit
 
 /// The list view (IDL_SYSTEM_ASSOCIATE 100) must see the raw keys Windows binds
-/// (Space / + / - / *), which NSTableView would otherwise consume for type-select.
+/// (Space / + / - / * and Return), which NSTableView would otherwise consume for type-select.
 final class OptionsAssociationTableView: NSTableView {
     var onKey: ((String) -> Bool)?
     override func keyDown(with event: NSEvent) {
-        if let chars = event.charactersIgnoringModifiers, onKey?(chars) == true { return }
+        // Alt+key is left to the system, as OnListKeyDown returns false for VK_MENU.
+        if !event.modifierFlags.contains(.option),
+           let chars = event.charactersIgnoringModifiers, onKey?(chars) == true { return }
         super.keyDown(with: event)
     }
 }
@@ -82,10 +84,13 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         table.dataSource = self
         table.delegate = self
         table.target = self
-        table.doubleAction = #selector(toggleSelectedRows(_:))
+        // NM_CLICK (SystemPage.cpp:375-396): a plain click on the state column toggles that row.
+        table.action = #selector(rowClicked(_:))
         table.onKey = { [weak self] chars in
             guard let self else { return false }
             switch chars {
+            // NM_RETURN (SystemPage.cpp:369-373): ChangeState(0) on the selection, else every row.
+            case "\r", "\u{3}": self.toggleSelectedRows(nil)
             case " ": self.toggleSelectedRows(nil)
             case "+", "=": self.setSelected(nil)
             case "-", "\u{2212}": self.clearSelected(nil)
@@ -142,6 +147,18 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         relabelPage()
     }
 
+    /// Every column as wide as its header and its widest cell (the icon adds 20 pt to Type).
+    private func sizeColumns() {
+        var owners = rows.compactMap { $0.ownerURL.map(Self.displayName) }
+        owners.append("\u{2014}")
+        OptionsUI.sizeColumnsToContent(table, texts: [
+            "type": rows.map(\.type.ext),
+            "description": rows.map(\.type.localizedDescription),
+            "user": rows.map(stateText) + ["7-Zip", "[7-Zip]"],
+            "owner": owners,
+        ], extra: ["type": 20])
+    }
+
     override func relabelPage() {
         associateLabel.stringValue = Lang.text(2201, "Associate 7-Zip with:")
         typeColumn?.title = Lang.text(1020, "Type")
@@ -150,7 +167,26 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         perUserNote.stringValue = "macOS keeps file associations per user only, so the Windows "
             + "\u{201C}\(Lang.text(2202, "All users"))\u{201D} column does not apply. "
             + "Changing a default application asks for confirmation in a system dialog."
+        sizeColumns()
         table.reloadData()
+    }
+
+    // MARK: Format icons (7z.dll's icon resources, 01b section 4.21)
+
+    private static var iconCache: [String: NSImage] = [:]
+
+    /// The 7-Zip document icon of the row's format: `doc-<name>.icns` from the bundle (it carries
+    /// real 16 and 32 px representations, `Mac/docs/api/icons.md`), else the asset-catalogue image,
+    /// else the system's icon for the type. Windows draws `assoc.GetIconIndex()` from 7z.dll
+    /// (SystemPage.cpp:95), i.e. the same artwork.
+    static func formatIcon(for type: SevenZipFileType) -> NSImage? {
+        let name = "doc-" + type.iconFileName
+        if let cached = iconCache[name] { return cached }
+        let image = Bundle.main.url(forResource: name, withExtension: "icns").flatMap(NSImage.init(contentsOf:))
+            ?? NSImage(named: name)
+            ?? type.utType.map { NSWorkspace.shared.icon(for: $0) }
+        if let image { iconCache[name] = image }
+        return image
     }
 
     private static func isOurs(_ url: URL?, ourURL: URL) -> Bool {
@@ -201,10 +237,10 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
 
         switch tableColumn?.identifier.rawValue ?? "" {
         case "type":
-            // Windows draws the format icon from 7z.dll; macOS uses the system icon of the type.
+            // The format icon, as Windows draws it from 7z.dll (SystemPage.cpp:95).
             let image = NSImageView()
             image.translatesAutoresizingMaskIntoConstraints = false
-            if let ut = row.utType { image.image = NSWorkspace.shared.icon(for: ut) }
+            image.image = Self.formatIcon(for: row.type)
             image.imageScaling = .scaleProportionallyDown
             cell.addSubview(image)
             cell.imageView = image
@@ -253,6 +289,21 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         return selected.isEmpty ? Array(rows.indices) : Array(selected)
     }
 
+    /// NM_CLICK (SystemPage.cpp:375-396): with no modifier key (`uKeyFlags == 0`), a click on a
+    /// state column (`iSubItem` 1-2; here the one "user" column) toggles that row alone.
+    @objc private func rowClicked(_ sender: Any?) {
+        let modifiers = NSApp.currentEvent?.modifierFlags.intersection([.shift, .command, .option, .control]) ?? []
+        guard modifiers.isEmpty else { return }
+        toggleRow(table.clickedRow, column: table.clickedColumn)
+    }
+
+    /// The body of NM_CLICK, separated from the event so a test can drive it.
+    func toggleRow(_ rowIndex: Int, column: Int) {
+        guard rows.indices.contains(rowIndex), table.tableColumns.indices.contains(column),
+              table.tableColumns[column] === userColumn else { return }
+        setRows([rowIndex], ours: !rows[rowIndex].wantsOurs)
+    }
+
     /// ChangeState: kExtState_Clear <-> kExtState_7Zip (SystemPage.cpp:100-153).
     @objc private func toggleSelectedRows(_ sender: Any?) {
         let indices = targetRowIndices
@@ -283,6 +334,24 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
 
     // MARK: OnApply (SystemPage.cpp:278-337)
 
+    /// How many times `associationsDidChange` ran (for tests).
+    private(set) static var launchServicesRefreshCount = 0
+
+    /// SHChangeNotify(SHCNE_ASSOCCHANGED) (SystemPage.cpp:325): tell the system that file
+    /// associations changed so Finder redraws the documents with their new icons. On macOS that is
+    /// re-registering the bundle with Launch Services (`lsregister -f`, which also refreshes the
+    /// document-type icons) plus `NSUpdateDynamicServices()`. A test instance only refreshes the
+    /// Services list: `lsregister` on a throwaway build is a per-user mutation
+    /// (`LaunchServicesRegistration.registerIfNeeded`).
+    static func associationsDidChange() {
+        launchServicesRefreshCount += 1
+        if TestSupport.isEnabled {
+            NSUpdateDynamicServices()
+        } else {
+            LaunchServicesRegistration.register()
+        }
+    }
+
     override func applyPage() -> Bool {
         let changedRows = rows.filter { $0.wantsOurs != $0.originalIsOurs }
         guard !changedRows.isEmpty else { return true }
@@ -308,6 +377,7 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         // The system confirmation is asynchronous: refresh the rows when every request answered
         // and report only the first error, as SystemPage::OnApply reports only the first HRESULT.
         group.notify(queue: .main) { [weak self] in
+            Self.associationsDidChange()
             guard let self else { return }
             self.withoutChangeTracking { self.pageDidLoad() }
             guard let error = firstError else { return }
