@@ -11,6 +11,8 @@
 #   4. copies Lang/*.txt + Lang/en.ttt   -> Mac/Resources/Lang/
 #             7z.sfx 7zCon.sfx           -> Mac/Resources/SFX/
 #             License.txt readme.txt     -> Mac/Resources/SFX/  (license/provenance)
+#             7-zip.chm, unpacked        -> Mac/Resources/Help/ (*.htm, *.css only;
+#                                           the HTML help, 01 section 9 #17, opsgaps)
 #
 # Env overrides: INSTALLER, SEVENZZ, DEVELOPER_DIR (default /Applications/Xcode.app),
 #                KEEP_WORK=1 (keep the temp dir), JOBS (make -j, default 8).
@@ -22,6 +24,8 @@ URL="https://7-zip.org/a/${INSTALLER_NAME}"
 INSTALLER_SHA256="0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd"
 SFX_SHA256="9598f3bbca8e95391b8a356aee2e4cab93d9ac26eea47159ec725a55cf3bb32f"
 SFXCON_SHA256="c4402ffcbe8e02ec017f958f0d188fe13ea00193623c95dde546f6621a2e4132"
+CHM_SHA256="e0b70a83b79c938d7a868013ef94a0b1d34ff145f1e67bb7bf9a56aa913622cb"
+EXPECTED_HELP_FILES=78                              # *.htm + *.css inside 7-zip.chm
 EXPECTED_LANG_TXT=92                                # + en.ttt = 93 files
 LANG_SIGNATURE=';!@Lang2@!UTF-8!'
 
@@ -30,6 +34,7 @@ ALONE2="$ROOT/CPP/7zip/Bundles/Alone2"
 SEVENZZ="${SEVENZZ:-$ALONE2/b/m_arm64/7zz}"
 LANG_DIR="$ROOT/Mac/Resources/Lang"
 SFX_DIR="$ROOT/Mac/Resources/SFX"
+HELP_DIR="$ROOT/Mac/Resources/Help"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/7zip-assets.XXXXXX")"
 trap '[ "${KEEP_WORK:-0}" = 1 ] && echo "work dir kept: $WORK" || rm -rf "$WORK"' EXIT
 
@@ -69,7 +74,7 @@ log "using $("$SEVENZZ" i | sed -n 's/^7-Zip (z) \([0-9.]*\).*/7zz \1/p')"
 # --- 4. extract ------------------------------------------------------------
 EXTRACT="$WORK/extracted"
 "$SEVENZZ" x -y -bso0 -bsp0 -o"$EXTRACT" "$INSTALLER" >/dev/null
-for f in Lang/en.ttt 7z.sfx 7zCon.sfx License.txt readme.txt; do
+for f in Lang/en.ttt 7z.sfx 7zCon.sfx License.txt readme.txt 7-zip.chm; do
   [ -f "$EXTRACT/$f" ] || die "installer did not contain $f"
 done
 n_txt="$(find "$EXTRACT/Lang" -maxdepth 1 -name '*.txt' | wc -l | tr -d ' ')"
@@ -82,6 +87,17 @@ for f in "$EXTRACT"/Lang/*.txt "$EXTRACT"/Lang/en.ttt; do
     || die "$(basename "$f") lacks the '$LANG_SIGNATURE' header"
 done
 log "extracted and verified $((n_txt + 1)) lang files + 2 SFX stubs"
+# the HTML help: 7zz reads the CHM container itself; keep only the pages and style sheets
+# (the #SYSTEM / $WW* index streams and the .hhc/.hhk sitemaps mean nothing to a browser)
+[ "$(sha256 "$EXTRACT/7-zip.chm")" = "$CHM_SHA256" ] || die "7-zip.chm SHA-256 mismatch"
+"$SEVENZZ" x -y -bso0 -bsp0 -o"$WORK/chm" "$EXTRACT/7-zip.chm" >/dev/null
+n_help="$(cd "$WORK/chm" && find . -type f \( -name '*.htm' -o -name '*.css' \) | wc -l | tr -d ' ')"
+[ "$n_help" = "$EXPECTED_HELP_FILES" ] || die "expected $EXPECTED_HELP_FILES help pages, found $n_help"
+for f in start.htm fm/index.htm fm/options.htm fm/benchmark.htm fm/temp.htm \
+         fm/plugins/7-zip/add.htm fm/plugins/7-zip/extract.htm; do
+  [ -f "$WORK/chm/$f" ] || die "7-zip.chm did not contain $f (a kHelpTopic target)"
+done
+log "extracted and verified $n_help help files"
 
 # --- 5. copy ---------------------------------------------------------------
 mkdir -p "$LANG_DIR" "$SFX_DIR"
@@ -91,4 +107,10 @@ cp -f "$EXTRACT"/7z.sfx "$EXTRACT"/7zCon.sfx "$EXTRACT"/License.txt "$EXTRACT"/r
 chmod 644 "$LANG_DIR"/* "$SFX_DIR"/*
 log "Lang: $(ls "$LANG_DIR" | wc -l | tr -d ' ') files -> $LANG_DIR"
 log "SFX:  $(ls "$SFX_DIR" | wc -l | tr -d ' ') files -> $SFX_DIR"
+rm -rf "$HELP_DIR"
+mkdir -p "$HELP_DIR"
+( cd "$WORK/chm" && find . -type f \( -name '*.htm' -o -name '*.css' \) -print0 \
+    | while IFS= read -r -d '' f; do mkdir -p "$HELP_DIR/$(dirname "$f")"; cp -f "$f" "$HELP_DIR/$f"; done )
+find "$HELP_DIR" -type f -exec chmod 644 {} +
+log "Help: $(find "$HELP_DIR" -type f | wc -l | tr -d ' ') files -> $HELP_DIR"
 log "done"

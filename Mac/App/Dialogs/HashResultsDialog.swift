@@ -94,6 +94,45 @@ final class HashListDialogView: NSView, NSTableViewDataSource, NSTableViewDelega
         return strings[row]
     }
 
+    /// A view-based row: an `NSTableCellView` with a real text field, so every row is an
+    /// accessibility cell with a static text (requests.md, `finder` -> `tools`: the cell-based
+    /// list exposed no row text to XCUITest or VoiceOver). opsgaps.
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let identifier = NSUserInterfaceItemIdentifier("HashListCell." + (tableColumn?.identifier.rawValue ?? "strings"))
+        let cell: NSTableCellView
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+            cell = reused
+        } else {
+            cell = NSTableCellView()
+            cell.identifier = identifier
+            let field = NSTextField(labelWithString: "")
+            field.font = tableView.font
+            field.lineBreakMode = .byTruncatingTail
+            field.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(field)
+            cell.textField = field
+            NSLayoutConstraint.activate([
+                field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            ])
+        }
+        let text = self.tableView(tableView, objectValueFor: tableColumn, row: row) as? String ?? ""
+        cell.textField?.stringValue = text
+        cell.setAccessibilityLabel(text)
+        return cell
+    }
+
+    /// The rows as the list shows them, for tests: `[string]` or `[string, value]` per row.
+    var displayedRows: [[String]] {
+        (0..<tableView.numberOfRows).map { row in
+            (0..<tableView.numberOfColumns).map { column in
+                (tableView.view(atColumn: column, row: row, makeIfNecessary: true) as? NSTableCellView)?
+                    .textField?.stringValue ?? ""
+            }
+        }
+    }
+
     override func keyDown(with event: NSEvent) {
         let key = event.charactersIgnoringModifiers ?? ""
         if event.modifierFlags.contains(.command) {

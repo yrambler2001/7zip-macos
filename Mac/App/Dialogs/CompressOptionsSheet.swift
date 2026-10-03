@@ -403,9 +403,7 @@ final class CompressOptionsSheet: NSObject {
     }
 
     @objc private func helpPressed(_ sender: NSButton) {
-        // kHelpTopic_Options = "fm/plugins/7-zip/add.htm#options" (CompressDialog.cpp:1255)
-        if let url = URL(string: "https://www.7-zip.org/fm/plugins/7-zip/add.htm#options") {
-            NSWorkspace.shared.open(url)
-        }
+        // IDHELP: kHelpTopic_Options = "fm/plugins/7-zip/add.htm#options" (CompressDialog.cpp:1255, :3818-3820)
+        Help.show(topic: Help.addOptions)
     }
 }

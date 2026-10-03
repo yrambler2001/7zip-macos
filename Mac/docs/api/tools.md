@@ -253,3 +253,17 @@ repeating, overflow fails.
 Verified in the running app: File > CRC > CRC-32 on a file-system selection, on a whole folder and
 on an item inside an archive, each matching the console `7zz` value — screenshots
 `Mac/docs/reports/screenshots/cleanup-01..03-*.png`, details in `Mac/docs/reports/cleanup.md`.
+
+---
+
+## Note — 2026-10-03 (`mac/opsgaps`)
+
+* **§8's last gap is closed: the help is bundled.** `Mac/Resources/Help/` holds the 78 pages of the
+  shipped `7-zip.chm` (unpacked by `Mac/scripts/fetch-assets.sh`, pinned hash) and is copied into
+  every app target. `Help` (in `AboutDialog.swift`) now has a constant for every Windows `kHelpTopic`
+  (`start`, `contents`, `benchmark`, `tempFiles`, `add`, `addOptions`, `extract`, `optionsSystem`,
+  `optionsMenu`, `optionsFolders`, `optionsEditor`, `optionsSettings`, `optionsLanguage`, `plugins`),
+  `url(for:)`, `bundledURL(for:in:)` (case-blind, anchor kept, refuses `..`) and `show(topic:)`, which
+  opens the page in the default browser. `Help.opener` replaces the launch in tests.
+* **`HashListDialogView` is view-based**: each cell is an `NSTableCellView` with a label, so rows are
+  visible to accessibility (and XCUITest); `displayedRows` returns what the list shows.

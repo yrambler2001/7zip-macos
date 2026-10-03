@@ -296,3 +296,31 @@ worker/UI hand-off, `checkStop()`, `snapshot(background:)`), `ProgressSnapshot`,
   lang 3425 is an *Extract-dialog overwrite mode*. `OverwriteDialog` has the six real buttons.
 * The Overwrite dialog shows one icon per file (Windows has two statics and only shows the
   second when the type icon differs); `NSWorkspace` gives a single composed icon.
+
+---
+
+## Note — 2026-10-03 (`mac/opsgaps`)
+
+Appended; the sections above still describe what `opsinfra` shipped, except where this note says so.
+
+* **§7's Dock-tile gap is closed.** `ProgressDockTile.shared` (`Mac/App/Dialogs/ProgressDockTile.swift`)
+  mirrors every running `OperationRunner` that shows its dialog onto the Dock icon: `begin(owner)`,
+  `update(owner, Entry(completed:total:paused:hasErrors:))`, `end(owner)`, all main-thread. The runner
+  calls them itself; another long operation that does not go through the runner can register the
+  same way. `displayed` (fraction + `State` `.normal/.paused/.error`) and `activeCount` are for
+  tests; `dockTile` can be set to nil to draw nothing.
+* **Failure text.** `OperationRunner.failureMessage(for:) -> String?` is `CProgressThreadVirt::Process`
+  plus `HResultToMessage`: nil for `E_ABORT`, lang 3000 for out-of-memory (any spelling
+  `SevenZipFailureLadder` recognises), "Error #N" / "Error" for the int / unknown catch arms, else
+  `localizedDescription`. The runner's critical alert shows it, so a caller that shows its own box
+  should use it too.
+* **The runner returns only after its worker has stopped**, also when `cancelActiveOperations()`
+  ended the modal session (it spins the run loop until the worker has seen `E_ABORT`). Before, such
+  a run returned a nil outcome and alerted "The operation did not produce a result".
+* **Quarantine on copy-out (§2).** `copyItems(at:toPath:progress:)` and `moveItems` now apply
+  `Options.WriteZoneIdExtract` like `CPanel::CopyTo` (`NeedRegistryZone`); the explicit form is
+  `copyItems(at:toPath:zoneMode:zoneSourcePath:progress:)` (`IFolderSetZoneIdMode` +
+  `IFolderSetZoneIdFile`; pass the outermost archive for a nested one). `extractItems` gained the
+  same two parameters (`extractItems(at:toPath:pathMode:overwriteMode:testMode:zoneMode:zoneSourcePath:progress:)`);
+  the old spelling passes None, as drag-out and temp-open must. `SZFolder.registryZoneMode` is the
+  setting as an `SZZoneIDMode`. `SZFolderOperations.h` now imports `SZExtractor.h` for that type.

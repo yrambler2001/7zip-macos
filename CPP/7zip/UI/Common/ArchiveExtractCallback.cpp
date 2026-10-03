@@ -28,6 +28,10 @@
 #include "../../../Windows/SecurityUtils.h"
 #endif
 
+#if defined(__APPLE__) && !defined(Z7_SFX)
+#include <sys/xattr.h>
+#endif
+
 #include "../../Common/FilePathAutoRename.h"
 #include "../../Common/StreamUtils.h"
 
@@ -115,7 +119,7 @@ bool InitLocalPrivileges()
 
 
 
-#if defined(_WIN32) && !defined(UNDER_CE) && !defined(Z7_SFX)
+#if ((defined(_WIN32) && !defined(UNDER_CE)) || defined(__APPLE__)) && !defined(Z7_SFX) // __APPLE__: com.apple.quarantine (Mac/docs/upstream-patches.md)
 
 static const char * const kOfficeExtensions =
   " doc dot wbk"
@@ -166,6 +170,30 @@ bool Is_ZoneId_StreamName(const wchar_t *s)
   return StringsAreEqualNoCase_Ascii(s2, k_ZoneId_StreamName_With_Colon_Prefix + 1);
 }
 
+#ifdef __APPLE__
+// macOS has no :Zone.Identifier stream; its equivalent is the com.apple.quarantine extended
+// attribute, whose bytes are carried in ZoneBuf exactly as the stream's would be.
+static const char * const k_Quarantine_XattrName = "com.apple.quarantine";
+
+void ReadZoneFile_Of_BaseFile(CFSTR fileName, CByteBuffer &buf)
+{
+  buf.Free();
+  const ssize_t size = getxattr(fileName, k_Quarantine_XattrName, NULL, 0, 0, 0);
+  if (size <= 0 || size >= (1 << 15))
+    return;
+  buf.Alloc((size_t)size);
+  if (getxattr(fileName, k_Quarantine_XattrName, buf, (size_t)size, 0, 0) == size)
+    return;
+  buf.Free();
+}
+
+bool WriteZoneFile_To_BaseFile(CFSTR fileName, const CByteBuffer &buf)
+{
+  return setxattr(fileName, k_Quarantine_XattrName, buf, buf.Size(), 0, XATTR_NOFOLLOW) == 0;
+}
+
+#else
+
 void ReadZoneFile_Of_BaseFile(CFSTR fileName, CByteBuffer &buf)
 {
   buf.Free();
@@ -195,6 +223,8 @@ bool WriteZoneFile_To_BaseFile(CFSTR fileName, const CByteBuffer &buf)
     return false;
   return file.WriteFull(buf, buf.Size());
 }
+
+#endif // __APPLE__
 
 #endif
 
@@ -313,7 +343,7 @@ CArchiveExtractCallback::CArchiveExtractCallback():
 
 void CArchiveExtractCallback::InitBeforeNewArchive()
 {
-#if defined(_WIN32) && !defined(UNDER_CE) && !defined(Z7_SFX)
+#if ((defined(_WIN32) && !defined(UNDER_CE)) || defined(__APPLE__)) && !defined(Z7_SFX) // __APPLE__: com.apple.quarantine (Mac/docs/upstream-patches.md)
   ZoneBuf.Free();
 #endif
 }
@@ -2073,7 +2103,7 @@ HRESULT CArchiveExtractCallback::CloseFile()
   _curSize = processedSize;
   _curSize_Defined = true;
 
- #if defined(_WIN32) && !defined(UNDER_CE) && !defined(Z7_SFX)
+ #if ((defined(_WIN32) && !defined(UNDER_CE)) || defined(__APPLE__)) && !defined(Z7_SFX) // __APPLE__: com.apple.quarantine (Mac/docs/upstream-patches.md)
   if (ZoneBuf.Size() != 0
       && !_item.IsAltStream)
   {

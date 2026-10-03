@@ -1,0 +1,331 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+  <META http-equiv="Content-Type" content="text/html; charset=Windows-1252">
+  <TITLE>Add to Archive Dialog Box</TITLE>
+  <LINK href="style.css" rel="stylesheet" type="text/css">
+</HEAD>
+
+<BODY>
+
+<H1>Add to Archive Dialog Box</H1>
+
+<P>Allows you to specify options for creating or updating an archive.</P>
+
+<H4>How to call this dialog box</H4>
+<OL>
+  <LI>In Windows Explorer or in 7-Zip, right-click the file(s) or folder(s) you want to compress.</LI>
+  <LI>Point to <B>7-Zip</B>, and then click the <B>Add to archive...</B> command item.</LI>
+</OL>
+
+
+<H4>Parameters</H4>
+<P>Some compression options fields have an option item with an asterisk (*).
+This is the default value. And it is recommended to use this default option value with an asterisk (*).</P>
+<DL>
+  <DT>Archive</DT>
+  <DD>Provides a space for you to specify a destination archive name.
+     You can click &quot;<B>...</B>&quot; button to display &quot;Open&quot; dialog box
+     that you can use to locate archive.</DD>
+
+  <DT>Archive format</DT>
+  <DD>Specifies a format of created archive. Some formats (gzip and bzip2) 
+    do not support compressing more the one file per archive.</DD>
+
+  <DT>Compression level</DT>
+  <DD>
+    <P>Specifies compression level. There are 6 levels of compression:</P>
+    <TABLE>
+      <TR> <TH>Value</TH> <TH>Meaning</TH> </TR>
+      <TR> <TD>0 - Store</TD> <TD>Files will be copied to archive without compression.</TD> </TR>
+      <TR> <TD>1 - Fastest</TD> <TD>Fastest compression.</TD> </TR>
+      <TR> <TD>3 - Fast</TD> <TD>Fast compression.</TD> </TR>
+      <TR> <TD>5 - Normal</TD> <TD>Compression with balanced settings.</TD> </TR>
+      <TR> <TD>7 - Maximum</TD> <TD>Can give a higher compression ratio than Normal level.
+               But it can be slower, and it can require more memory.</TD> </TR>
+      <TR> <TD>9 - Ultra</TD> <TD>Can give a higher compression ratio than Maximum level. 
+               But it can be slower, and it can require more memory.</TD> </TR>
+    </TABLE>
+  </DD>
+
+  <DT>Compression method</DT>
+  <DD>
+    <P>Specifies compression method. Each archive format can have its own compression methods:</P>
+    <TABLE>
+      <TR> <TH>Method</TH> <TH>Description</TH> </TR>
+      <TR> <TD>LZMA</TD> <TD>It's base compression method for 7z format. 
+                     Even old versions of 7-Zip can decompress archives created with LZMA method.
+                     It provides high  compression ratio and very fast decompression.</TD> </TR>
+      <TR> <TD>LZMA2</TD> <TD>Default compression method of 7z format.  LZMA2 is LZMA-based compression method. 
+                     It provides better multithreading support than LZMA. But compression ratio
+                     can be worse in some cases. For best compression ratio with LZMA2 use 1 
+                     or 2 CPU threads. If you use LZMA2 with more than 2 threads, 7-zip splits data 
+                     to chunks and compresses these chunks independently (2 threads per each chunk).</TD> </TR>
+      <TR> <TD>PPMd</TD> <TD>Dmitry Shkarin's PPMdH algorithm with small changes. 
+                  Usually it provides high compression ratio and high speed 
+                  for text files.</TD> </TR>
+      <TR> <TD>BZip2</TD> <TD>Standard compression method based on BWT algorithm. 
+                     Usually it provides high speed and pretty good 
+                     compression ratio for text files.</TD> </TR>
+      <TR> <TD>Deflate</TD> <TD>Standard compression method of ZIP and GZip formats.
+             Compression ratio is not too high. But it provides pretty fast 
+             compressing and decompressing. Deflate method supports only 
+             32 KB dictionary.</TD> </TR>
+      <TR> <TD>Deflate64</TD> <TD>Modified version of Deflate algorithm with 
+             bigger dictionary (64KB).</TD> </TR>
+    </TABLE>
+
+
+  <DT>Dictionary size</DT>
+  <DD>
+    <P>Specifies Dictionary size for compression method.</P>
+    <P>Usually, a higher Dictionary size gives a higher compression ratio.
+       But compressing can be slower and it can require more memory.</P>
+
+    <P>Memory (RAM) usage for LZMA compressing is about 11 times the dictionary size.
+       Memory usage for LZMA decompressing is close to  value of dictionary size.</P>
+
+    <P>Memory (RAM) usage for LZMA2 compressing / decompressing depends 
+       on the dictionary size and the number of CPU threads used by the 
+       LZMA2 encoder and LZMA2 decoder.</P>
+
+    <P>Memory usage for PPMd compressing and decompressing is almost equal 
+       to dictionary size.</P>
+  </DD>
+
+  <DT>Word size</DT>
+  <DD>
+    <P>Specifies the length of words, which will be used to find identical 
+       sequences of bytes for compression.</P>
+    <P>Usually for LZMA and Deflate, big Word size gives a little bit better
+       compression ratio and slower compression process.
+       A big Word size parameter can significantly increase compression ratio 
+       for files which contain long identical sequences of bytes. For PPMd,
+       the Word size strongly affects both compression ratio and 
+       compression/decompression speed.</P>
+  </DD>
+
+  
+  <DT>Solid Block size</DT>
+  <DD>
+    <P>Specifies the size of a solid block. You can also disable solid mode.
+          In solid mode all files will be compressed as continuous data blocks. 
+          Usually compressing to a solid archive improves the compression ratio.
+          You can use this option only for 7z archives. The updating of solid .7z 
+          archives can be slow, since it can require some recompression.</P>
+  </DD>
+
+  <DT>Number of CPU threads</DT>
+  <DD>
+    <P>Specifies the number of threads for compressing. 
+       A big number of threads can speed up compression speed on Multi-Processor systems.
+       Sometimes it can increase speed even on single-core CPU.</P>
+  </DD>
+
+  <DT>Memory usage for Compressing</DT>
+  <DD>
+    <P>Specifies the amount of memory (RAM) that is allowed to be used for compression.</P>
+    <P>There is an additional information line, that shows 3 numbers:</P>
+    <P>Example: 4669 MB / 26 GB / 32 GB:</P>
+       <UL>
+           <LI>value 1 : 4669 MB : the expected amount of memory that 7-Zip will use,
+                   based on other compression settings. 
+                   In the example: 7-Zip will use up to 4669 MB for the following compression settings: 
+                   LZMA2 compression method, 64MB dictionary size, 8 CPU threads.
+           <LI>value 2 :   26 GB : memory usage limit set by the "Memory usage for Compressing" option.
+                          7-zip will check that the actual memory usage (value 1) doesn't exceed
+                          the user-set limit (value 2).
+           <LI>value 3 :   32 GB : the total size of RAM memory in computer. 
+                          It is recommended that the user-set limit (value 2) 
+                          be less than the RAM size (value 3).      
+       </UL>
+    </P>
+    <P>
+       The default value for "Memory usage for Compressing" option is "* 80%". 
+       This means that 7-Zip is allowed to use up to "80%" of the total RAM size,
+       for example, 26 GB usage that is 80% from 32 GB (RAM Size). 
+       But the actual memory usage depends on other settings: "Compression method", 
+       "Dictionary size" and "Number of CPU threads".
+    </P>
+    <P>
+       Note: High memory usage, close to or greater than the total RAM size, can make 
+       the compression process several times slower than normal processing, since the 
+       system may use slow swapping of memory pages between RAM and storage.
+       If the expected amount of memory that 7-Zip will use exceeds the user-set limit, 
+       7-Zip will not start compression and will display an error message. 
+       It protects the user from selecting settings that may slow down the system.
+    </P>
+    <P>
+       Note: If the option "Number of CPU threads" is set to the default value with asterisk (*), 
+       changing the "Memory usage for Compressing" option 
+       may change the number of CPU threads that will be used for compression.
+    </P>
+  </DD>
+
+  <DT>Memory usage for Decompressing</DT>
+  <DD>
+  <DD>
+    <P>Shows the amount of memory (RAM) required for decompression 
+       according to the selected compression settings.</P>
+    <P>It shows the minimum amount required. But the actual memory usage for 
+       decompression may be higher than the shown value, because 7-Zip can use 
+       additional memory for decompression if the RAM size allows it. 
+       This extra memory can be used to increase the decompression speed with additional 
+       CPU threads. Note: 7-Zip doesn't use additional memory for decompression that exceeds 
+       55% of the computer's RAM that will be used for decompression.
+    </P>
+  </DD>
+
+  <DT>Split to volumes</DT>
+  <DD>
+    <PRE class="syntax">
+    {Size}[b | k | m | g]
+    </PRE>
+
+    <P>Specifies volume sizes in Bytes, Kilobytes (1 Kilobyte = 1024 bytes),
+    Megabytes (1 Megabyte = 1024 Kilobytes) or Gigabytes (1 Gigabyte = 1024 Megabytes).
+    If you specify only {Size}, 7-zip will treat it as bytes. It's possible to specify
+    several values. Example:</P>
+
+    <PRE class="example">
+    10k 15k 2m
+    </PRE>
+
+    <P>The first volume will be 10 KB, the second will be 15 KB, and all others will be 2 MB.</P>
+   
+  </DD>
+
+  <DT>Parameters</DT>
+  <DD>
+    <P>Allows you to specify parameters for compression. See the
+    <A href="../../../../cmdline/switches/method.htm">-m (Method)</A> switch description for 
+    more details. It's allowed to omit the -m prefix (as in -m switch) when using this dialog box.</P>
+    <P><B>Examples</B></P>
+    <PRE class="example">
+      f=delta:4
+      -mf=delta:4</PRE>
+      <P>uses Delta:4 filter (if you want to compress WAV files).</P>
+
+    <PRE class="example">
+      f=bcj2
+      -mf=bcj2</PRE>
+      <P>uses BCJ2 filter (for x86 executables).</P>
+
+  </DD>
+
+  <DT>Update mode</DT>
+  <DD>
+    <P>Specifies update mode:</P>
+    <TABLE>
+      <TR> <TH width="30%">Value</TH> <TH>Meaning</TH> </TR>
+      <TR> <TD>Add and replace files</TD> <TD>Add all specified files to the archive.</TD> </TR>
+      <TR> <TD>Update and add files</TD> <TD>Update older files in the archive and add
+                files that are new to the archive.</TD> </TR>
+      <TR> <TD>Freshen existing files</TD> <TD>Update specified files in the
+               archive that are older than the selected disk files.</TD> </TR>
+      <TR> <TD>Synchronize files</TD> <TD>Replace specified files only if
+         added files are newer. Always add those files, which are not
+         present in the archive. Delete from archive those files,
+         which are not present on the disk.</TD> </TR>
+    </TABLE>
+  </DD>
+
+  <DT>Path mode</DT>
+  <DD>
+    <P>Specifies how path names will be stored in archive:</P>
+    <TABLE>
+      <TR> <TH width="30%">Value</TH> <TH>Meaning</TH> </TR>
+      <TR> <TD> Relative pathnames </TD> <TD> Store file paths relative to current folder.</TD> </TR>
+      <TR> <TD> Full pathnames </TD> <TD> Store file paths relative to root of the volume, excluding volume name prefix.</TD> </TR>
+      <TR> <TD> Absolute pathnames </TD> <TD> Store fully qualified file paths including volume name. </TD> </TR>
+    </TABLE>
+  </DD>
+
+
+  <DT>Options</DT>
+  <DD>
+    <P>Specifies compression options:</P>
+    <TABLE>
+      <TR> <TH width="30%">Option</TH> <TH>Meaning</TH> </TR>
+      <TR> <TD>Create SFX archive</TD> <TD>Create self-extracting archive. You can use this option only 
+           for 7z archives. Look to 
+           <A href="../../../../cmdline/switches/sfx.htm">-sfx (Create SFX archive)</A> switch description for 
+           more details about SFX modules.</TD> </TR>
+      <TR> <TD>Compress shared files</TD> <TD>Compress files open for writing by another applications.</TD> </TR>
+      <TR> <TD>Delete files after compression</TD> <TD>Delete files 
+           after including to archive. So it works like moving files to archive.
+           7-Zip deletes files at the end of operation and only if archive was successfully created.</TD> </TR>
+    </TABLE>
+  </DD>
+
+  <DT>Encryption</DT>
+  <DD>
+    <P>Specifies password and encryption options.</P>
+    <DL>
+      <DT>Enter password</DT>
+        <DD>Specify password here</DD>
+      <DT>Reenter password</DT>
+        <DD>Reenter password here for verification</DD>
+      <DT>Show Password</DT>
+        <DD>Shows Password</DD>
+      <DT>Encryption method</DT>
+        <DD>Specifies the encryption method. For 7z format, it can be only AES-256.
+          For ZIP format you can select ZipCrypto or AES-256. 
+          Use ZipCrypto, if you want to get archive compatible with most of the ZIP archivers. 
+          AES-256 provides stronger encryption, but now AES-256 is supported only 
+          by 7-Zip, WinZip and some other ZIP archivers.
+      <DT>Encrypt file names</DT>
+        <DD>Enables or disables archive header encryption, including file name encryption.</DD>
+    </DL>
+  </DD>
+
+
+  <DT><a name="options"></a>Options : button</DT>
+  <DD>
+    <P>Opens another window with additional options.
+       It allows you to specify what timestamps will be stored to the archive.
+       Also for some archive formats (wim and tar) it allows you to specify options
+       for storing hard links and symbolic links.
+       And for wim format it allows you to specify options for storing alternate data streams
+       and file security information.</P>
+
+    <P>There are two checkboxes for each "store time" option. 
+       If you set first checkbox, it will allow you to change the second checkbox.
+       If the second checkbox is     set, 7-zip        stores the corresponding timestamps to the archive.
+       If the second checkbox is not set, 7-zip doesn't store the corresponding timestamps to the archive.
+       If you don't set first checkbox, 7-Zip uses default value for second checkbox.
+       Default values for timestamp storing are the following: 
+       store only "modification time" to the archive, and not store "last access time" 
+       and "creation time".</P>
+    </P>  
+
+
+    <TABLE>
+      <TR> <TH width="30%">Option</TH> <TH>Meaning</TH> </TR>
+      <TR> <TD>Store symbolic links</TD> <TD>Store symbolic links as symbolic links in archive.</TD> </TR>
+      <TR> <TD>Store hard links</TD> <TD>Store hard links as hard links in archive.</TD> </TR>
+      <TR> <TD>Store alternate data streams</TD> <TD>Store alternate data streams in archive.</TD> </TR>
+      <TR> <TD>Store file security</TD> <TD>Store file security records in archive.</TD> </TR>
+
+      <TR> <TD>Timestamp precision</TD> <TD>Set format of timestamp precision for storing in archive.
+      				 It can be selected from the following options: 100 ns (Windows), 1 ns (Linux), 1 sec (Unix) or 2 sec (DOS).</TD> </TR>
+      
+      <TR> <TD>Store modification time</TD> <TD>Store files modification time in archive.</TD> </TR>
+      <TR> <TD>Store creation time</TD> <TD>Store files creation time in archive.</TD> </TR>
+      <TR> <TD>Store last access time</TD> <TD>Store files last access time in archive.</TD> </TR>
+
+      <TR> <TD>Set archive time to latest file time</TD>
+      		 <TD>If the checkbox is switched on, 7-Zip sets timestamp for archive file as timestamp 
+      		     from the most recently modified file in that archive.</TD> </TR>
+      <TR> <TD>Do not change source files last access time</TD> 
+       		<TD>If the checkbox is switched on, 7-Zip doesn't allow the system to change
+       		    "last access time" property of source files during archiving operation.</TD> </TR>
+    </TABLE>
+  </DD>
+
+
+</DL>
+<UL>
+
+</BODY>
+</HTML>

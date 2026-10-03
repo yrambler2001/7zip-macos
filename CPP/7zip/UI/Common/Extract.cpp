@@ -443,7 +443,7 @@ HRESULT Extract(
       continue;
     }
 
-   #if defined(_WIN32) && !defined(UNDER_CE) && !defined(Z7_SFX)
+   #if ((defined(_WIN32) && !defined(UNDER_CE)) || defined(__APPLE__)) && !defined(Z7_SFX) // __APPLE__: com.apple.quarantine (Mac/docs/upstream-patches.md)
     if (options.ZoneMode != NExtract::NZoneIdMode::kNone
         && !options.StdInMode)
     {

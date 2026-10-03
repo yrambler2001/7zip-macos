@@ -478,7 +478,7 @@ public:
   HRESULT SendMessageError2(HRESULT errorCode, const char *message, const FString &path1, const FString &path2) const;
   HRESULT SendMessageError2_with_LastError(const char *message, const FString &path1, const FString &path2) const;
 
-#if defined(_WIN32) && !defined(UNDER_CE) && !defined(Z7_SFX)
+#if ((defined(_WIN32) && !defined(UNDER_CE)) || defined(__APPLE__)) && !defined(Z7_SFX) // __APPLE__: com.apple.quarantine (Mac/docs/upstream-patches.md)
   NExtract::NZoneIdMode::EEnum ZoneMode;
   CByteBuffer ZoneBuf;
 #endif
@@ -504,7 +504,7 @@ public:
     _multiArchives = multiArchives;
     _pathMode = pathMode;
     _overwriteMode = overwriteMode;
-#if defined(_WIN32) && !defined(UNDER_CE) && !defined(Z7_SFX)
+#if ((defined(_WIN32) && !defined(UNDER_CE)) || defined(__APPLE__)) && !defined(Z7_SFX) // __APPLE__: com.apple.quarantine (Mac/docs/upstream-patches.md)
      ZoneMode = zoneMode;
 #else
      UNUSED_VAR(zoneMode)

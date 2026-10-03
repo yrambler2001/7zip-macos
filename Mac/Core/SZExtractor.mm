@@ -41,6 +41,7 @@ using namespace NWindows;
 using namespace NWindows::NFile;
 
 // Lang IDs (GUI/ExtractRes.h, FileManager/PropertyNameRes.h, FileManager/resourceGui.h)
+static const UInt32 kLangID_MemError = 3000;             // IDS_MEM_ERROR
 static const UInt32 kLangID_CannotCreateFolder = 3003;   // IDS_CANNOT_CREATE_FOLDER "Cannot create folder '{0}'"
 static const UInt32 kLangID_CantOpenArchive = 3005;      // IDS_CANT_OPEN_ARCHIVE
 static const UInt32 kLangID_CantOpenEncrypted = 3006;    // IDS_CANT_OPEN_ENCRYPTED_ARCHIVE
@@ -965,6 +966,10 @@ HRESULT CSZExtractUICallback::Open_CryptoGetTextPassword(BSTR *password)
   if (error)
   {
     NSString *text = !fatalMessage.IsEmpty() ? SZStringFromUString(fatalMessage) : message;
+    // HResultToMessage (ProgressDialog2.cpp:1477-1483): E_OUTOFMEMORY is IDS_MEM_ERROR 3000, not
+    // the errno text -- the same four lines SZUpdaterError / SZHasherError carry (opsgaps).
+    if (hr == (HRESULT)E_OUTOFMEMORY && text.length == 0)
+      text = SZLangText(kLangID_MemError, @"The system cannot allocate the required amount of memory");
     if (result.firstFailure == SZOperationResultWrongPassword && hr != (HRESULT)E_ABORT)
       *error = [SZErrors errorWithCode:SZErrorCodeWrongPassword
                                message:SZLangText(kLangID_WrongPswClaim, @"Wrong password")];

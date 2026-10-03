@@ -27,6 +27,9 @@ exercised in Finder** on this machine, because Automation permission was never g
 annotated in place; nothing was renumbered and no evidence was deleted. Section F lists them with
 what was measured before the fix and what is left. The checklist therefore reads **390 of 496**.
 
+**Update, 2026-10-03 (`mac/opsgaps`).** D items 2, 3, 4 and 8 are closed (B items 6, 8 and 12's
+Dock half with them); section H says how. Five checklist boxes were ticked.
+
 **Update, 2026-10-03 (`mac/panelgaps`).** Items 1, 5 and 6 below are closed and item 9 mostly;
 each is annotated in place and section G says how. Four panel-section boxes were ticked; the
 checklist now reads **403 of 496** (the other nine came from branches merged since the audit).
@@ -131,6 +134,7 @@ transport, `-thash`, `-seml`, and command dispatch.
    open the system help viewer; the Compress and Extract dialogs open 7-zip.org; the Options Help
    button only beeps. Nothing points at a local `FM/index.htm` because there is none.
    (`01 §2.6, §9 #17`)
+   **Closed 2026-10-03 (`mac/opsgaps`), see H.1.**
 7. ~~**`-scrc` while extracting or testing** is not wired, and the panel's Test button does not pass
    `-thash`. The bridge support exists (`SZExtractOptions.hashMethods` →
    `SZExtractResult.hashResults`); no caller sets it.~~ (`03 §2.6`, `01 §8.6`)
@@ -140,6 +144,7 @@ transport, `-thash`, `-seml`, and command dispatch.
    recipe is filed in `requests.md`.
 8. **Quarantine is not propagated** to files extracted normally — only to files you open from
    inside an archive. (`01 §9 #23`)
+   **Closed 2026-10-03 (`mac/opsgaps`), see H.2.**
 9. ~~**Command mode** never returns exit code 8 (out of memory) and has no exception→message ladder;
    `rn` is refused; wildcards inside `-i!` are not expanded. Exit codes 0, 1, 2, 7 and 255 are
    correct.~~ (`03 §2.2, §2.7`)
@@ -156,6 +161,7 @@ transport, `-thash`, `-seml`, and command dispatch.
     not bridged. (`01 §3.11`)
 12. **Progress has no Dock-tile percentage**, and the messages list uses fixed column widths.
     (`01b §4.17`)
+    **Dock tile closed 2026-10-03 (`mac/opsgaps`), see H.3**; the column widths are unchanged.
 13. **Options ▸ System** shows generic system icons rather than 7-Zip's format icons (which are
     built and shipped, just not used here); a single click does not toggle a row and Return does
     nothing (Space, `+`, `-`, `*` and the buttons do); Apply does not refresh Launch Services.
@@ -232,11 +238,13 @@ memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb
 
 **Unfinished — real gaps, roughly in the order they would be missed.**
 1. ~~The handlers behind the panel context menu's 7-Zip commands (`01 §2.9`).~~ **Done 2026-10-03 (G.1).**
-2. Bundled HTML help, and the Options Help button (`01 §9 #17`).
-3. Quarantine on ordinary extraction, and zone propagation from the outermost archive
-   (`01 §9 #23`).
+2. ~~Bundled HTML help, and the Options Help button (`01 §9 #17`).~~ **Done 2026-10-03 (H.1).**
+3. ~~Quarantine on ordinary extraction, and zone propagation from the outermost archive
+   (`01 §9 #23`).~~ **Done 2026-10-03 (H.2)**; an explicit outermost-archive source for the panel's
+   copy is filed for `panel`.
 4. ~~`-scrc` on `x` / `t`~~ (**done 2026-09-20, F.2**), and `t -thash` from the panel
-   (`03 §2.6`, `01 §8.6`) — the panel half is filed for its owning scope in `requests.md`.
+   (`03 §2.6`, `01 §8.6`) — **the panel half is done 2026-10-03**: the context menu's C13 (G.1) and
+   now the toolbar / File-menu Test, which runs `t -thash` for checksum files (H.5).
 5. ~~Open Outside for items inside an archive; Diff across two panels (`01 §3.8, §3.11`).~~ **Done 2026-10-03 (G.2).**
 6. ~~Drag and drop in the three icon view modes; the dropped-file list for background drops
    (`01 §3.15`).~~ **Done 2026-10-03 (G.3).**
@@ -246,7 +254,7 @@ memory and dictionary caps; `Set_Wow64` / `OleInitialize`; and the Explorer verb
    command can hit is classified by `SevenZipFailureLadder`, and `SZUpdater` / `SZHasher` now give
    `E_OUTOFMEMORY` the IDS_MEM_ERROR text `HResultToMessage` gives it, so the Progress dialog's own
    final message matches Windows for those two. `SZExtractor` and `OperationRunner`'s generic alert
-   are filed in `requests.md`.
+   are filed in `requests.md`. **Both halves done 2026-10-03 (H.3, H.4).**
 9. File-menu enable and hide rules (`01 §2.1`) — **done 2026-10-03 (G.4)** except the Ver* (7vc) items and the small-screen variant.
 10. ~~Exit code 8 and the 7zG exception ladder; `EnumerateDirItemsAndSort` for `-i!` wildcards~~
     (`03 §2.2, §2.7`) — **done 2026-09-20 (F.1)**.
@@ -412,3 +420,47 @@ Split / Combine only for one FS file, Link only for one item, Diff hidden withou
 disabled in a hash folder, on top of the panel's existing read-only / hash rules. Not done: Ver*
 (7vc) items, the small-screen "drop disabled items" variant.
 
+---
+
+## H. Closed by `mac/opsgaps` — 2026-10-03
+
+Report: `Mac/docs/reports/opsgaps.md`. Tests: `Mac/Tests/AppTests/OpsGapsTests.swift` (app-hosted) and
+`Mac/Tests/SevenZipKitTests/QuarantineExtractTests.swift`.
+
+### H.1 — D item 2, bundled help (`01 §2.6, §9 #17`)
+
+`fetch-assets.sh` now also verifies `7-zip.chm` inside the pinned installer (its own SHA-256) and
+unpacks its 78 `.htm` / `.css` pages into `Mac/Resources/Help/`, which is committed and copied into
+the bundle as a folder. `Help.show(topic:)` opens the page for any Windows `kHelpTopic` (case-blind,
+as HtmlHelp is) in the default browser, anchor kept. Every Help button now uses it: Options (each
+page's own topic — it used to beep), Extract, Compress, Compress Options, Benchmark, About, the temp
+browser, and Help ▸ Contents. A browser rather than an Apple Help Book: no `.help` bundle, no
+`hiutil` index, no Help Viewer registration cache to go stale for ad-hoc signed and renamed copies.
+
+### H.2 — D item 3, quarantine on extraction (`01 §9 #23`)
+
+The engine already had the whole Windows mechanism behind `#ifdef _WIN32`; a guarded upstream patch
+(`Mac/docs/upstream-patches.md`) enables it on `__APPLE__` with the zone bytes read from and written
+to `com.apple.quarantine`. So `-snz`, the Options setting (None / All / Office files only, upstream's
+own extension list), Finder's extract verbs, the File-menu Extract commands, F5 out of an archive
+(`CPanel::CopyTo` reads the setting) and Extract inside an archive all propagate it; drag-out and
+temp-open keep their own rules, as on Windows.
+
+### H.3 — B item 12 / D item 8, Dock-tile progress (`01b §4.17`)
+
+`ProgressDockTile` draws the icon with a bar for every operation that shows a Progress dialog,
+combined across several, yellow when all are paused and red once errors were shown (TBPFLAG), and
+removes it on finish, failure or cancel. The runner also no longer returns from an externally
+cancelled run before its worker has stopped.
+
+### H.4 — D item 8, the failure text (`01 §8.7`)
+
+`OperationRunner` shows `CProgressThreadVirt::Process`' text: lang 3000 for out-of-memory, "Error #N"
+and "Error" for the two catch arms, silence for `E_ABORT`; `SZExtractor` gives E_OUTOFMEMORY the same
+3000 text. Per-item texts (CRC failed, data error, unsupported method, unexpected end, wrong
+password, cannot open as archive) were already the lang-file strings.
+
+### H.5 — D item 4, `t -thash` from the Test button (`03 §2.6`)
+
+When every operated item is a checksum file, Test runs the same `t -thash` command line as the
+context menu's C13 and Finder. No `-scrc` control was added to the panel's Test: 7zFM has none.
