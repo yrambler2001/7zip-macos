@@ -266,4 +266,6 @@ enabling automation mode", the known intermittent failure of `uiverify.md` §6. 
 The registry key `HKCU\Software\7-Zip` was exported before the first run and re-imported at the
 end; the scheduled task `sz_cmp` and the `%TEMP%\szcmp` folder were deleted. Two fixture files
 went to the Recycle Bin during the first dialog run; only those two entries were removed from it.
-Every 7zFM / 7zG window the scripts opened was closed by them.
+Every 7zFM / 7zG window the scripts opened was closed by them. The Mac half did the same with two
+scratch copies of `a.txt` / `b.bin` that its first dialog run moved to the Trash. Both were
+removed from `~/.Trash`, and the dump test no longer sends Delete on disk.
