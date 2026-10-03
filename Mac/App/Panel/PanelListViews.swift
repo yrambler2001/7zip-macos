@@ -362,6 +362,15 @@ final class PanelCollectionView: NSCollectionView {
         }
     }
 
+    /// The item views, in item order. AppKit's own tree for a flow-layout collection view is one
+    /// section element with **no** children, so without this the icon modes were empty to VoiceOver
+    /// and XCUITest (`mac/uiverify`). Each item view is a Cell named after its item
+    /// (`PanelCollectionItem.ItemBackgroundView`).
+    override func accessibilityChildren() -> [Any]? {
+        let items = indexPathsForVisibleItems().sorted().compactMap { item(at: $0)?.view }
+        return items.isEmpty ? super.accessibilityChildren() : items
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let panel else { return super.menu(for: event) }
         let point = convert(event.locationInWindow, from: nil)
@@ -403,6 +412,7 @@ final class PanelCollectionItem: NSCollectionViewItem {
     func configure(name: String, icon image: NSImage, large: Bool, isDeleted: Bool, mySelected: Bool) {
         icon.image = image
         label.stringValue = name
+        view.setAccessibilityLabel(name)
         label.textColor = isDeleted ? .systemRed : .labelColor
         self.mySelected = mySelected
         layout(large: large)
@@ -447,8 +457,16 @@ final class PanelCollectionItem: NSCollectionViewItem {
     fileprivate var drawsMySelection: Bool { mySelected }
 
     /// Selection and the AlternativeSelection background, drawn like the table's row view.
+    /// The item's root view is its accessibility element (a cell named after the item, selected as
+    /// the item is). Without it the collection view's section reported **no children at all**, so
+    /// the Large Icons / Small Icons / List modes were empty to VoiceOver and to XCUITest (measured
+    /// by `mac/uiverify`: `CollectionView > Other` with nothing under it while four items showed).
     private final class ItemBackgroundView: NSView {
         weak var owner: PanelCollectionItem?
+
+        override func isAccessibilityElement() -> Bool { true }
+        override func accessibilityRole() -> NSAccessibility.Role? { .cell }
+        override func isAccessibilitySelected() -> Bool { owner?.isSelected ?? false }
 
         override func draw(_ dirtyRect: NSRect) {
             if owner?.drawsMySelection == true {

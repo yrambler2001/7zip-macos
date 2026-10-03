@@ -1,30 +1,30 @@
-# Verification run — 2026-09-21 00:18:44 +0200
+# Verification run — 2026-10-03 14:40:05 +0200
 
-* scope / branch: `mac/fastui`  (commit `02a3250`)
-* configuration: Debug (incremental)
+* scope / branch: `uiverify`  (commit `8fb530d`)
+* configuration: Debug (clean)
 * command: `Mac/scripts/verify.sh`  → exit 0
 * toolchain: `DEVELOPER_DIR=/Applications/Xcode.app`, Xcode 26.6
 
 | result | step | time | detail |
 |---|---|---|---|
-| ok | build (Debug) | 5s | OK: ~/things/a.noindex/7zip/.worktrees/fastui/Mac/build/Debug/7-Zip.app -> ~/things/a.noindex/7zip/.worktrees/fastui/Mac/build/DerivedData/Build/Products/Debug/7-Zip.app |
-| ok | all tests (sharded) | 674s | OK: tests passed |
+| ok | clean build (Debug) | 40s | OK: ~/things/a.noindex/7zip/.worktrees/uiverify/Mac/build/Debug/7-Zip.app -> ~/things/a.noindex/7zip/.worktrees/uiverify/Mac/build/DerivedData/Build/Products/Debug/7-Zip.app |
+| ok | all tests (sharded) | 704s | OK: tests passed |
 
 ## Parity (Mac/docs/PROGRESS.md)
 
 ```
 scope          done  total    pct
-scaffold         29     57    51%
-fsfolder         24     58    41%
-panel           103    108    95%
-extract          51     57    89%
-compress         50     52    96%
-tools            36     40    90%
-options          43     46    93%
+scaffold         49     57    86%
+fsfolder         56     58    97%
+panel           108    108   100%
+extract          56     57    98%
+compress         51     52    98%
+tools            39     40    98%
+options          45     46    98%
 finder           32     36    89%
 packaging        11     22    50%
 icons            20     20   100%
-TOTAL           399    496    80%
+TOTAL           467    496    94%
 ```
 
 Logs: `Mac/build/build-Debug.log`, `Mac/build/test-SevenZipKitTests.log`,

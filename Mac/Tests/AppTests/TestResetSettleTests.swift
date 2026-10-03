@@ -73,17 +73,10 @@ final class TestResetSettleTests: AppHostTestCase {
         // Read with getenv on every access, so this reaches the coordinator's own guard
         // (`Mac/docs/api/resetcmd.md` section 1). The host app is not launched with it.
         setenv("SZ_TEST_SUPPORT", "1", 1)
-        // Step 3 calls `OptionsPostApply.reloadLangItems()`, which rebuilds the toolbar of **every**
-        // window in `NSApp.windows` and throws `NSInternalInconsistencyException` ("index>=0 &&
-        // index<[_currentItems count]") on the toolbar of a window that has been closed. The shipped
-        // app has exactly one toolbar, so this never bites a user; a test bundle that has built extra
-        // `MainWindowController`s may still be holding theirs. Filed for `options` in
-        // `Mac/docs/requests.md`. Until it is fixed, make the precondition true rather than depend on
-        // the order the test classes happened to run in.
-        let live = (NSApp.delegate as? AppDelegate)?.mainWindowController?.window
-        for window in NSApp.windows where window !== live && window.toolbar != nil {
-            window.toolbar = nil
-        }
+        // Step 3 calls `OptionsPostApply.reloadLangItems()`, which used to throw on the toolbar of a
+        // closed window; `mac/optgaps` made it skip windows that are neither visible nor miniaturized
+        // (`OptGapsTests.testReloadLangItemsSkipsClosedWindows`), so stray test windows need no
+        // stripping here any more (requests.md: optgaps -> resetcmd).
         // A reset left in flight by an earlier case would make this one's request queue behind it and
         // its generation land two higher, which is a confusing way to learn that something else broke.
         XCTAssertFalse(TestResetCoordinator.isResetting,

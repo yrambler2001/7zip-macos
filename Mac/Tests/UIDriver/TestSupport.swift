@@ -204,7 +204,15 @@ public extension SevenZipApp {
                            + (isRunning ? "still running" : "gone") + "; "
                            + (FileManager.default.fileExists(atPath: requestPath ?? "")
                               ? "the request file was never taken" : "the request file was taken")
-                           + ")")
+                           + ")" + (stallNote(ack: ack).map { "; stall note: " + $0 } ?? ""))
+        }
+        // A reset that could not settle still acknowledges, and says why in `<ack>.stall` (written
+        // before the ack, removed by a clean reset; `Mac/docs/api/resetcmd.md`, "The stall note").
+        // The app is then *not* in the known state the test asked for, so it is a failure -- with the
+        // step that stalled named, instead of whatever the next assertion trips over.
+        if let note = stallNote(ack: ack, generation: acknowledged) {
+            try? FileManager.default.removeItem(atPath: ack)
+            return .failed("the reset acknowledged generation \(acknowledged) but did not settle: \(note)")
         }
         // Signal 2: the window's generation went up.
         while Date() < deadline {
@@ -216,6 +224,26 @@ public extension SevenZipApp {
         }
         try? FileManager.default.removeItem(atPath: ack)
         return .reset(generation: after)
+    }
+
+    /// The stall note of a reset (`<ack>.stall`, else `<SZ_STATE_DIR>/reset-stall`), trimmed, when
+    /// there is one -- and, with `generation`, only when its first field ("7: step 4 ...") names that
+    /// generation, so a note about an earlier reset is never read as this one's
+    /// (`Mac/docs/api/resetcmd.md`, "The stall note"; requests.md: modalfix -> harness).
+    func stallNote(ack: String, generation: Int? = nil) -> String? {
+        let candidates = [ack + ".stall",
+                          (TestShard.stateDirectory(for: owner) as NSString).appendingPathComponent("reset-stall")]
+        for path in candidates {
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            let note = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !note.isEmpty else { continue }
+            if let generation {
+                let field = note.prefix { $0 != ":" }
+                guard Int(field.trimmingCharacters(in: .whitespaces)) == generation else { continue }
+            }
+            return note
+        }
+        return nil
     }
 
     /// `sevenzip://test/reset?...` with the options that were given.
