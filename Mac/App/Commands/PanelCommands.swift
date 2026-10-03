@@ -93,6 +93,13 @@ extension MainWindowController {
                 finalPath = destination.hasSuffix("/") ? destination : destination + "/"
             }
         }
+        // App.cpp:663-668: the destination is the folder the items are in. Compared the way the
+        // volume compares names (01 §9 #24): without case unless the volume tells case apart.
+        if sourceSnapshot.isFileSystem, finalPath.hasSuffix("/"),
+           Self.samePath(finalPath, sourceSnapshot.fullPath) {
+            source.showError(message: "Cannot copy files onto itself")    // not a lang string on Windows
+            return
+        }
         if source.copyItemsOut(rowIndices: rowIndices, to: finalPath, move: move) {
             Settings.addToCopyHistory(finalPath)
             destinationPanel?.refreshAfterOperation()
@@ -114,6 +121,14 @@ extension MainWindowController {
             // copyItemsOut killed the selection, so the rows captured before the copy are used.
             source.deleteItems(rowIndices: rowIndices, toTrash: false, confirm: false)
         }
+    }
+
+    /// CompareFileNames(a, b) == 0 for two file-system folder paths, on the volume of `b`.
+    static func samePath(_ a: String, _ b: String) -> Bool {
+        let x = a.hasSuffix("/") ? a : a + "/"
+        let y = b.hasSuffix("/") ? b : b + "/"
+        if SZFolder.volumeIsCaseSensitive(atPath: b) { return x == y }
+        return x.compare(y, options: .caseInsensitive) == .orderedSame
     }
 
     func otherPanel(of panel: PanelViewController) -> PanelViewController? {

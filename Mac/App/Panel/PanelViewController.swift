@@ -426,7 +426,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         let hidden: Set<UInt32> = isFS
             ? Set(SZFileSystemFolder.defaultHiddenPropIDs.map { $0.uint32Value })
             : []
-        return PanelSnapshot(fullPath: folder.fullPath,
+        var snapshot = PanelSnapshot(fullPath: folder.fullPath,
                              fileSystemPath: archivePath.isEmpty ? (isFS ? folder.fullPath : "")
                                                                  : (archivePath as NSString).deletingLastPathComponent + "/",
                              folderType: folder.folderType, isRoot: isRoot,
@@ -442,6 +442,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                              hiddenByDefault: hidden,
                              supportsCompare: supportsCompare,
                              sortParams: params)
+        snapshot.isCaseSensitive = isFS && SZFolder.volumeIsCaseSensitive(atPath: folder.fullPath)
+        return snapshot
     }
 
     // MARK: - Applying a snapshot (RefreshListCtrl, PanelItems.cpp:467-960)
@@ -486,7 +488,9 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         var names = selectNames
         if let mask = pendingSelectionMask {                 // wildcard in the bound path (01 §3.8)
             pendingSelectionMask = nil
-            names = rows.filter { !$0.isParentRow && PanelMask.matches(mask: mask, name: $0.name) }.map { $0.name }
+            let caseSensitive = snap.isCaseSensitive
+            names = rows.filter { !$0.isParentRow && PanelMask.matches(mask: mask, name: $0.name, caseSensitive: caseSensitive) }
+                .map { $0.name }
         }
         if let pending = pendingFocusName {
             pendingFocusName = nil

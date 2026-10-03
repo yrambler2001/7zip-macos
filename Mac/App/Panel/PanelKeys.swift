@@ -225,7 +225,8 @@ extension PanelViewController {
         var set = selectedIndexes
         for (i, row) in rows.enumerated() where !row.isParentRow {
             if filesOnly && row.isDirectory { continue }
-            guard PanelMask.matches(mask: mask, name: row.name) else { continue }
+            guard PanelMask.matches(mask: mask, name: row.name,
+                                    caseSensitive: snapshot?.isCaseSensitive ?? false) else { continue }
             if select { set.insert(i) } else { set.remove(i) }
         }
         setSelectedIndexes(set)

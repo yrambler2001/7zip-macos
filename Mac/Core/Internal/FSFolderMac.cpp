@@ -422,10 +422,39 @@ static HRESULT CopyFileData(CCopyStateMac &state, const FString &srcPath, const 
   return S_OK;
 }
 
+// CompareFileNames for two paths on the volume of `onVolume` (01 §9 #24): Windows compares paths
+// without case (g_CaseSensitive is false, and on macOS too); a case-sensitive volume holds "a" and
+// "A" as two files, so copying one onto the other is not a copy onto itself there.
+static bool VolumeIsCaseSensitive(const FString &onVolume)
+{
+  FString p = onVolume;
+  struct stat st;
+  while (!p.IsEmpty() && lstat((const char *)p, &st) != 0)
+  {
+    const int slash = p.ReverseFind_PathSepar();
+    if (slash <= 0)
+    {
+      p = "/";
+      break;
+    }
+    p.DeleteFrom((unsigned)slash);
+  }
+  if (p.IsEmpty())
+    p = "/";
+  return pathconf((const char *)p, _PC_CASE_SENSITIVE) == 1;
+}
+
+static int ComparePathsOnVolume(const FString &a, const FString &b)
+{
+  if (VolumeIsCaseSensitive(b))
+    return MyStringCompare(fs2us(a), fs2us(b));
+  return CompareFileNames(fs2us(a), fs2us(b));
+}
+
 static HRESULT CopyFile_Ask(CCopyStateMac &state, const FString &srcPath, const struct stat &st,
     const FString &destPath)
 {
-  if (CompareFileNames(fs2us(destPath), fs2us(srcPath)) == 0)
+  if (ComparePathsOnVolume(destPath, srcPath) == 0)
   {
     RINOK(SendMessageError(state.Callback,
         state.MoveMode ? "Cannot move file onto itself"
@@ -512,7 +541,7 @@ static bool IsDestChild(const FString &src, const FString &dest)
     return false;
   if (dest.Len() != len && dest[len] != FCHAR_PATH_SEPARATOR)
     return false;
-  return CompareFileNames(fs2us(dest.Left(len)), fs2us(src)) == 0;
+  return ComparePathsOnVolume(dest.Left(len), src) == 0;
 }
 
 static HRESULT CopyFolder(CCopyStateMac &state,

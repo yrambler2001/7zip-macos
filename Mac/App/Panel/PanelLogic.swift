@@ -110,9 +110,11 @@ enum PanelSorting {
 enum PanelMask {
 
     /// DoesWildcardMatchName: `*` any sequence, `?` any single character, case-insensitive.
-    static func matches(mask: String, name: String) -> Bool {
-        let m = Array(mask.lowercased())
-        let n = Array(name.lowercased())
+    /// DoesWildcardMatchName with g_CaseSensitive: Windows never tells case apart; here a
+    /// file-system folder on a case-sensitive volume does (01 §9 #24).
+    static func matches(mask: String, name: String, caseSensitive: Bool = false) -> Bool {
+        let m = Array(caseSensitive ? mask : mask.lowercased())
+        let n = Array(caseSensitive ? name : name.lowercased())
         return test(m, 0, n, 0)
     }
 
