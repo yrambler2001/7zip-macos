@@ -73,20 +73,22 @@ menu starts with Open.
 |---|---|
 | `Mac/App/MainWindow/MainWindows.swift` (new) | the window list: `open()` (create, register, show, cascade), `primary`, `frontToBack`, `didClose`, `saveAllForTermination()` |
 | `Mac/App/AppDelegate.swift` (orchestrator-owned) | `mainWindowController` is now `MainWindows.primary` (the oldest open window, so it is never a closed one); `applicationShouldHandleReopen`; `fileNewWindow:` / `openNewWindow()`; no default window when a cold launch was for documents (`needsLaunchWindow`); Quit saves every open window |
-| `Mac/App/MainWindow/MainWindowController.swift` (panel) | `isReleasedWhenClosed = false` (the controller owns its window; AppKit's extra release on close would free it under a controller that is now released after close); `isClosed`; `closeDiscardingState()`; `windowWillClose` reports to `MainWindows` |
+| `Mac/App/MainWindow/MainWindowController.swift` (panel) | **one toolbar identifier per window** (`7zFMToolbar-<UUID>`): AppKit mirrors `insertItem` / `removeItem` into every live toolbar with the same identifier, so with two windows a View ▸ Toolbars toggle (or the Options language reload) in one replayed into the other and raised `NSInternalInconsistencyException` "already contains an item with the identifier sz.move" -- found by the first full app-hosted run; `isReleasedWhenClosed = false` (the controller owns its window; AppKit's extra release on close would free it under a controller that is now released after close); `isClosed`; `closeDiscardingState()`; `windowWillClose` reports to `MainWindows` |
 | `Mac/App/Integration/CommandExecutor.swift` (finder) | `openInFileManager` opens a new window for **every** path; the never-emptied `extraWindowControllers` list is gone |
 | `Mac/App/Integration/TestReset.swift` (finder / resetcmd) | the reset closes a second file-manager window (instead of only ordering it out, which left it alive and saving on Quit), **without saving**: in a UI test the settings domain is the seed file the test has just rewritten, and the close's save overwrote it -- found by the first UI run, where a window opened after a reset showed the previous test's folder |
 | `Mac/App/MainMenu.swift` (shared, additive) | File ▸ New Window and `MenuActions.fileNewWindow(_:)` |
+| `Mac/Tests/AppTests/OptGapsTests.swift` (test only) | `testDialogsCentreOnTheirOwnerWindow` resolves the expected owner *before* presenting the parentless dialog. It used to ask from inside the probe, when the dialog itself is key, which gives a different answer whenever the host app is active and the test's `parent` window was key. The archive cases here go through `openInFileManager`, whose `NSApp.activate` is asynchronous and outlives the case (hide / unhide in tearDown did not hold), so the host was active when this ran. The product's placement rule is unchanged |
 
 ## 6. Tests
 
-App-hosted, `Mac/Tests/AppTests/NewWindowTests.swift` (9 cases): reopen with windows open → one more
+App-hosted, `Mac/Tests/AppTests/NewWindowTests.swift` (10 cases): reopen with windows open → one more
 window each time, returning false, at the saved path; reopen with none visible → a visible window;
 the New Window item (first in File, Option+Cmd+N, Create File still Cmd+N) opens a cascaded window;
 a new window starts from the saved panel count, focused panel and both paths; the window closed last
 wins and a closed window never saves again; Quit saves back to front; an archive from Finder opens
 in a new window and leaves the open window alone, a second archive in a third; two files in one
-event give two windows; the cold-launch decision.
+event give two windows; the cold-launch decision; a toolbar toggle in one window leaves the other's
+toolbar alone (the regression test for the identifier fix).
 
 XCUITest, `Mac/Tests/UITests/NewWindowUITests.swift` (input shard, 5 cases), through real input and
 real Launch Services events (no Automation consent involved: Launch Services sends the events, the
@@ -104,7 +106,21 @@ Screenshots: `newwindow-01` … `05` (UI), `newwindow-10`, `11` (hosted).
 
 ## 7. Verification
 
-RESULTS
+Final run: `Mac/scripts/verify.sh -S -s newwindow` at `78a2558` (clean Debug build, every target,
+sharded): **exit 0**, build 44 s, tests 754 s. Summary in `Mac/docs/reports/verify-latest.md`.
+
+| target | passed | failed | time |
+|---|---|---|---|
+| `SevenZipKitTests` (unit, = `test.sh`) | 387 | 0 | 96 s |
+| `SevenZipAppTests` (app-hosted, = `test.sh -H`) | 110 | 0 | 191 s |
+| `7-ZipUITestsProbe1` | 6 | 0 | 90 s |
+| `7-ZipUITestsProbe2` | 6 | 0 | 103 s |
+| `7-ZipUITests` (input shard, incl. the 5 new cases) | 45 | 0 | 530 s |
+| **total** | **554** | **0** | |
+
+The first full run (`d29d5db`) had 2 app-hosted failures, both in `OptGapsTests` after this scope's
+cases ran: the shared toolbar identifier (a real multi-window defect, fixed in the product) and the
+order-dependent owner check (fixed in the test). See §5.
 
 ## 8. Known gaps and follow-ups
 
