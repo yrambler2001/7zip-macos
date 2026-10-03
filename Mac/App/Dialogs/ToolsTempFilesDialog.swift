@@ -8,6 +8,7 @@
 // listed unfiltered.
 
 import AppKit
+import SevenZipKit
 
 final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuItemValidation {
 
@@ -77,10 +78,15 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
             ("size", Lang.text(1007, "Size"), CGFloat(110)),          // IDS_PROP_SIZE
             ("files", Lang.text(1032, "Files"), CGFloat(70)),         // IDS_PROP_FILES
             ("folders", Lang.text(1031, "Folders"), CGFloat(70)),     // IDS_PROP_FOLDERS
-            ("inner", Lang.text(1004, "Name"), CGFloat(200)),         // second Name column
+            ("inner", Lang.text(1004, "Name") + "-2", CGFloat(200)),  // LangString(IDS_PROP_NAME) + "-2"
         ] {
             let column = NSTableColumn(identifier: .init(identifier))
             column.title = title
+            // Size, Files and Folders are LVCFMT_RIGHT (BrowseDialog2.cpp:372-391).
+            if ["size", "files", "folders"].contains(identifier) {
+                column.headerCell.alignment = .right
+                (column.dataCell as? NSCell)?.alignment = .right
+            }
             column.width = width
             column.minWidth = 50
             tableView.addTableColumn(column)
@@ -264,17 +270,25 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         switch id {
         case "name": return entry.name + (entry.isSymbolicLink ? " ->" : "")
         case "modified":
+            // ConvertUtcFileTimeToString(kTimestampPrintLevel_MIN), local unless View > Time > UTC
             guard let date = entry.modified else { return "" }
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = "yyyy-MM-dd HH:mm"
-            return formatter.string(from: date)
-        case "size": return Formatting.size(entry.size) + plus
-        case "files": return entry.isDirectory ? "\(entry.numFiles)\(plus)" : ""
-        case "folders": return entry.isDirectory ? "\(entry.numFolders)\(plus)" : ""
+            return TimeMenuDelegate.format(date, level: -1, utc: SZFolder.timestampShowUTC)
+        case "size": return Self.browseSizeText(entry.size) + plus
+        // Empty for zero (BrowseDialog2.cpp:1709-1731), as 7zFM 25.01 shows it (wincompare.md).
+        case "files": return entry.isDirectory && entry.numFiles != 0 ? "\(entry.numFiles)\(plus)" : ""
+        case "folders": return entry.isDirectory && entry.numFolders != 0 ? "\(entry.numFolders)\(plus)" : ""
         case "inner": return entry.innerName
         default: return nil
         }
+    }
+
+    /// Browse_ConvertSizeToString (BrowseDialog.cpp:552-567): plain digits below 10000, then
+    /// KB / MB / GB (truncated) from 10000 bytes / 10000 KB / 10000 MB.
+    static func browseSizeText(_ size: UInt64) -> String {
+        if size >= UInt64(10000) << 20 { return "\(size >> 30) GB" }
+        if size >= UInt64(10000) << 10 { return "\(size >> 20) MB" }
+        if size >= 10000 { return "\(size >> 10) KB" }
+        return "\(size)"
     }
 
     func tableView(_ tableView: NSTableView, didClick tableColumn: NSTableColumn) {

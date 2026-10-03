@@ -185,7 +185,8 @@ final class HasherTests: XCTestCase {
         XCTAssertFalse(names.contains(where: { $0.contains("streams and names") }))
         // text form is "name: value" per line
         XCTAssertTrue(r.text.contains("Files: 4"))
-        XCTAssertTrue(r.text.contains("Size: 3 043 bytes"))
+        // AddSizeValue of OverwriteDialog.cpp (what HashGUI links): plain digits + " : N KiB"
+        XCTAssertTrue(r.text.contains("Size: 3043 bytes : 2 KiB"), r.text)
         // Ctrl+C copies the selected rows as "name: value"
         let copied = r.clipboardText(forRowsAt: IndexSet(integer: 1))
         XCTAssertEqual(copied, "Files: 4\n")

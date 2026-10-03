@@ -70,6 +70,8 @@ extension PanelViewController {
         alert.alertStyle = .warning
         alert.addButton(withTitle: Lang.text(406, "Yes"))
         alert.addButton(withTitle: Lang.text(407, "No"))
+        // MB_YESNOCANCEL (PanelOperations.cpp:247-248): 7zFM 25.01 shows Yes / No / Cancel.
+        alert.addButton(withTitle: Lang.text(402, "Cancel"))
         if let window = view.window {
             // A sheet cannot answer synchronously here, so the confirmation is app-modal, like
             // 7zFM's MessageBoxW.
@@ -192,7 +194,13 @@ extension PanelViewController {
         guard index >= 0, index < rows.count, !rows[index].isParentRow else { return }
         let engineIndex = rows[index].engineIndex
         let current = rows[index].cells[.comment] ?? ""
-        guard let comment = CommentDialog.run(value: current, parent: view.window) else { return }
+        // CComboDialog, not the multi-line IDD_COMMENT: Title = "<rel path> : Comment" (IDS_COMMENT
+        // 6400), Static = IDS_COMMENT2 6401 "&Comment:" (PanelOperations.cpp ChangeComment;
+        // 7zFM 25.01 shows "a.txt : Comment", Mac/docs/reports/wincompare.md).
+        let row = rows[index]
+        guard let comment = ComboDialog.run(title: row.prefix + row.name + " : " + Lang.text(6400, "Comment"),
+                                            label: Lang.text(6401, "&Comment:"), value: current,
+                                            parent: view.window) else { return }
         var options = OperationRunner.Options(title: Lang.text(6400, "Comment"))
         options.mainTitle = Lang.text(6008, "The operation is not supported.")
         let result = runFolderOperation(options) { folder, runner -> Bool in

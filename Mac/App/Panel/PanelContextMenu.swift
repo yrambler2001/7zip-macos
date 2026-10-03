@@ -90,22 +90,53 @@ extension PanelViewController {
         let snap = snapshot
         let items = operatedRowIndices().map { rows[$0] }
         if let snap, !snap.isArchive {
-            addSevenZipCommands(to: menu, items: items, snapshot: snap)
+            for item in sevenZipMenuItems() { menu.addItem(item) }
             if Settings.showSystemMenu {
                 addSystemMenu(to: menu, items: items)
             }
-            if menu.numberOfItems > 0 { menu.addItem(.separator()) }
+            // No separator: CreateFileMenu appends CFileMenu::Load right after the shell items
+            // (PanelMenu.cpp:947-950 has the separator commented out).
         }
         addFileMenuItems(to: menu)
         return menu
     }
 
+    /// The items CZipContextMenu::QueryContextMenu adds for the operated items of a file-system
+    /// folder (CPanel::CreateSevenZipMenu, PanelMenu.cpp:792): with CascadedMenu (default on) one
+    /// "7-Zip" submenu, with "CRC SHA" inside it when kCRC_Cascaded is set and after it otherwise;
+    /// without CascadedMenu the commands themselves (ContextMenu.cpp:1013-1069). Empty inside an
+    /// archive and with nothing operated. The context menu and the File menu both use it.
+    func sevenZipMenuItems() -> [NSMenuItem] {
+        guard let snap = snapshot, !snap.isArchive else { return [] }
+        let items = operatedRowIndices().map { rows[$0] }
+        let popup = NSMenu()
+        let crc = addSevenZipCommands(to: popup, items: items, snapshot: snap)
+        let cascaded = Settings.cascadedMenuValue
+        let crcInside = cascaded && Settings.contextMenuFlags.contains(.crcCascaded)
+        if let crc, crcInside { popup.addItem(crc) }
+        var result: [NSMenuItem] = []
+        if cascaded {
+            if popup.numberOfItems > 0 {
+                let top = NSMenuItem(title: "7-Zip", action: nil, keyEquivalent: "")   // (UString)"7-Zip", not translated
+                top.submenu = popup
+                result.append(top)
+            }
+        } else {
+            let inline = popup.items
+            popup.removeAllItems()
+            result += inline
+        }
+        if let crc, !crcInside { result.append(crc) }
+        return result
+    }
+
     /// CreateSevenZipMenu (PanelMenu.cpp:792) filtered by the ContextMenu flag mask (01 §2.9).
-    private func addSevenZipCommands(to menu: NSMenu, items: [PanelRow], snapshot snap: PanelSnapshot) {
-        guard !items.isEmpty else { return }
+    /// Returns the "CRC SHA" submenu item instead of adding it; the caller places it.
+    private func addSevenZipCommands(to menu: NSMenu, items: [PanelRow], snapshot snap: PanelSnapshot) -> NSMenuItem? {
+        guard !items.isEmpty else { return nil }
         let flags = Settings.contextMenuFlags
         let paths = items.compactMap { $0.fullPath.isEmpty ? nil : $0.fullPath }
-        guard !paths.isEmpty else { return }
+        guard !paths.isEmpty else { return nil }
         let names = items.map { $0.name }
         let target = PanelContextTarget(paths: paths, folderPath: snap.fullPath, names: names)
         let single = items.count == 1 ? items[0] : nil
@@ -176,7 +207,9 @@ extension PanelViewController {
                     emailAction, target)
             }
         }
-        if flags.contains(.crc) {
+        // needCrc = kCRC | kCRC_Cascaded (ContextMenu.cpp:1030-1032)
+        guard flags.contains(.crc) || flags.contains(.crcCascaded) else { return nil }
+        do {
             let crc = NSMenuItem(title: Lang.text(2350, "CRC SHA"), action: nil, keyEquivalent: "")
             let sub = NSMenu()
             for (tag, name) in [(102, "CRC-32"), (103, "CRC-64"), (120, "XXH64"), (122, "MD5"), (104, "SHA-1"),
@@ -205,7 +238,7 @@ extension PanelViewController {
                 addChecksum(sub, test, paths)
             }
             crc.submenu = sub
-            menu.addItem(crc)
+            return crc
         }
     }
 
@@ -269,36 +302,10 @@ extension PanelViewController {
         menu.addItem(system)
     }
 
-    /// CFileMenu::Load without Exit (01 §2.1, §2.8).
+    /// CFileMenu::Load without Exit (01 §2.1, §2.8): the very items of the File menu, built by the
+    /// same function (PanelMenu.cpp:952-985 runs the same CFileMenu::Load with programMenu = false).
     private func addFileMenuItems(to menu: NSMenu) {
-        func item(_ lang: UInt32, _ fallback: String, _ action: Selector) {
-            menu.addItem(NSMenuItem(title: Lang.text(lang, fallback), action: action, keyEquivalent: ""))
-        }
-        item(540, "Open", #selector(fileOpen(_:)))                                  // IDM_OPEN
-        item(541, "Open Inside", #selector(fileOpenInside(_:)))                     // IDM_OPEN_INSIDE
-        item(542, "Open Outside", #selector(fileOpenOutside(_:)))                   // IDM_OPEN_OUTSIDE
-        item(543, "View", #selector(fileView(_:)))                                  // IDM_FILE_VIEW
-        item(544, "Edit", #selector(fileEdit(_:)))                                  // IDM_FILE_EDIT
-        menu.addItem(.separator())
-        item(545, "Rename", #selector(fileRename(_:)))                              // IDM_RENAME
-        item(546, "Copy To...", #selector(MenuActions.fileCopyTo(_:)))               // IDM_COPY_TO
-        item(547, "Move To...", #selector(MenuActions.fileMoveTo(_:)))               // IDM_MOVE_TO
-        item(548, "Delete", #selector(fileDelete(_:)))                              // IDM_DELETE
-        menu.addItem(.separator())
-        item(549, "Split file...", #selector(MenuActions.fileSplit(_:)))             // IDM_SPLIT
-        item(550, "Combine files...", #selector(MenuActions.fileCombine(_:)))        // IDM_COMBINE
-        menu.addItem(.separator())
-        item(551, "Properties", #selector(fileProperties(_:)))                       // IDM_PROPERTIES
-        item(552, "Comment...", #selector(fileComment(_:)))                          // IDM_COMMENT
-        // IDM_DIFF: copied from the File menu, which drops it when no Diff tool is configured
-        // (MyLoadMenu.cpp:614, `item.wID == IDM_DIFF && diffPath.IsEmpty()`).
-        if !Settings.diffPath.isEmpty {
-            item(554, "Diff", #selector(MenuActions.fileDiff(_:)))                    // IDM_DIFF
-        }
-        menu.addItem(.separator())
-        item(555, "Create Folder", #selector(fileCreateFolder(_:)))                  // IDM_CREATE_FOLDER
-        item(556, "Create File", #selector(fileCreateFile(_:)))                      // IDM_CREATE_FILE
-        item(558, "Link...", #selector(MenuActions.fileLink(_:)))                     // IDM_LINK
+        MainMenu.addFileCommands(to: menu)
     }
 
     // MARK: - Column header menu (ShowColumnsContextMenu)

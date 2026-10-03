@@ -45,9 +45,13 @@ enum PanelProperties {
                 // Raw properties (IArchiveGetRawProps) follow the folder's own, rendered the way
                 // PanelMenu.cpp:212-246 does: hex up to 256 bytes ("data:<n>" beyond), upper case
                 // for a CRC / checksum of at most 8 bytes (01 §3.11).
+                // AddPropertyString (PanelMenu.cpp:110-148): sizes through ConvertSizeToString
+                // ("1 234"), everything else through ConvertPropertyToString2 at level 9, the ns
+                // precision ("2024-01-15 11:30:00.0000000" for a 7z item) -- not the list's level.
                 let text = info.isRawProperty
                     ? folder.rawPropertyString(at: first, propID: info.propID, forPropertiesDialog: true)
-                    : folder.displayStringOfItem(at: first, propID: info.propID, timestampLevel: level)
+                    : sizeGrouped(info.propID, folder.displayStringOfItem(at: first, propID: info.propID,
+                                                                          timestampLevel: .NS))
                 guard !text.isEmpty else { continue }
                 lines.add(info.localizedName, text)
             }
@@ -83,12 +87,12 @@ enum PanelProperties {
                 lines.addSeparator()
                 lines.add("----" + Lang.text(1003, "Path") + " \(level0 + 1)----", "")
                 for propID in specProps {
-                    let text = arcProps.displayString(atLevel: level0, propID: propID)
+                    let text = sizeGrouped(propID, arcProps.displayString(atLevel: level0, propID: propID))
                     guard !text.isEmpty else { continue }
                     lines.add(propertyName(propID), text)
                 }
                 for info in arcProps.properties(atLevel: level0) {
-                    let text = arcProps.displayString(atLevel: level0, propID: info.propID)
+                    let text = sizeGrouped(info.propID, arcProps.displayString(atLevel: level0, propID: info.propID))
                     guard !text.isEmpty else { continue }
                     lines.add(info.localizedName, text)
                 }
@@ -116,6 +120,13 @@ enum PanelProperties {
             lines.add(Lang.text(1096, "ArcFileName"), snapshot.archivePath)
         }
         return lines
+    }
+
+    /// IsSizeProp -> ConvertSizeToString (PanelMenu.cpp:129-134): a size reads "101 156" in the
+    /// Properties list, as in 7zFM 25.01 (Mac/docs/reports/wincompare.md).
+    static func sizeGrouped(_ propID: SZPropID, _ text: String) -> String {
+        guard Formatting.sizePropIDs.contains(propID), let value = UInt64(text) else { return text }
+        return Formatting.size(value)
     }
 
     /// GetNameOfProperty: the lang string 1000 + propID, else the numeric id (01b §4.18).

@@ -45,26 +45,25 @@ static NSString *SZLangText(uint32_t id, NSString *fallback)
     return [SZLang.shared stringForID:id fallback:fallback];
 }
 
-/// ConvertSizeToString (PanelListNotify.cpp:38): digits grouped in threes by spaces.
-static NSString *SZGroupedNumber(uint64_t value)
-{
-    NSString *digits = [NSString stringWithFormat:@"%llu", (unsigned long long)value];
-    NSMutableString *out = [NSMutableString stringWithCapacity:digits.length + digits.length / 3];
-    const NSUInteger n = digits.length;
-    for (NSUInteger i = 0; i < n; i++)
-    {
-        if (i > 0 && (n - i) % 3 == 0)
-            [out appendString:@" "];
-        [out appendFormat:@"%C", [digits characterAtIndex:i]];
-    }
-    return out;
-}
-
-/// AddSizeValue (App.cpp:456): MyFormatNew(IDS_FILE_SIZE, ConvertSizeToString(size)).
+/// AddSizeValue as HashGUI.cpp's AddSizeValuePair links it: the non-static one of
+/// OverwriteDialog.cpp:68-88 (App.cpp's is file-local), i.e. IDS_FILE_SIZE around the *plain*
+/// number, then " : N KiB" from 1 KiB (MiB from 10 MiB, GiB from 10 GiB). 7zFM 25.01 shows
+/// "1234 bytes : 1 KiB" for a 1 234-byte file (Mac/docs/reports/wincompare.md).
 static NSString *SZSizeValueString(uint64_t size)
 {
     NSString *tmpl = SZLangText(kLangID_FileSize, @"{0} bytes");
-    return [tmpl stringByReplacingOccurrencesOfString:@"{0}" withString:SZGroupedNumber(size)];
+    NSMutableString *s = [[tmpl stringByReplacingOccurrencesOfString:@"{0}"
+                                                          withString:[NSString stringWithFormat:@"%llu", size]] mutableCopy];
+    if (size >= (1 << 10))
+    {
+        uint64_t v = size;
+        char c;
+        if (v >= ((uint64_t)10 << 30)) { v >>= 30; c = 'G'; }
+        else if (v >= ((uint64_t)10 << 20)) { v >>= 20; c = 'M'; }
+        else { v >>= 10; c = 'K'; }
+        [s appendFormat:@" : %llu %ciB", v, c];
+    }
+    return s;
 }
 
 NSString *SZHashSizeValueString(uint64_t size) { return SZSizeValueString(size); }

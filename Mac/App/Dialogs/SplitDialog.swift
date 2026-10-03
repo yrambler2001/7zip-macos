@@ -21,7 +21,10 @@ final class SplitDialog: NSObject {
 
     private init(filePath: String, path: String, parent: NSWindow?) {
         self.filePath = filePath
-        window = DialogKit.window(title: Lang.text(7300, "Split File"), resizable: true)
+        // CSplitDialog::OnInit: the caption gets " <FilePath>" appended ("Split File b.bin" in
+        // 7zFM 25.01, Mac/docs/reports/wincompare.md); IDD_SPLIT has no separate file-name label.
+        let caption = Lang.text(7300, "Split File")
+        window = DialogKit.window(title: filePath.isEmpty ? caption : caption + " " + filePath, resizable: true)
         super.init()
 
         pathCombo.stringValue = path
@@ -52,13 +55,9 @@ final class SplitDialog: NSObject {
         buttons.orientation = .horizontal
         buttons.spacing = 10
 
-        let info = DialogKit.label(filePath)
-        info.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-
         let stack = NSStackView(views: [
             DialogKit.label(Lang.text(7301, "Split to:")),          // IDT_SPLIT_PATH 7301
             pathRow,
-            info,
             DialogKit.label(Lang.text(7302, "Split to volumes,  bytes:")),   // IDT_SPLIT_VOLUME 7302
             volumeCombo,
             buttons,

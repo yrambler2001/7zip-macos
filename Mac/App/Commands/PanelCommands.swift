@@ -37,7 +37,7 @@ extension MainWindowController {
         } else {
             proposal = sourceSnapshot.fullPath
         }
-        let info = PanelFormat.itemsInfo(rows: rowIndices.map { source.rows[$0] })
+        let info = PanelFormat.itemsInfo(rows: rowIndices.map { source.rows[$0] }, folderPrefix: sourceSnapshot.fullPath)
         guard let typed = CopyMoveDialog.run(move: move, value: proposal, history: Settings.copyHistory,
                                              info: info, parent: window) else { return }
         var destination = typed.trimmingCharacters(in: .whitespaces)

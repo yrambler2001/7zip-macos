@@ -561,7 +561,9 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         let items = model.methodItems
         methodCombo.removeAllItems()
         for item in items { methodCombo.addItem(withTitle: item.title) }
-        methodCombo.isEnabled = !items.isEmpty
+        // EnableMultiCombo(IDC_COMPRESS_METHOD) (CompressDialog.h:228): a one-method format
+        // (bzip2, gzip, xz) shows its method grayed, as 7zG 25.01 does (wincompare.md).
+        methodCombo.isEnabled = items.count > 1
         methodLabel.textColor = items.isEmpty ? .disabledControlTextColor : .labelColor
         guard !items.isEmpty else {
             model.selectedMethodRaw = nil

@@ -187,7 +187,7 @@ final class CompressModel {
         self.ramSizeDefined = ramSize != 0
     }
 
-    static func physicalMemory() -> UInt64 { ProcessInfo.processInfo.physicalMemory }
+    static func physicalMemory() -> UInt64 { hardwareOverride?.ram ?? ProcessInfo.processInfo.physicalMemory }
 
     /// `Calc_From_Val_Percents`: percent of a 64-bit size without overflowing.
     static func percent(of size: UInt64, _ percent: UInt64) -> UInt64 {
@@ -594,10 +594,16 @@ final class CompressModel {
 
     // MARK: threads (SetNumThreads2, CompressDialog.cpp:2559-2712)
 
+    /// In-process test hook: the hardware the figures are computed for. The `wincompare` scope sets
+    /// it to the reference Windows PC (8 threads, 21 240 692 736 bytes) so the thread lists and
+    /// memory figures can be compared with 7zG's line by line; nil (always, in the product) means
+    /// this Mac.
+    static var hardwareOverride: (threads: Int, ram: UInt64)?
+
     /// Process thread count (`CProcessAffinity::Get_NumProcessThreads`).
-    static var processThreadCount: Int { ProcessInfo.processInfo.activeProcessorCount }
+    static var processThreadCount: Int { hardwareOverride?.threads ?? ProcessInfo.processInfo.activeProcessorCount }
     /// System thread count.
-    static var systemThreadCount: Int { ProcessInfo.processInfo.processorCount }
+    static var systemThreadCount: Int { hardwareOverride?.threads ?? ProcessInfo.processInfo.processorCount }
 
     /// `IDT_COMPRESS_HARDWARE_THREADS 112`: "/ N" or "/ N / M".
     var hardwareThreadsText: String {

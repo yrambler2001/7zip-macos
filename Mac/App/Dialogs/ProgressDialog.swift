@@ -50,7 +50,10 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
     private let totalValue = DialogKit.value()          // IDT_PROGRESS_TOTAL_VAL 122
     private let speedValue = DialogKit.value()          // IDT_PROGRESS_SPEED_VAL 123
     private let processedValue = DialogKit.value()      // IDT_PROGRESS_PROCESSED_VAL 124
-    private let packedLabel = DialogKit.label(Lang.text(1008, "Compressed size:"))  // IDT_PROGRESS_PACKED 1008
+    // kLangIDs_Colon (ProgressDialog2.cpp:66-70): IDT_PROGRESS_PACKED and IDT_PROGRESS_FILES take
+    // the property name from the lang file plus ":" (LangSetDlgItems_Colon) -- 7zFM 25.01 shows
+    // "Files:" (Mac/docs/reports/wincompare.md).
+    private let packedLabel = DialogKit.label(Lang.text(1008, "Packed Size") + ":")  // IDT_PROGRESS_PACKED 1008
     private let packedValue = DialogKit.value()         // IDT_PROGRESS_PACKED_VAL 110
     private let ratioLabel = DialogKit.label(Lang.text(3905, "Compression ratio:")) // IDT_PROGRESS_RATIO 3905
     private let ratioValue = DialogKit.value()          // IDT_PROGRESS_RATIO_VAL 125
@@ -112,7 +115,7 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
              DialogKit.label(Lang.text(3902, "Total size:")), totalValue],         // IDT_PROGRESS_TOTAL 3902 / 122
             [DialogKit.label(Lang.text(3901, "Remaining time:")), remainingValue,  // IDT_PROGRESS_REMAINING 3901 / 121
              DialogKit.label(Lang.text(3903, "Speed:")), speedValue],              // IDT_PROGRESS_SPEED 3903 / 123
-            [DialogKit.label(Lang.text(1032, "Files:")), filesValue,               // IDT_PROGRESS_FILES 1032 / 111
+            [DialogKit.label(Lang.text(1032, "Files") + ":"), filesValue,          // IDT_PROGRESS_FILES 1032 / 111
              DialogKit.label(Lang.text(3904, "Processed:")), processedValue],       // IDT_PROGRESS_PROCESSED 3904 / 124
             [DialogKit.label(""), filesTotalValue,                                 //        112
              packedLabel, packedValue],                                            // 1008 / 110

@@ -171,7 +171,11 @@ final class PanelLogicTests: XCTestCase {
         XCTAssertEqual(model.columns.first?.propID, .name, "kpidName comes first (NameFirst)")
         XCTAssertFalse(model.columns.contains { $0.propID == .isDir }, "kpidIsDir is skipped")
         XCTAssertEqual(model.columns.first?.width, 160, "kpidName is 160 px wide")
-        XCTAssertTrue(model.columns.dropFirst().allSatisfy { $0.width == 100 }, "other columns are 100 px")
+        let times: Set<SZPropID> = [.mtime, .ctime, .atime, .changeTime]
+        XCTAssertTrue(model.columns.dropFirst().filter { !times.contains($0.propID) }.allSatisfy { $0.width == 100 },
+                      "other columns are 100 px")
+        // A date needs 107 pt at the list font; 7zFM's 100 px hold it in Segoe UI 9 pt (wincompare).
+        XCTAssertTrue(model.columns.filter { times.contains($0.propID) }.allSatisfy { $0.width == 120 })
         XCTAssertEqual(model.sortID, .name)
         XCTAssertTrue(model.ascending)
         let visible = Set(model.visibleColumns.map { $0.propID })

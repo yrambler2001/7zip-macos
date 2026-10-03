@@ -109,19 +109,21 @@ final class OverwriteDialog: NSObject {
         icon.addConstraint(NSLayoutConstraint(item: icon, attribute: .height, relatedBy: .equal, toItem: nil,
                                               attribute: .notAnAttribute, multiplier: 1, constant: 32))
 
-        var lines: [String] = ["\"" + ProgressFormatting.reduce(info.path, limit: nameSizeLimit) + "\""]
-        if let size = info.size {
-            // IDS_FILE_SIZE 3504 "{0} bytes" + the K/M/G approximation (AddSizeValue :68-88)
-            var line = Lang.format(Lang.text(3504, "{0} bytes"), Formatting.size(size))
-            if size >= 1024 { line += " (\(approximate(size)))" }
-            lines.append(line)
-        }
+        // SetFileInfoControl: the folder part (up to the last separator) and the name on two
+        // lines, each ReduceString-ed, then AddSizeValue and "Modified: <time>" (:96-117). An
+        // undefined size or time leaves its line empty, as on Windows.
+        let slash = info.path.range(of: "/", options: .backwards)
+        let folderPart = slash.map { String(info.path[..<$0.upperBound]) } ?? ""
+        let namePart = slash.map { String(info.path[$0.upperBound...]) } ?? info.path
+        var lines: [String] = [ProgressFormatting.reduce(folderPart, limit: nameSizeLimit),
+                               ProgressFormatting.reduce(namePart, limit: nameSizeLimit)]
+        lines.append(info.size.map { Formatting.sizeValue($0) } ?? "")
         if let time = info.time {
             // IDS_PROP_MTIME (lang 1000 + kpidMTime = 1012) + ConvertUtcFileTimeToString
             lines.append(Lang.text(1012, "Modified") + ": " + TimeMenuDelegate.format(time, level: 0, utc: SZFolder.timestampShowUTC))
         }
         let text = DialogKit.label(lines.joined(separator: "\n"))
-        text.maximumNumberOfLines = 4
+        text.maximumNumberOfLines = 5
         text.lineBreakMode = .byTruncatingMiddle
 
         let row = NSStackView(views: [icon, text])
@@ -132,14 +134,6 @@ final class OverwriteDialog: NSObject {
     }
 
     /// AddSizeValue (:68-88): " (N K)" / " (N M)" / " (N G)".
-    private static func approximate(_ size: UInt64) -> String {
-        let units: [(UInt64, String)] = [(1 << 30, "G"), (1 << 20, "M"), (1 << 10, "K")]
-        for (factor, suffix) in units where size >= factor {
-            return "\(size / factor) \(suffix)"
-        }
-        return "\(size)"
-    }
-
     private static func icon(for info: FileInfo) -> NSImage {
         if info.isFileSystemFile, FileManager.default.fileExists(atPath: info.path) {
             return NSWorkspace.shared.icon(forFile: info.path)

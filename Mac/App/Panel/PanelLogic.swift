@@ -193,6 +193,7 @@ struct PanelColumnsModel {
 
     static let nameWidth = 160        // PanelItems.cpp:96+ (96 dpi pixels == points here)
     static let otherWidth = 100
+    static let timeWidth = 120
 
     /// Default width of a new column. 7zFM gives every column but Name 100 px (PanelItems.cpp
     /// InitColumns); a raw-property column of hex digits (WIM SHA-1, XAR / RAR5 checksum, SHA-256)
@@ -200,6 +201,10 @@ struct PanelColumnsModel {
     /// the list font (about 7 pt per hex digit plus the cell margins). A user's width still wins.
     static func defaultWidth(for info: SZPropertyInfo) -> Int {
         if info.propID == .name { return nameWidth }
+        // A time column: 7zFM's 100 px hold "2024-01-15 11:30" in 9 pt Segoe UI, but the list
+        // font here needs 107 pt for it, so the port's 100 pt cut every date to "2024-01-15 1..."
+        // (Mac/docs/reports/wincompare.md, main window). 120 pt shows it whole, as on Windows.
+        if !info.isRawProperty, [.mtime, .ctime, .atime, .changeTime].contains(info.propID) { return timeWidth }
         guard info.isRawProperty else { return otherWidth }
         switch info.propID {
         case .sha1, .checksum: return 300          // 40 hex digits

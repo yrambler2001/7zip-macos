@@ -151,7 +151,8 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         showPasswordBox.action = #selector(toggleShowPassword)
 
         // CheckButton_TwoBools(IDX_EXTRACT_ELIM_DUP, ElimDup, _info.ElimDup): the caller's Def
-        // wins, then the setting, and the effective default is true (GetBoolsVal, :114-119).
+        // wins, then the setting, else the caller's Val -- false for a CBoolPair nobody set
+        // (GetBoolsVal, :114-119; ZipRegistry.cpp Key_Get_BoolPair).
         elimDupBox.state = Self.twoBools(options.eliminateDuplicateRoot, info.elimDup,
                                          fallback: Settings.extractElimDupValue) ? .on : .off
         ntSecurityBox.state = Self.twoBools(options.restoreFileSecurity, info.ntSecurity,
