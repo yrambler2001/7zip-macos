@@ -444,7 +444,7 @@ final class Recheck2Tests: AppHostTestCase {
         XCTAssertTrue(stem[1] > stem[0] + 40, "the stem is green: \(stem)")
         XCTAssertEqual(corner, [255, 255, 255], "the top-right corner is empty")
         if let png = rep.representation(using: .png, properties: [:]) {
-            try? png.write(to: URL(fileURLWithPath: TestPaths.screenshots).appendingPathComponent("recheck2-upicon-16.png"))
+            try? png.write(to: URL(fileURLWithPath: TestPaths.screenshots).appendingPathComponent("wincompare-recheck2-upicon-mac.png"))
         }
     }
 

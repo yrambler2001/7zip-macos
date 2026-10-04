@@ -21,9 +21,10 @@ run in the interactive session by the scheduled task `sz_cmp`:
 recheck's `rc4` had moved the pointer with `SetCursorPos` and zero-delta `mouse_event`s, which never
 made the list hot; `SendInput` with `MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE` does.
 
-**Mac side.** `Mac/Tests/AppTests/Recheck2Tests.swift` (16 cases, app-hosted): the box geometry
+**Mac side.** `Mac/Tests/AppTests/Recheck2Tests.swift` (15 cases, app-hosted): the box geometry
 against the measured cases, its keys, close box, owner, no-owner path, closed-from-outside path and
-asynchronous path, 1x captures, the Edit menu, the slow click, the hover and the Up icon.
+asynchronous path, 1x captures, the Edit menu, the slow click (and File > Delete during its edit), the
+hover and the Up icon.
 
 ## 2. Message boxes (recheck.md §8 item 1)
 
@@ -61,7 +62,7 @@ the app (`modalfix.md`), and the close box never leaves a session running (`info
 `ErrorAlert.present` keeps modalfix's rule: a report with **no** window goes to the log, and `show`
 drops a report whose window closed before it came up (a panel of a closed window finishing a reload).
 
-All 32 `NSAlert` sites in 21 files are gone (`grep NSAlert Mac/App` finds only comments). Each now
+All the `NSAlert` sites (32 in 21 files, recheck.md §8) are gone (`grep NSAlert Mac/App` finds only comments). Each now
 passes what 7zFM passes (source line in the code):
 
 | site | caption | buttons, icon |
@@ -105,7 +106,8 @@ the caption, subrole `AXDialog`, whose static text value is the message and whos
 back with its tab, the front flap slanting up to the right, the darker (214,168,0) lower edge) and a
 green arrow with a dark outline, its head on row 4 from x 5 to 13, the tip at x 7.5, the stem leaning
 down to the left into the folder. `PanelAddressBar.swift` `PanelUpButton.drawIcon`;
-`Recheck2Tests.testUpButtonIconIsTheFolderWithTheGreenArrow`, capture `screenshots/recheck2-upicon-16.png`.
+`Recheck2Tests.testUpButtonIconIsTheFolderWithTheGreenArrow`; paired 16×16 captures
+`screenshots/wincompare-recheck2-upicon-{win,mac}.png`.
 
 ## 4. Edit menu (recheck.md §8 item 4)
 
@@ -148,9 +150,15 @@ recheck's "no edit (measured once)" was the synthetic-input artefact.
   such setting) selects and focuses that row (`setFocus`) if the pointer is still on it and no button
   is down. Elsewhere the arrow, no timer. The single-click activation was already there.
 
+* An operation that changes the folder while a label is edited (File > Delete right after a slow
+  click, which the input shard's `PanelTests.testCreateFolderAndDelete` does by clicking its already
+  selected new folder) cancels the edit first (`cancelRenameEditing`, LVN_ENDLABELEDIT with no
+  text), and the timer renames only the item the click was on. Before that fix the edit outlived the
+  delete and the folder stayed.
+
 Tests: `testSlowSecondClickRenamesAfterTheDoubleClickTime` (the rename starts only after the
 interval; a double-click, the first click on an unselected item, the icon and a multi-selection do not
-start one), `testSingleClickHoverSelectsAfterTheHoverTime`.
+start one), `testDeleteWhileRenamingDeletesTheItem`, `testSingleClickHoverSelectsAfterTheHoverTime`.
 
 ## 6. Not done
 
@@ -170,9 +178,9 @@ All runs with `DEVELOPER_DIR=/Applications/Xcode.app`.
 | run | result |
 |---|---|
 | `Mac/scripts/build.sh` | exit 0, no warnings in `Mac/` |
-| `Mac/scripts/test.sh` | **388 passed, 0 failed** |
-| `Mac/scripts/test.sh -H` | **221 passed, 0 failed** (Recheck2Tests 16) |
-| `Mac/scripts/test.sh -u` | see §7.1 |
+| `Mac/scripts/test.sh` (final) | **388 passed, 0 failed** |
+| `Mac/scripts/test.sh -H` (final) | **222 passed, 0 failed** (Recheck2Tests 15) |
+| `Mac/scripts/test.sh -u` (final, at `f034cfa`) | **64 passed, 0 failed**: input shard 52, probe1 6, probe2 6 |
 
 Before the test-support change of §2.3 a full `-H` run hung twice: a report that used to be a sheet
 nobody looked at is now modal, and a panel of a closed window kept reporting `errno=2` from its reload.
@@ -180,7 +188,11 @@ The second was a product fix (§2.2: no window, no box), the first a harness cha
 
 ### 7.1 UI suite
 
-UI_RESULTS_PLACEHOLDER
+The first `-u` run lost the input shard to the known "Timed out while enabling automation mode"
+(`uiverify.md`; the retry in `test.sh` timed out too) while both probes passed. The shard alone then
+ran 51 / 1: `PanelTests.testCreateFolderAndDelete` clicked its already selected folder, which now
+starts the rename (as on Windows), and File > Delete did not delete it — the defect fixed in §5.2. The
+final run above is after that fix.
 
 ## 8. Files
 
