@@ -34,7 +34,7 @@ enum PanelSelectionStyle {
     /// The XOR focus rectangle over the highlight.
     static let focusOnHighlight = NSColor(srgbRed: 1, green: 135 / 255, blue: 43 / 255, alpha: 1)
     /// The XOR focus rectangle over the list background: black in light, white in dark.
-    static let focusOnBackground = NSColor.labelColor
+    static let focusOnBackground = WinChrome.text            // (0,0,0) dots on the white list
     /// LVS_EX_GRIDLINES.
     static let grid = dynamic(light: NSColor(srgbRed: 240 / 255, green: 240 / 255, blue: 240 / 255, alpha: 1),
                               dark: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.12))
@@ -42,7 +42,10 @@ enum PanelSelectionStyle {
     static let mySelected = dynamic(light: NSColor(srgbRed: 1, green: 192 / 255, blue: 192 / 255, alpha: 1),
                                     dark: NSColor(srgbRed: 120 / 255, green: 48 / 255, blue: 48 / 255, alpha: 1))
     /// Text of a row that is not highlighted: kpidIsDeleted items in red, everything else normal.
-    static func normalText(isDeleted: Bool) -> NSColor { isDeleted ? .systemRed : .labelColor }
+    /// COLOR_WINDOWTEXT (0,0,0), not AppKit's 85 % labelColor (recheck §2); deleted items
+    /// RGB(255,0,0) (OnCustomDraw).
+    static func normalText(isDeleted: Bool) -> NSColor { isDeleted ? deletedText : WinChrome.text }
+    static let deletedText = WinChrome.dynamic(WinChrome.rgb(255, 0, 0), .systemRed)
     /// The name label's padding around its text inside the fill (the LVIR_LABEL rect).
     static let labelPadding: CGFloat = 2
 
