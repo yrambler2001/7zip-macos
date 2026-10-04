@@ -98,8 +98,96 @@ final class PanelTableView: NSTableView {
                 return
             }
         }
+        if let panel, !panel.usesAlternativeSelection, !isOnItem(point, row: row) {
+            trackRubberBand(from: point, event: event)        // the list's background: a marquee
+            return
+        }
         if let panel, row >= 0 { panel.noteClickedRow(row) }
         super.mouseDown(with: event)
+    }
+
+    // MARK: Rubber band (LVS_REPORT marquee, listfeel.md §6)
+
+    /// The item's own area in row `row`, in table coordinates (`PanelRowView.itemHitRect`): the
+    /// whole row with FullRow, else the icon plus the label's fill. Computed without a row view so
+    /// rows scrolled out of sight are hit too.
+    func itemHitRect(row: Int) -> NSRect {
+        guard let panel, row >= 0, row < numberOfRows else { return .zero }
+        let rowRect = rect(ofRow: row)
+        if Settings.fullRow {
+            let last = tableColumns.indices.last.map { rect(ofColumn: $0).maxX } ?? rowRect.maxX
+            return NSRect(x: rowRect.minX, y: rowRect.minY, width: max(0, last - rowRect.minX), height: rowRect.height)
+        }
+        guard let index = tableColumns.firstIndex(where: { PanelViewController.propID(of: $0) == .name }),
+              row < panel.rows.count else { return .zero }
+        let column = rect(ofColumn: index)
+        let fill = PanelMetrics.labelFill(columnMinX: column.minX, columnMaxX: column.maxX, text: panel.rows[row].displayName)
+        let start = min(column.minX + PanelMetrics.iconX, fill.start)
+        return NSRect(x: start, y: rowRect.minY, width: max(0, fill.end - start), height: rowRect.height)
+    }
+
+    /// LVHT_ONITEM: a mouse-down here selects / drags the item; anywhere else in the list it is
+    /// the background, where a drag draws the rubber band (measured: the Size cell, the blank part
+    /// of the name column, right of the last column and below the rows, FullRow off; only right of
+    /// the columns and below the rows with FullRow on).
+    func isOnItem(_ point: NSPoint, row: Int) -> Bool {
+        row >= 0 && itemHitRect(row: row).contains(point)
+    }
+
+    /// The rows whose item area meets `rect` (the marquee selects by LVIR_SELECTBOUNDS, or the
+    /// full row with FullRow).
+    func rowsHit(by rect: NSRect) -> IndexSet {
+        var result = IndexSet()
+        let range = rows(in: rect)
+        guard range.length > 0 else { return result }
+        for row in range.location..<(range.location + range.length) where itemHitRect(row: row).intersects(rect) {
+            result.insert(row)
+        }
+        return result
+    }
+
+    /// The dotted marquee (DrawFocusRect), drawn over the rows while the button is held.
+    private final class RubberBandView: NSView {
+        override func draw(_ dirtyRect: NSRect) {
+            PanelSelectionStyle.drawFocusRectangle(bounds, onHighlight: false)
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    /// The marquee: a click on the background clears the selection (Cmd / Shift keep it), a drag
+    /// past SM_CXDRAG / SM_CYDRAG (4 px) draws the dotted rectangle and selects the rows it meets,
+    /// live; Cmd toggles them against the previous selection (Ctrl on Windows), Shift adds them.
+    /// The list scrolls when the pointer leaves it.
+    private func trackRubberBand(from start: NSPoint, event: NSEvent) {
+        guard let window else { return }
+        window.makeFirstResponder(self)
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let toggle = mods.contains(.command)
+        let extend = mods.contains(.shift)
+        let initial = selectedRowIndexes
+        if !toggle && !extend { deselectAll(nil) }
+        let band = RubberBandView(frame: .zero)
+        var dragging = false
+        var lastDrag = event
+        NSEvent.startPeriodicEvents(afterDelay: 0.1, withPeriod: 0.05)
+        defer { NSEvent.stopPeriodicEvents(); band.removeFromSuperview() }
+        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp, .periodic]) {
+            if next.type == .leftMouseUp { break }
+            if next.type == .leftMouseDragged { lastDrag = next } else if dragging { autoscroll(with: lastDrag) }
+            let point = convert(lastDrag.locationInWindow, from: nil)
+            if !dragging {
+                guard abs(point.x - start.x) > 4 || abs(point.y - start.y) > 4 else { continue }
+                dragging = true
+                addSubview(band)
+            }
+            let rect = NSRect(x: min(start.x, point.x), y: min(start.y, point.y),
+                              width: abs(point.x - start.x), height: abs(point.y - start.y))
+            band.frame = rect.insetBy(dx: -0.5, dy: -0.5).integral
+            band.needsDisplay = true
+            let hit = rowsHit(by: rect)
+            let selection = toggle ? initial.symmetricDifference(hit) : (extend ? initial.union(hit) : hit)
+            if selection != selectedRowIndexes { selectRowIndexes(selection, byExtendingSelection: false) }
+        }
     }
 
     override func makeView(withIdentifier identifier: NSUserInterfaceItemIdentifier, owner: Any?) -> NSView? {
@@ -171,26 +259,17 @@ final class PanelRowView: NSTableRowView {
         return rect
     }
 
-    /// Where the label starts (after the icon) and where the name's text ends, from the name cell
-    /// itself when it is on screen.
+    /// Where the label starts (after the icon) and where its fill ends: LVIR_LABEL clipped to the
+    /// text, i.e. 2 px before the text and 6 px after it (PanelMetrics, listfeel.md §3).
     private var labelSpan: (start: CGFloat, textEnd: CGFloat)? {
         guard let column = nameColumnRect else { return nil }
-        var start = column.minX + PanelSelectionStyle.nameIconSlot
-        var end = column.maxX
-        if let table = panel?.tableView,
-           let index = table.tableColumns.firstIndex(where: { PanelViewController.propID(of: $0) == .name }),
-           let cell = table.view(atColumn: index, row: rowIndex, makeIfNecessary: false) as? NSTableCellView,
-           let field = cell.textField {
-            let frame = field.convert(field.bounds, to: self)
-            start = frame.minX - PanelSelectionStyle.labelPadding
-            end = min(end, frame.minX + min(field.intrinsicContentSize.width, frame.width)
-                      + PanelSelectionStyle.labelPadding)
-        }
-        return (max(column.minX, start), end)
+        let name = panel.flatMap { rowIndex >= 0 && rowIndex < $0.rows.count ? $0.rows[rowIndex].displayName : nil } ?? ""
+        let fill = PanelMetrics.labelFill(columnMinX: column.minX, columnMaxX: column.maxX, text: name)
+        return (fill.start, fill.end)
     }
 
     /// Where the fill goes (and the focus rectangle): from the label to the end of the row
-    /// (FullRow) or the label only (LVIR_LABEL: the name's text plus 2 pt either side).
+    /// (FullRow) or the label only (LVIR_LABEL clipped to the text).
     var highlightRect: NSRect {
         guard panel != nil else { return bounds }
         guard let span = labelSpan else { return Settings.fullRow ? bounds : .zero }

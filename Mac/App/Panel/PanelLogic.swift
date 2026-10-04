@@ -199,30 +199,24 @@ struct PanelColumn {
 
 struct PanelColumnsModel {
 
-    static let nameWidth = 160        // PanelItems.cpp:96+ (96 dpi pixels == points here)
+    static let nameWidth = 160        // GetColumnWidth (PanelItems.cpp:44-51), 96 dpi px == pt here
     static let otherWidth = 100
-    static let timeWidth = 120
 
-    /// Default width of a new column. 7zFM gives every column but Name 100 px (PanelItems.cpp
-    /// InitColumns); a raw-property column of hex digits (WIM SHA-1, XAR / RAR5 checksum, SHA-256)
-    /// is then cut to its first dozen digits, so those start wide enough for their usual value at
-    /// the list font (about 7 pt per hex digit plus the cell margins). A user's width still wins.
+    /// Default width of a new column: GetColumnWidth (PanelItems.cpp:44-51) gives kpidName 160 px
+    /// and every other column, raw properties included, 100 px -- measured on a fresh-default
+    /// 7zFM 26.03 for the file-system, 7z and zip folders (Mac/docs/reports/listfeel.md §2). The
+    /// port used to start time columns at 120 pt and hex columns at 160-470 pt because its 13 pt
+    /// list font did not fit a date into 100 pt; the list font now has Segoe UI 9 pt metrics
+    /// (`PanelMetrics.listFont`), so "2024-01-15 11:30" fits as it does on Windows.
     static func defaultWidth(for info: SZPropertyInfo) -> Int {
-        if info.propID == .name { return nameWidth }
-        // A time column: 7zFM's 100 px hold "2024-01-15 11:30" in 9 pt Segoe UI, but the list
-        // font here needs 107 pt for it, so the port's 100 pt cut every date to "2024-01-15 1..."
-        // (Mac/docs/reports/wincompare.md, main window). 120 pt shows it whole, as on Windows.
-        if !info.isRawProperty, [.mtime, .ctime, .atime, .changeTime].contains(info.propID) { return timeWidth }
-        guard info.isRawProperty else { return otherWidth }
-        switch info.propID {
-        case .sha1, .checksum: return 300          // 40 hex digits
-        case .sha256: return 470                   // 64 hex digits
-        case .ntReparse: return 200                // a decoded link target
-        default: return 160
-        }
+        info.propID == .name ? nameWidth : otherWidth
     }
 
     var columns: [PanelColumn]
+    /// The folder's own property order (`_columns`, PanelItems.cpp:127-195). The header's column
+    /// menu lists the columns in this order, visible or not, whatever order the header shows them
+    /// in (ShowColumnsContextMenu, PanelItems.cpp:1396-1413; listfeel.md §5).
+    private(set) var propertyOrder: [SZPropID] = []
     var sortID: SZPropID
     var ascending: Bool
 
@@ -236,6 +230,7 @@ struct PanelColumnsModel {
             let name = infos.remove(at: nameIndex)
             infos.insert(name, at: 0)
         }
+        propertyOrder = infos.map { $0.propID }
         var built: [PanelColumn] = infos.map { info in
             PanelColumn(propID: info.propID, varType: info.varType, title: info.localizedName,
                         visible: info.propID == .name || !hiddenByDefault.contains(info.propID.rawValue),
@@ -287,6 +282,12 @@ struct PanelColumnsModel {
     }
 
     var visibleColumns: [PanelColumn] { columns.filter { $0.visible } }
+
+    /// The columns in the folder's property order, for the header's column menu.
+    var menuColumns: [PanelColumn] {
+        let ordered = propertyOrder.compactMap { pid in columns.first { $0.propID == pid } }
+        return ordered.count == columns.count ? ordered : columns
+    }
 
     mutating func setVisible(_ visible: Bool, propID: SZPropID) {
         guard let index = columns.firstIndex(where: { $0.propID == propID }), !columns[index].isName else { return }

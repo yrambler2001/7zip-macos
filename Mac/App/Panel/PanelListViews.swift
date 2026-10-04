@@ -28,39 +28,15 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
         let item = rows[row]
         guard let pid = PanelViewController.propID(of: tableColumn) else { return nil }
         let isName = pid == .name
-        let identifier = NSUserInterfaceItemIdentifier(isName ? "name" : "text")
+        let alignment: NSTextAlignment = isName ? .left
+            : (columnsModel.columns.first { $0.propID == pid }.map { PanelFormat.alignment(for: $0.varType, propID: pid) } ?? .left)
+        // One reuse pool per layout: the margins depend on the side the text is aligned to.
+        let identifier = NSUserInterfaceItemIdentifier(isName ? "name" : "text\(alignment.rawValue)")
         let cell: PanelCellView
         if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? PanelCellView {
             cell = reused
         } else {
-            cell = PanelCellView()
-            cell.identifier = identifier
-            cell.isNameCell = isName
-            let text = NSTextField(labelWithString: "")
-            text.lineBreakMode = .byTruncatingTail
-            text.translatesAutoresizingMaskIntoConstraints = false
-            cell.addSubview(text)
-            cell.textField = text
-            if isName {
-                let image = NSImageView()
-                image.translatesAutoresizingMaskIntoConstraints = false
-                image.setAccessibilityElement(false)
-                cell.addSubview(image)
-                cell.imageView = image
-                NSLayoutConstraint.activate([
-                    image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                    image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                    image.widthAnchor.constraint(equalToConstant: 16),
-                    image.heightAnchor.constraint(equalToConstant: 16),
-                    text.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 4),
-                ])
-            } else {
-                text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2).isActive = true
-            }
-            NSLayoutConstraint.activate([
-                text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
-                text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
+            cell = PanelViewController.makeListCell(identifier: identifier, isName: isName, alignment: alignment)
         }
         if isName {
             cell.textField?.stringValue = item.displayName
@@ -69,9 +45,7 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.textField?.isEditable = false                    // label editing starts on F2 only
         } else {
             cell.textField?.stringValue = item.cells[pid] ?? ""
-            if let info = columnsModel.columns.first(where: { $0.propID == pid }) {
-                cell.textField?.alignment = PanelFormat.alignment(for: info.varType, propID: pid)
-            }
+            cell.textField?.alignment = alignment
         }
         // kpidIsDeleted rows are drawn in red (OnCustomDraw, 01 §3.6); a highlighted cell is white
         // on the highlight (PanelSelectionStyle).
@@ -99,6 +73,59 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableViewColumnDidMove(_ notification: Notification) { saveColumnLayout() }
     func tableViewColumnDidResize(_ notification: Notification) { saveColumnLayout() }
+}
+
+// MARK: - Details cells (PanelMetrics: 7zFM 26.03's list geometry)
+
+extension PanelViewController {
+
+    /// A Details cell laid out as the Windows list draws it: in the name column the icon at
+    /// LVIR_ICON (x 4, 1 px from the top) and the text 2 px into LVIR_LABEL (x 20); in the other
+    /// columns the text 6 px from the edge it is aligned to (listfeel.md §2).
+    static func makeListCell(identifier: NSUserInterfaceItemIdentifier, isName: Bool,
+                             alignment: NSTextAlignment) -> PanelCellView {
+        let cell = PanelCellView()
+        cell.identifier = identifier
+        cell.isNameCell = isName
+        let text = NSTextField(labelWithString: "")
+        text.font = PanelMetrics.listFont
+        text.lineBreakMode = .byTruncatingTail
+        text.alignment = alignment
+        text.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(text)
+        cell.textField = text
+        let inset = PanelMetrics.textFieldInset
+        var constraints = [text.centerYAnchor.constraint(equalTo: cell.centerYAnchor)]
+        if isName {
+            let image = NSImageView()
+            image.translatesAutoresizingMaskIntoConstraints = false
+            image.imageScaling = .scaleProportionallyDown
+            image.setAccessibilityElement(false)
+            cell.addSubview(image)
+            cell.imageView = image
+            constraints += [
+                image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: PanelMetrics.iconX),
+                image.topAnchor.constraint(equalTo: cell.topAnchor, constant: PanelMetrics.iconTop),
+                image.widthAnchor.constraint(equalToConstant: PanelMetrics.iconSize),
+                image.heightAnchor.constraint(equalToConstant: PanelMetrics.iconSize),
+                text.leadingAnchor.constraint(equalTo: cell.leadingAnchor,
+                                              constant: PanelMetrics.labelX + PanelMetrics.labelTextInset - inset),
+                text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -inset),
+            ]
+        } else {
+            // The full margin on the aligned side; on the other side the text may run up to the
+            // column's edge before it is cut, as a date in a 100 px column does on Windows.
+            let pad = PanelMetrics.subitemPadding - inset
+            let leading: CGFloat = alignment == .right ? 0 : pad
+            let trailing: CGFloat = alignment == .right ? pad : 0
+            constraints += [
+                text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: leading),
+                text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -trailing),
+            ]
+        }
+        NSLayoutConstraint.activate(constraints)
+        return cell
+    }
 }
 
 // MARK: - Keys, focus, address combo
@@ -142,8 +169,15 @@ extension PanelViewController: PanelTableViewKeyHandler, NSComboBoxDelegate, NST
         rebuildAddressDropdown()
     }
 
+    /// CBN_SELENDOK (PanelFolderChange.cpp:803-822): an entry picked in the drop-down binds its
+    /// path at once and focuses the list. A mouse pick commits on the click; moving through the
+    /// open list with the arrow keys only previews the entry, and Return commits it (the
+    /// combo's action), as Windows sends CBN_SELENDOK only when the list closes on a choice.
     func comboBoxSelectionDidChange(_ notification: Notification) {
-        // CBN_SELENDOK: binding happens in the action (Enter / selection commit).
+        guard (notification.object as? NSComboBox) === pathCombo else { return }
+        let index = pathCombo.indexOfSelectedItem
+        guard index >= 0, AddressDropdown.isCommitEvent(NSApp.currentEvent) else { return }
+        commitAddressDropdownEntry(at: index)
     }
 }
 

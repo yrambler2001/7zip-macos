@@ -45,9 +45,6 @@ enum PanelSelectionStyle {
     static func normalText(isDeleted: Bool) -> NSColor { isDeleted ? .systemRed : .labelColor }
     /// The name label's padding around its text inside the fill (the LVIR_LABEL rect).
     static let labelPadding: CGFloat = 2
-    /// Width of the icon slot at the start of the Details name cell (2 + 16 + 2); the full-row fill
-    /// starts after it, as LVS_EX_FULLROWSELECT starts at the label.
-    static let nameIconSlot: CGFloat = 20
 
     static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
         NSColor(name: nil) { appearance in

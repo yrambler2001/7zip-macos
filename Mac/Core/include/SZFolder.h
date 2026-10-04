@@ -114,6 +114,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// IFolderFolder::GetFolderProperty, typed like propertyOfItemAtIndex:.
 - (nullable id)folderPropertyForID:(SZPropID)propID NS_SWIFT_NAME(folderProperty(forID:));
+/// IFolderProperties (GetNumberOfFolderProperties / GetFolderPropertyInfo): the folder-level
+/// properties the Properties dialog lists after the item block (CPanel::Properties,
+/// PanelMenu.cpp:296-315). Empty when the folder does not implement the interface.
+@property (nonatomic, readonly) NSArray<SZPropertyInfo *> *folderPropertyInfos;
+/// A folder property as the Properties dialog shows it (AddPropertyString, PanelMenu.cpp:110-148):
+/// kpidErrorFlags / kpidWarningFlags as their message ("" when no flag is set), everything else
+/// through ConvertPropertyToString2 at level 9 (ns precision). "" for an empty value. Sizes come
+/// back as plain digits; the caller groups them (ConvertSizeToString).
+- (NSString *)propertiesDialogStringForFolderPropertyID:(SZPropID)propID NS_SWIFT_NAME(propertiesDialogString(forFolderProperty:));
 /// kpidType: "RootFolder", "FSDrives", "FSFolder", "7-Zip.<ArcType>".
 @property (nonatomic, readonly, copy) NSString *folderType;
 /// kpidPath as reported by the folder: absolute dir with trailing "/" for the file system,
@@ -170,6 +179,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSArray<SZPropertyInfo *> *)propertiesAtLevel:(NSInteger)level NS_SWIFT_NAME(properties(atLevel:));
 - (nullable id)propertyAtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(property(atLevel:propID:));
 - (NSString *)displayStringAtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(displayString(atLevel:propID:));
+/// GetArcProp(level) as the Properties dialog shows it (AddPropertyString, see
+/// -[SZFolder propertiesDialogStringForFolderPropertyID:]). `answered` is NO when GetArcProp did
+/// not return S_OK (the dialog's separators depend on that, PanelMenu.cpp:389-410). Level
+/// `levelCount` is the level that failed to open (NonOpen_ErrorInfo).
+- (NSString *)propertiesDialogStringAtLevel:(NSInteger)level propID:(SZPropID)propID answered:(nullable BOOL *)answered NS_SWIFT_NAME(propertiesDialogString(atLevel:propID:answered:));
+/// GetArcProp2 as the Properties dialog shows it; levels 1 ..< levelCount only, "" otherwise.
+- (NSString *)propertiesDialogString2AtLevel:(NSInteger)level propID:(SZPropID)propID NS_SWIFT_NAME(propertiesDialogString2(atLevel:propID:));
 /// The "2" variants (GetArcNumProps2 / GetArcProp2): the properties the level below (level - 1)
 /// reports for the item this level was opened from. Only levels 1 ..< levelCount have them;
 /// any other level answers empty / nil (CAgent itself would index Arcs[-1]).

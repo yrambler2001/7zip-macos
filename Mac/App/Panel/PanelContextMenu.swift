@@ -313,7 +313,8 @@ extension PanelViewController {
     func makeColumnsContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false        // so the Name item stays grayed, as on Windows
-        for column in columnsModel.columns {
+        // `_columns` order: the folder's property order, not the header's (listfeel §5).
+        for column in columnsModel.menuColumns {
             let item = NSMenuItem(title: column.title, action: #selector(toggleColumn(_:)), keyEquivalent: "")
             item.target = self
             item.state = column.visible ? .on : .off
@@ -343,6 +344,7 @@ extension PanelViewController {
             column.minWidth = 24
             column.maxWidth = 2000
             column.headerCell.alignment = PanelFormat.alignment(for: info.varType, propID: info.propID)
+            column.headerCell.font = PanelMetrics.listFont               // SysHeader32: the list's font
             tableView.addTableColumn(column)
         }
         tableView.reloadData()

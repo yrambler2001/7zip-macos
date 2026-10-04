@@ -181,11 +181,11 @@ final class PanelLogicTests: XCTestCase {
         XCTAssertEqual(model.columns.first?.propID, .name, "kpidName comes first (NameFirst)")
         XCTAssertFalse(model.columns.contains { $0.propID == .isDir }, "kpidIsDir is skipped")
         XCTAssertEqual(model.columns.first?.width, 160, "kpidName is 160 px wide")
-        let times: Set<SZPropID> = [.mtime, .ctime, .atime, .changeTime]
-        XCTAssertTrue(model.columns.dropFirst().filter { !times.contains($0.propID) }.allSatisfy { $0.width == 100 },
-                      "other columns are 100 px")
-        // A date needs 107 pt at the list font; 7zFM's 100 px hold it in Segoe UI 9 pt (wincompare).
-        XCTAssertTrue(model.columns.filter { times.contains($0.propID) }.allSatisfy { $0.width == 120 })
+        // GetColumnWidth: every other column 100 px, times and raw properties included
+        // (fresh-default 7zFM 26.03, listfeel.md §2).
+        XCTAssertTrue(model.columns.dropFirst().allSatisfy { $0.width == 100 }, "other columns are 100 px")
+        // ShowColumnsContextMenu lists `_columns`, the folder's property order.
+        XCTAssertEqual(model.menuColumns.map { $0.propID }, properties.filter { $0.propID != .isDir }.map { $0.propID })
         XCTAssertEqual(model.sortID, .name)
         XCTAssertTrue(model.ascending)
         let visible = Set(model.visibleColumns.map { $0.propID })
@@ -201,6 +201,24 @@ final class PanelLogicTests: XCTestCase {
         let model = PanelColumnsModel(properties: [], folderType: "RootFolder", isFileSystem: false,
                                       hiddenByDefault: [], layout: nil)
         XCTAssertEqual(model.sortID, .noProperty, "the root and the volumes list keep their native order")
+    }
+
+    /// listfeel §5: the header's column menu keeps the folder's property order (`_columns`) after
+    /// a header drag and a stored layout, as 7zFM 26.03 does ("Name, Size, Modified, Created,
+    /// Accessed, ..." whatever the header shows).
+    func testColumnMenuKeepsThePropertyOrder() throws {
+        let properties = try fsProperties()
+        let order = properties.filter { $0.propID != .isDir }.map { $0.propID }
+        var model = PanelColumnsModel(properties: properties, folderType: "FSFolder", isFileSystem: true,
+                                      hiddenByDefault: [], layout: nil)
+        model.setVisible(false, propID: .size)
+        model.reorder(to: [.name, .comment, .mtime])
+        XCTAssertEqual(model.columns.dropFirst().first?.propID, .comment)
+        XCTAssertEqual(model.menuColumns.map { $0.propID }, order)
+        let restored = PanelColumnsModel(properties: properties, folderType: "FSFolder", isFileSystem: true,
+                                         hiddenByDefault: [], layout: model.layout())
+        XCTAssertEqual(restored.menuColumns.map { $0.propID }, order)
+        XCTAssertEqual(restored.columns.dropFirst().first?.propID, .comment, "the header keeps the dragged order")
     }
 
     func testColumnLayoutRoundTripAndReorder() throws {
