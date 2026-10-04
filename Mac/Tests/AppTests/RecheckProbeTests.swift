@@ -94,4 +94,76 @@ final class RecheckProbeTests: AppHostTestCase {
         save("two.txt", WinCompareDump.window(window))
         render(window, "two-mac.png")
     }
+
+    // MARK: keyboard sequence of rc1 §B
+
+    private func key(_ window: NSWindow, _ chars: String, _ code: UInt16, _ mods: NSEvent.ModifierFlags = []) {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: mods, timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: window.windowNumber, context: nil, characters: chars,
+                                           charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) else { continue }
+            window.sendEvent(e)
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    func testProbeKeys() {
+        let cmp = base + "/recheck/cmp"
+        let c = freshWindow(panels: 1)
+        guard let window = c.window else { return XCTFail("no window") }
+        let p = c.focusedPanel
+        bind(p, cmp)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(p.tableView)
+        var log = ""
+        func state(_ what: String) {
+            log += "KEY \(what) : focused=\(p.focusedIndex) selcount=\(p.tableView.selectedRowIndexes.count) firstResponder=\(type(of: window.firstResponder!)) status=\(p.statusBarTexts.first ?? "")\n"
+        }
+        state("start")
+        key(window, "\u{F729}", 115); state("Home")
+        key(window, "\u{F746}", 114); state("Insert")
+        key(window, " ", 49); state("Space")
+        key(window, "*", 67, .numericPad); state("Num*")
+        key(window, "*", 67, .numericPad); state("Num*2")
+        key(window, "\u{F72B}", 119); state("End")
+        key(window, "\u{F700}", 126, [.shift, .numericPad, .function]); state("Shift+Up")
+        key(window, "\u{F729}", 115); key(window, "n", 45); state("type n")
+        key(window, "a", 0); state("type a")
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        key(window, "e", 14); key(window, "n", 45); state("type en (after pause)")
+        key(window, "\u{F701}", 125, [.numericPad, .function]); state("Down")
+        key(window, " ", 49, .command); state("Cmd+Space")
+        key(window, "\u{F700}", 126, [.command, .numericPad, .function]); state("Cmd+Up")
+        key(window, " ", 49, .command); state("Cmd+Space2")
+        key(window, "a", 0, .command); state("Cmd+A")
+        key(window, "\u{F729}", 115); state("Home after Cmd+A")
+        for i in 1...3 { key(window, "\t", 48); state("Tab \(i)") }
+        for i in 1...2 { key(window, "\u{19}", 48, .shift); state("ShiftTab \(i)") }
+        save("keys.txt", log)
+    }
+
+    func testProbeWheel() throws {
+        let dir = base + "/recheck/many"
+        let fm = FileManager.default
+        try? fm.removeItem(atPath: dir)
+        try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        for i in 1...120 { fm.createFile(atPath: dir + String(format: "/f%03d.txt", i), contents: Data("x".utf8)) }
+        let c = freshWindow(panels: 1)
+        guard let window = c.window else { return XCTFail("no window") }
+        window.setContentSize(NSSize(width: 900, height: 600))
+        let p = c.focusedPanel
+        bind(p, dir)
+        window.contentView?.layoutSubtreeIfNeeded()
+        guard let scroll = p.tableView.enclosingScrollView else { return XCTFail("no scroll view") }
+        var log = "lineScroll=\(scroll.verticalLineScroll) rowHeight=\(p.tableView.rowHeight)\n"
+        for notch in 1...3 {
+            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0),
+                  let e = NSEvent(cgEvent: cg) else { continue }
+            scroll.scrollWheel(with: e)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+            log += "notch \(notch): y=\(scroll.contentView.bounds.origin.y) topRow=\(p.tableView.rows(in: scroll.contentView.bounds).location) deltaY=\(e.scrollingDeltaY) precise=\(e.hasPreciseScrollingDeltas)\n"
+        }
+        save("wheel.txt", log)
+        try? fm.removeItem(atPath: dir)
+    }
 }

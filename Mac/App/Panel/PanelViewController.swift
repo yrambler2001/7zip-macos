@@ -91,6 +91,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     var listFocusOverride: Bool? { didSet { if isViewLoaded { refreshSelectionAppearance() } } }
     /// Shift key-down anchor (_prevFocusedItem, 01 §3.7).
     var selectionAnchor = -1
+    /// True while `setSelectedIndexes` changes the selection (the focus is not moved then).
+    var isSettingSelection = false
     /// Per-panel navigation stack (macOS addition; 7zFM has no Back/Forward, 01 §9).
     private var backStack: [String] = []
     private var forwardStack: [String] = []
@@ -915,8 +917,12 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             refreshMySelectionHighlight()
             iconView.reloadData()
         } else {
+            // A selection command (Select All, Invert, a mask) leaves the focus where it is, as
+            // the list control does (Num * on 7zFM keeps the focused item, recheck §3).
+            isSettingSelection = true
             tableView.selectRowIndexes(indexes, byExtendingSelection: false)
             iconView.setSelectionIndexes(indexes)
+            isSettingSelection = false
         }
         refreshStatusBar()
     }

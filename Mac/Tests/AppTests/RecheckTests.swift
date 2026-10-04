@@ -196,4 +196,72 @@ final class RecheckTests: AppHostTestCase {
         for sub in view.subviews { if let b = button(titled: title, in: sub) { return b } }
         return nil
     }
+
+    // MARK: - §3 keyboard and wheel
+
+    private func folderWith(_ count: Int) throws -> String {
+        let dir = NSTemporaryDirectory() + "recheck-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        for i in 1...count { FileManager.default.createFile(atPath: dir + String(format: "/f%03d.txt", i), contents: Data("x".utf8)) }
+        addTeardownBlock { try? FileManager.default.removeItem(atPath: dir) }
+        return dir
+    }
+
+    private func boundWindow(_ path: String) -> (NSWindow, PanelViewController)? {
+        let c = mainWindow()
+        guard let window = c.window else { return nil }
+        let p = c.focusedPanel
+        var done = false
+        p.navigate(to: path) { _ in done = true }
+        XCTAssertTrue(wait(for: "bound") { done })
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.makeFirstResponder(p.tableView)
+        return (window, p)
+    }
+
+    private func key(_ window: NSWindow, _ chars: String, _ code: UInt16, _ mods: NSEvent.ModifierFlags = []) {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: window.windowNumber,
+                                        context: nil, characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) {
+                window.sendEvent(e)
+            }
+        }
+    }
+
+    /// The list control's keys, measured on 7zFM (rc1-log.txt): Home selects the first item,
+    /// Num * keeps the focus, End focuses and selects the last, Shift+Up focuses the one above
+    /// and selects both, Page Down goes to the last visible row first, Shift+Tab stays in the list.
+    func testListKeysMoveLikeTheListControl() throws {
+        let dir = try folderWith(60)
+        let (window, p) = try XCTUnwrap(boundWindow(dir))
+        XCTAssertEqual(p.selectedIndexes.count, 0)
+        key(window, "\u{F729}", 115, .function)
+        XCTAssertEqual(p.focusedIndex, 0); XCTAssertEqual(p.selectedIndexes, IndexSet(integer: 0))
+        key(window, "*", 67, .numericPad)
+        XCTAssertEqual(p.focusedIndex, 0, "Num * keeps the focus"); XCTAssertEqual(p.selectedIndexes.count, 59)
+        key(window, "*", 67, .numericPad)
+        XCTAssertEqual(p.selectedIndexes, IndexSet(integer: 0))
+        key(window, "\u{F72B}", 119, .function)
+        XCTAssertEqual(p.focusedIndex, 59); XCTAssertEqual(p.selectedIndexes, IndexSet(integer: 59))
+        key(window, "\u{F700}", 126, [.shift, .numericPad, .function])
+        XCTAssertEqual(p.focusedIndex, 58); XCTAssertEqual(p.selectedIndexes, IndexSet(58...59))
+        key(window, "\u{F729}", 115, .function)
+        key(window, "\u{F72D}", 121, .function)                         // Page Down
+        let visible = p.tableView.rows(in: p.tableView.visibleRect.insetBy(dx: 0, dy: 1))
+        XCTAssertEqual(p.focusedIndex, visible.location + visible.length - 1, "to the last visible row first")
+        XCTAssertEqual(p.selectedIndexes.count, 1)
+        key(window, "\u{19}", 48, .shift)
+        XCTAssertTrue(window.firstResponder === p.tableView, "Shift+Tab stays in the list")
+    }
+
+    /// One wheel notch (a line-based scroll event) scrolls three rows, SPI_GETWHEELSCROLLLINES.
+    func testWheelNotchScrollsThreeRows() throws {
+        let dir = try folderWith(120)
+        let (_, p) = try XCTUnwrap(boundWindow(dir))
+        let scroll = try XCTUnwrap(p.tableView.enclosingScrollView)
+        let y0 = scroll.contentView.bounds.origin.y
+        let cg = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0))
+        scroll.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: cg)))
+        XCTAssertEqual(scroll.contentView.bounds.origin.y - y0, 3 * PanelMetrics.rowHeight, accuracy: 0.5)
+    }
 }
