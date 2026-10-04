@@ -431,6 +431,14 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         window?.title = Lang.text(2100, "Options")
     }
 
+    /// The number of pages (PSM_GETTABCONTROL item count).
+    var pageCount: Int { pages.count }
+
+    /// PSM_SETCURSEL: show page `index`.
+    func selectPage(_ index: Int) {
+        tabView.selectTabViewItem(at: index)
+    }
+
     func pageDidChange() {
         applyButton.isEnabled = pages.contains { $0.pageIsChanged }
     }
