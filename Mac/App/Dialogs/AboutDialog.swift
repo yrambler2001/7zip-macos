@@ -95,12 +95,8 @@ final class AboutDialog: NSObject {
         do {
             try SZCodecs.loadCodecs()
         } catch {
-            let alert = NSAlert()
-            alert.messageText = "7-Zip"
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .critical
-            alert.addButton(withTitle: Lang.text(401, "OK"))
-            alert.runModal()
+            // AboutDialog.cpp:40: MessageBoxW(GetParent(), s, "7-Zip", MB_ICONERROR).
+            WinMessageBox.run(error.localizedDescription, icon: .error, owner: parent)
         }
         let dialog = AboutDialog(parent: parent)
         let monitor = dialog.installHelpKeyMonitor()

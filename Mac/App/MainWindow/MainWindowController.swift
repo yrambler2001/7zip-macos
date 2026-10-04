@@ -196,11 +196,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
             panels[0].openLaunchArchive(full, formatHint: formatHint) { [weak self] failure in
                 guard let self, let failure else { return }
                 if let message = failure.launchMessage(fullPath: full) {
-                    let alert = ErrorAlert.make(message: message, style: .critical)
                     if closesWindowOnFailure {
-                        _ = ErrorAlert.run(alert, on: nil)        // MessageBoxW(NULL, ...): no owner
+                        ErrorAlert.run(message, on: nil)          // MessageBoxW(NULL, ...): no owner
                     } else {
-                        ErrorAlert.present(alert, on: self.window)
+                        ErrorAlert.present(message, on: self.window)
                     }
                 }
                 if closesWindowOnFailure { self.window?.close() }

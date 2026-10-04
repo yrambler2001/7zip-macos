@@ -418,6 +418,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     @discardableResult
     func runFolderOperation<T>(_ options: OperationRunner.Options,
                                work: @escaping (SZFolder, OperationRunner) throws -> T) -> Result<T, Error>? {
+        cancelRenameEditing()                               // recheck2: no edit outlives the change
         guard let folder else { return nil }
         // The park block only *enqueues* behind whatever the panel queue is already running, so
         // the worker waits until it is actually parked before it touches the folder.
@@ -1073,7 +1074,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     /// to the main window, which `hostWindow` asks the delegate for, so there is a sheet parent even
     /// then; with no window anywhere the message goes to the log.
     func showError(message: String) {
-        ErrorAlert.present(ErrorAlert.make(message: message), on: hostWindow)
+        ErrorAlert.present(message, on: hostWindow)
     }
 
     /// MessageBox_Error_UnsupportOperation (01 §2.8): lang 6008.

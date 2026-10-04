@@ -204,21 +204,11 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         case .failure(let error):
             // FinalMessage.ErrorMessage, shown with MB_ICONERROR (:1009-1016).
             guard let text = Self.failureMessage(for: error) else { break }
-            let alert = NSAlert()
-            alert.messageText = options.mainTitle
-            alert.informativeText = text
-            alert.alertStyle = .critical
-            alert.addButton(withTitle: Lang.text(401, "OK"))
-            alert.runModal()
+            WinMessageBox.run(text, caption: options.mainTitle, icon: .error, owner: options.parentWindow)
         case .success:
             // FinalMessage.OkMessage is only shown when nothing went wrong (:1023-1034).
             if let okMessage = options.okMessage, messages.isEmpty {
-                let alert = NSAlert()
-                alert.messageText = options.mainTitle
-                alert.informativeText = okMessage
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: Lang.text(401, "OK"))
-                alert.runModal()
+                WinMessageBox.run(okMessage, caption: options.mainTitle, owner: options.parentWindow)   // MB_OK
             } else if !messages.isEmpty && !showedDialog {
                 // Messages without a progress dialog (a fast operation): show them the way
                 // 7zFM does after a drag-and-drop copy (PanelDrag.cpp:1788).

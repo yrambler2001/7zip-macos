@@ -329,15 +329,8 @@ enum CompressCommands {
         return paths
     }
 
+    /// ShowErrorMessage (MyMessages.cpp:16-20): "7-Zip", OK, MB_ICONSTOP.
     static func showError(_ text: String, parent: NSWindow?) {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        if let parent {
-            alert.beginSheetModal(for: parent, completionHandler: nil)
-        } else {
-            alert.runModal()
-        }
+        WinMessageBox.run(text, icon: .error, owner: parent)
     }
 }

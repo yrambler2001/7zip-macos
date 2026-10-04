@@ -174,12 +174,8 @@ final class HashListDialogView: NSView, NSTableViewDataSource, NSTableViewDelega
     private func showItemInfo() {
         let row = tableView.selectedRow
         guard row >= 0, row < strings.count else { return }
-        let alert = NSAlert()
-        alert.messageText = strings[row]
-        alert.informativeText = row < values.count ? values[row] : ""
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        // 7zFM shows the text in CEditDialog; here a plain MB_OK box captioned with the row's name.
+        WinMessageBox.run(row < values.count ? values[row] : "", caption: strings[row], owner: window)
     }
 
     /// DeleteItems (:133-162): removes the selected rows and sets StringsWereChanged.

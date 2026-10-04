@@ -106,25 +106,16 @@ extension PanelViewController {
 
     /// IDS_WANT_UPDATE_MODIFIED_FILE 3009, MB_YESNOCANCEL | MB_ICONQUESTION.
     private func askWriteBack(_ name: String) -> Bool {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "7-Zip"
-        alert.informativeText = Lang.format(
+        let text = Lang.format(
             Lang.text(3009, "File '{0}' was modified.\nDo you want to update it in the archive?"), name)
-        alert.addButton(withTitle: Lang.text(406, "Yes"))      // IDYES, lang 406
-        alert.addButton(withTitle: Lang.text(407, "No"))       // IDNO, lang 407
-        alert.addButton(withTitle: Lang.text(402, "Cancel"))   // IDCANCEL, lang 402
-        return alert.runModal() == .alertFirstButtonReturn
+        return WinMessageBox.run(text, buttons: .yesNoCancel, icon: .question, owner: hostWindow) == .yes
     }
 
     /// IDS_CANNOT_UPDATE_FILE 3010 with the temp copy's path (folderLink.FilePath).
     private func showCannotUpdate(_ path: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "7-Zip"
-        alert.informativeText = Lang.format(Lang.text(3010, "Cannot update file '{0}'"), path)
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        // PanelItemOpen.cpp:617-618: "7-Zip", MB_OK | MB_ICONSTOP.
+        WinMessageBox.run(Lang.format(Lang.text(3010, "Cannot update file '{0}'"), path), icon: .error,
+                          owner: hostWindow)
     }
 
     /// Through the main run loop, not the main queue: the body runs OperationRunner, whose worker

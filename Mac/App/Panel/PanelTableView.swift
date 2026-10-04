@@ -72,6 +72,7 @@ final class PanelTableView: NSTableView {
     }
 
     override func keyDown(with event: NSEvent) {
+        cancelSlowClickRename()
         if panel?.handleListKeyDown(event) == true { return }
         super.keyDown(with: event)
     }
@@ -94,6 +95,8 @@ final class PanelTableView: NSTableView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let row = self.row(at: point)
+        cancelSlowClickRename()
+        cancelHoverSelect()
         if let panel, panel.usesAlternativeSelection, row >= 0 {
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if mods.contains(.command) {                       // Ctrl+click toggles (01 §3.6)
@@ -111,8 +114,141 @@ final class PanelTableView: NSTableView {
             return
         }
         if let panel, row >= 0 { panel.noteClickedRow(row) }
+        // The slow second click (LVS_EDITLABELS): the item was the only selected one and focused
+        // before this click, and the click is on its label.
+        let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let mayRename = !Settings.singleClick && event.clickCount == 1 && mods.isEmpty && row >= 0
+            && panel.map { !$0.usesAlternativeSelection && $0.selectedIndexes == IndexSet(integer: row)
+                           && $0.focusedIndex == row } == true
+            && labelHitRect(row: row).contains(point)
         super.mouseDown(with: event)
+        // NSTableView returns on mouse-up; a drag or a move off the label is not a click.
+        if mayRename, let up = NSApp.currentEvent, up.type == .leftMouseUp,
+           hypot(up.locationInWindow.x - event.locationInWindow.x, up.locationInWindow.y - event.locationInWindow.y) < 4,
+           panel?.selectedIndexes == IndexSet(integer: row) {
+            scheduleSlowClickRename(row: row)
+        }
     }
+
+    // MARK: The slow second click and Single-click hover (recheck2, measured on 7zFM 26.03)
+    //
+    // Slow click (SingleClick off, recheck2-data/win/log.txt "slow-*"): a click on the label of the
+    // item that is already the only selected and focused one starts the in-place rename when no
+    // second click follows within the double-click time (GetDoubleClickTime 550 ms there: the edit
+    // appeared between +550 and +650 ms). A double-click opens instead; a click on the icon, on
+    // another column, or on one of several selected items starts nothing.
+    //
+    // Hover (SingleClick on: LVS_EX_ONECLICKACTIVATE | LVS_EX_TRACKSELECT, "sc1-*"): over an item's
+    // icon or label the cursor is the hand at once and the item is hot (nothing is drawn for it);
+    // after SPI_GETMOUSEHOVERTIME (400 ms) of rest it becomes the selected and focused item. Over
+    // another column, the background or outside the list nothing happens. The "Underline" option
+    // (LVS_EX_UNDERLINEHOT) is commented out of 7zFM 26.03 (App.cpp:88-92), so nothing is
+    // underlined either way.
+
+    private var slowClickTimer: Timer?
+    private var hoverTimer: Timer?
+    private var hoverRow = -1
+    private var hoverArea: NSTrackingArea?
+    /// SPI_GETMOUSEHOVERTIME on the reference PC; macOS has no such setting.
+    static let hoverSelectDelay: TimeInterval = 0.4
+
+    /// LVHT_ONITEMLABEL: the label's fill in the Name column (the whole Name cell's text part).
+    func labelHitRect(row: Int) -> NSRect {
+        guard let panel, row >= 0, row < numberOfRows, row < panel.rows.count,
+              let index = tableColumns.firstIndex(where: { PanelViewController.propID(of: $0) == .name }) else { return .zero }
+        let rowRect = rect(ofRow: row)
+        let column = rect(ofColumn: index)
+        let fill = PanelMetrics.labelFill(columnMinX: column.minX, columnMaxX: column.maxX, text: panel.rows[row].displayName)
+        return NSRect(x: fill.start, y: rowRect.minY, width: max(0, fill.end - fill.start), height: rowRect.height)
+    }
+
+    private func scheduleSlowClickRename(row: Int) {
+        let name = panel.flatMap { row < $0.rows.count ? $0.rows[row].name : nil }
+        let timer = Timer(timeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
+            guard let self, let panel = self.panel else { return }
+            self.slowClickTimer = nil
+            // still the same item, still alone in the selection, no button down, no edit open
+            guard panel.selectedIndexes == IndexSet(integer: row), panel.focusedIndex == row,
+                  row < panel.rows.count, panel.rows[row].name == name, panel.renamingRow == nil,
+                  NSEvent.pressedMouseButtons == 0 else { return }
+            panel.renameFocusedItem()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        slowClickTimer = timer
+    }
+
+    func cancelSlowClickRename() {
+        slowClickTimer?.invalidate()
+        slowClickTimer = nil
+    }
+
+    /// True while a slow click waits for the double-click time (tests).
+    var hasPendingSlowClickRename: Bool { slowClickTimer != nil }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate,
+                                                         .activeInActiveApp, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    /// The row whose item area (icon and label, or the whole row with FullRow) is under `point`.
+    private func hotRow(at point: NSPoint) -> Int {
+        let row = self.row(at: point)
+        return isOnItem(point, row: row) ? row : -1
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard Settings.singleClick else { cancelHoverSelect(); return }
+        let row = hotRow(at: convert(event.locationInWindow, from: nil))
+        (row >= 0 ? NSCursor.pointingHand : NSCursor.arrow).set()
+        guard row != hoverRow else { return }
+        cancelHoverSelect()
+        hoverRow = row
+        guard row >= 0 else { return }
+        let timer = Timer(timeInterval: Self.hoverSelectDelay, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.hoverTimer = nil
+            self.hoverSelect(row)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        hoverTimer = timer
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if Settings.singleClick, hotRow(at: convert(event.locationInWindow, from: nil)) >= 0 {
+            NSCursor.pointingHand.set()
+        } else {
+            super.cursorUpdate(with: event)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        cancelHoverSelect()
+        hoverRow = -1
+    }
+
+    private func cancelHoverSelect() {
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+    }
+
+    /// LVS_EX_TRACKSELECT: the item rested on becomes the selected and focused one.
+    func hoverSelect(_ row: Int, checkPointer: Bool = true) {
+        guard Settings.singleClick, let panel, row >= 0, row < panel.rows.count,
+              NSEvent.pressedMouseButtons == 0, panel.renamingRow == nil else { return }
+        if checkPointer, let window, hotRow(at: convert(window.mouseLocationOutsideOfEventStream, from: nil)) != row {
+            return
+        }
+        panel.setFocus(row)
+    }
+
+    /// True while a hover waits for the hover time (tests).
+    var hasPendingHoverSelect: Bool { hoverTimer != nil }
 
     // MARK: Rubber band (LVS_REPORT marquee, listfeel.md §6)
 

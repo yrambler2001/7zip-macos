@@ -21,6 +21,7 @@ extension PanelViewController {
 
     /// The same with the rows captured by the caller (a move that already killed the selection).
     func deleteItems(rowIndices: [Int], toTrash: Bool, confirm: Bool) {
+        cancelRenameEditing()
         guard let snap = snapshot else { return }
         guard snap.supportsOperations else { showUnsupportedOperation(); return }
         guard checkBeforeUpdate() else { return }
@@ -53,31 +54,24 @@ extension PanelViewController {
 
     /// The confirmation of 01 §3.11: captions 6100 / 6101 / 6102, texts 6103 / 6104 / 6105.
     private func confirmDelete(_ targets: [PanelRow]) -> Bool {
-        let alert = NSAlert()
+        let caption: String
+        let text: String
         if targets.count == 1 {
             let row = targets[0]
-            alert.messageText = row.isDirectory ? Lang.text(6101, "Confirm Folder Delete")
-                                                : Lang.text(6100, "Confirm File Delete")
+            caption = row.isDirectory ? Lang.text(6101, "Confirm Folder Delete")
+                                      : Lang.text(6100, "Confirm File Delete")
             let template = row.isDirectory
-                ? Lang.get(6104, "Are you sure you want to delete the folder '{0}'?")
+                ? Lang.get(6104, "Are you sure you want to delete the folder '{0}' and all its contents?")
                 : Lang.get(6103, "Are you sure you want to delete '{0}'?")
-            alert.informativeText = Lang.format(template, row.name)
+            text = Lang.format(template, row.name)
         } else {
-            alert.messageText = Lang.text(6102, "Confirm Multiple File Delete")
-            alert.informativeText = Lang.format(Lang.get(6105, "Are you sure you want to delete these {0} items?"),
-                                               "\(targets.count)")
+            caption = Lang.text(6102, "Confirm Multiple File Delete")
+            text = Lang.format(Lang.get(6105, "Are you sure you want to delete these {0} items?"), "\(targets.count)")
         }
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Lang.text(406, "Yes"))
-        alert.addButton(withTitle: Lang.text(407, "No"))
-        // MB_YESNOCANCEL (PanelOperations.cpp:247-248): 7zFM 25.01 shows Yes / No / Cancel.
-        alert.addButton(withTitle: Lang.text(402, "Cancel"))
-        if let window = view.window {
-            // A sheet cannot answer synchronously here, so the confirmation is app-modal, like
-            // 7zFM's MessageBoxW.
-            alert.window.appearance = window.appearance
-        }
-        return alert.runModal() == .alertFirstButtonReturn
+        // PanelOperations.cpp:247-248: MB_YESNOCANCEL | MB_ICONQUESTION, only Yes deletes
+        // (measured: recheck2-data/win/fm-delete.txt).
+        return WinMessageBox.run(text, caption: caption, buttons: .yesNoCancel, icon: .question,
+                                 owner: hostWindow) == .yes
     }
 
     // MARK: - Rename (PanelOperations.cpp:478, in-place label editing)
@@ -107,6 +101,28 @@ extension PanelViewController {
         field.drawsBackground = true
         field.delegate = self
         view.window?.makeFirstResponder(field)
+    }
+
+    /// LVN_ENDLABELEDIT with no text: an operation that changes the folder while a label is being
+    /// edited (File > Delete after a slow click, recheck2) cancels the edit instead of letting it
+    /// commit later against a row index that no longer names the same item.
+    func cancelRenameEditing() {
+        guard let index = renamingRow else { return }
+        renamingRow = nil                                   // controlTextDidEndEditing now ignores it
+        let identifier = NSUserInterfaceItemIdentifier(String(SZPropID.name.rawValue))
+        let column = tableView.column(withIdentifier: identifier)
+        if column >= 0, index < tableView.numberOfRows,
+           let cell = tableView.view(atColumn: column, row: index, makeIfNecessary: false) as? NSTableCellView,
+           let field = cell.textField {
+            field.abortEditing()
+            (cell as? PanelCellView)?.editingConstraint?.isActive = false
+            field.isEditable = false
+            field.isSelectable = false
+            field.isBordered = false
+            field.drawsBackground = false
+            if index < rows.count { field.stringValue = rows[index].displayName }
+        }
+        if view.window?.firstResponder is NSText { view.window?.makeFirstResponder(tableView) }
     }
 
     private func renameWithDialog(_ index: Int) {

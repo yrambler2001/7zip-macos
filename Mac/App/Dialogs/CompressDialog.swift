@@ -58,10 +58,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         guard (try? SZCodecs.loadCodecs()) != nil else { return nil }
         let controller = CompressDialogController(input: input)
         guard controller.buildFormatList() else {
-            let alert = NSAlert()
-            alert.alertStyle = .critical
-            alert.messageText = "No Update Engines"
-            alert.runModal()
+            WinMessageBox.run("No Update Engines", icon: .error, owner: input.parentWindow)   // MB_ICONERROR
             return nil
         }
         controller.buildWindow()
@@ -985,14 +982,9 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
             if let last = volumeSizes.last, last < (100 << 10) {
                 let template = Lang.text(7308, "Specified volume size: {0} bytes.\n"
                                                + "Are you sure you want to split archive into such volumes?")
-                let alert = NSAlert()
-                alert.alertStyle = .warning
-                alert.messageText = "7-Zip"
-                alert.informativeText = Lang.format(template, "\(last)")
-                alert.addButton(withTitle: Lang.text(406, "Yes"))      // MY_IDYES
-                alert.addButton(withTitle: Lang.text(407, "No"))       // MY_IDNO
-                alert.addButton(withTitle: Lang.text(402, "Cancel"))
-                if alert.runModal() != .alertFirstButtonReturn { return }
+                // CompressDialog.cpp:1230-1231: "7-Zip", MB_YESNOCANCEL | MB_ICONQUESTION.
+                if WinMessageBox.run(Lang.format(template, "\(last)"), buttons: .yesNoCancel, icon: .question,
+                                     owner: window) != .yes { return }
             }
         }
 
@@ -1087,12 +1079,9 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         formatOptions[currentFormat.name] = fo
     }
 
+    /// CompressDialog.h:367: "7-Zip", MB_ICONERROR.
     private func showError(_ text: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.beginSheetModal(for: window, completionHandler: nil)
+        WinMessageBox.run(text, icon: .error, owner: window)
     }
 
     // MARK: NSComboBoxDelegate / NSTextFieldDelegate

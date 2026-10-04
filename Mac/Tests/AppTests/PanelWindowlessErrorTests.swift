@@ -72,30 +72,35 @@ final class PanelWindowlessErrorTests: AppHostTestCase {
 
     private struct ModalSighting {
         var window: NSWindow?
-        var sheetParent: NSWindow?
-        var isAppModal = false
+        /// The window the message box belongs to (`WinMessageBoxWindow.ownerWindow`).
+        var owner: NSWindow?
+        /// A modal session that was *not* a message box (an NSAlert, a stray dialog).
+        var isOtherModal = false
     }
 
-    /// Runs `body` and then pumps the run loop for `settle` seconds, recording the first modal
-    /// session or sheet that comes up. An app-modal session is ended with `NSApp.stopModal()` -- not
-    /// `abortModal()`, which raises `NSAbortModalException` and would unwind out of this timer.
+    /// Runs `body` and then pumps the run loop for `settle` seconds, recording the first message box
+    /// (answered at once with its Esc answer) and any other modal session, which is ended with
+    /// `NSApp.stopModal()` -- not `abortModal()`, which raises `NSAbortModalException` and would
+    /// unwind out of this timer. Since recheck2 an error is a `WinMessageBox`: modal, as Windows'
+    /// MessageBoxW is, and owned by the panel's window (`hostWindow`), never by nothing.
     private func sightingWhile(_ what: String, settle: TimeInterval = 3, shot: String? = nil,
                                _ body: () -> Void) -> ModalSighting {
         var sighting = ModalSighting()
-        let known = Set(NSApp.windows.filter { $0.isVisible }.map(ObjectIdentifier.init))
-        let timer = Timer(timeInterval: 0.02, repeats: true) { _ in
+        WinMessageBox.observers = [{ box in
             if sighting.window == nil {
-                let fresh = NSApp.windows.first {
-                    $0.isVisible && !known.contains(ObjectIdentifier($0))
-                        && ($0.isSheet || $0 is NSPanel || $0.styleMask.contains(.titled))
-                }
-                if let window = fresh ?? NSApp.modalWindow {
-                    sighting.window = window
-                    sighting.sheetParent = window.sheetParent
-                }
+                sighting.window = box
+                sighting.owner = box.ownerWindow
             }
-            if let modal = NSApp.modalWindow {
-                sighting.isAppModal = true
+            RunLoop.main.perform(inModes: [.modalPanel, .default]) { [weak box] in
+                guard let box, box.isVisible else { return }
+                if let shot { _ = self.attach(box, shot) }
+                box.answer(box.boxButtons.escapeResult ?? .no)
+            }
+        }]
+        defer { WinMessageBox.observers = [recordAndDismissReports] }
+        let timer = Timer(timeInterval: 0.02, repeats: true) { _ in
+            if let modal = NSApp.modalWindow, !(modal is WinMessageBoxWindow) {
+                sighting.isOtherModal = true
                 if sighting.window == nil { sighting.window = modal }
                 NSApp.stopModal()
             }
@@ -110,14 +115,10 @@ final class PanelWindowlessErrorTests: AppHostTestCase {
         }
         timer.invalidate()
         // Whatever came up, leave nothing behind for the next case.
-        if let window = sighting.window, window.isVisible {
-            if let shot { attach(window, shot) }
-            if let parent = window.sheetParent { parent.endSheet(window, returnCode: .cancel) }
-            window.orderOut(nil)
-        }
+        if let window = sighting.window, window.isVisible { window.orderOut(nil) }
         print("MODALFIX | \(what) | window: \(sighting.window.map { "\(type(of: $0))" } ?? "none")"
-              + " | app-modal: \(sighting.isAppModal) | sheet of: "
-              + (sighting.sheetParent == nil ? "nothing" : "a window"))
+              + " | other modal: \(sighting.isOtherModal) | owned by: "
+              + (sighting.owner == nil ? "nothing" : "a window"))
         return sighting
     }
 
@@ -151,12 +152,12 @@ final class PanelWindowlessErrorTests: AppHostTestCase {
         }
         Settings.timestampShowUTC = false
 
-        XCTAssertFalse(sighting.isAppModal,
-                       "a panel with no window opened an app-modal session; nothing can dismiss it "
+        XCTAssertFalse(sighting.isOtherModal,
+                       "a panel with no window opened a modal session that is not a message box "
                        + "(Mac/docs/reports/fastui.md 6.10)")
-        if let window = sighting.window {
-            XCTAssertNotNil(window.sheetParent,
-                            "an error a panel reports must be a sheet of the window that owns it")
+        if sighting.window != nil {
+            XCTAssertTrue(sighting.owner === controller.window,
+                          "an error a panel reports must be owned by the window that owns the panel")
         }
         XCTAssertNil(NSApp.modalWindow, "the app must be left with no modal session")
         // Evidence for a human: the window is still drawing, one panel, no alert over it. On the
@@ -181,10 +182,10 @@ final class PanelWindowlessErrorTests: AppHostTestCase {
         let sighting = sightingWhile("a closed panel reports an error") {
             closed.showError(message: "modalfix: a deliberate error from a closed panel")
         }
-        XCTAssertFalse(sighting.isAppModal, "the error must not be app-modal")
+        XCTAssertFalse(sighting.isOtherModal, "the error must be a message box")
         XCTAssertNotNil(sighting.window, "the error should have been shown")
-        XCTAssertTrue(sighting.sheetParent === controller.window,
-                      "the error must be a sheet of the panel's own window")
+        XCTAssertTrue(sighting.owner === controller.window,
+                      "the error must be owned by the panel's own window")
     }
 
     /// Deferring must not become *swallowing*. A panel that was closed while its folder was deleted is
@@ -214,9 +215,9 @@ final class PanelWindowlessErrorTests: AppHostTestCase {
             controller.switchOnOffOnePanel()                 // reopen it
         }
 
-        XCTAssertFalse(sighting.isAppModal, "reopening must not open an app-modal session either")
-        if let window = sighting.window {
-            XCTAssertNotNil(window.sheetParent, "an error shown on reopen must be a sheet")
+        XCTAssertFalse(sighting.isOtherModal, "reopening must not open any other modal session either")
+        if sighting.window != nil {
+            XCTAssertNotNil(sighting.owner, "an error shown on reopen must be owned by a window")
         }
         let movedAway = !hidden.currentPath.hasPrefix(scratch)
         let listingIsGone = !hidden.rows.contains { $0.name == "a.txt" }

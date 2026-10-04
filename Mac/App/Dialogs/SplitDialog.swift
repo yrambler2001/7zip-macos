@@ -78,12 +78,8 @@ final class SplitDialog: NSObject {
     /// and the dialog stays open.
     @objc private func okClicked() {
         guard let sizes = SZSplitFile.parseVolumeSizes(volumeCombo.stringValue), !sizes.isEmpty else {
-            let alert = NSAlert()
-            alert.messageText = "7-Zip"
-            alert.informativeText = Lang.text(7307, "Incorrect volume size")
-            alert.alertStyle = .critical
-            alert.addButton(withTitle: Lang.text(401, "OK"))
-            alert.beginSheetModal(for: window)
+            // SplitDialog.cpp:110: "7-Zip", MB_ICONERROR.
+            WinMessageBox.run(Lang.text(7307, "Incorrect volume size"), icon: .error, owner: window)
             return
         }
         result = Result(path: pathCombo.stringValue, volumeSizes: sizes.map { $0.uint64Value })
