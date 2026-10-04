@@ -596,6 +596,9 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
         ENABLE_HARDENED_RUNTIME: NO
         COMBINE_HIDPI_IMAGES: YES
+        # dlgfeel (requests.md listfeel -> packaging): the Apple-events entitlement Finder's Get
+        # Info needs under the hardened runtime; harmless in the ad-hoc builds.
+        CODE_SIGN_ENTITLEMENTS: Resources/App.entitlements
 
   # ---------------------------------------------------------------------------
   # fastui scope: the test-only app copies (see the SevenZipTestApp template).

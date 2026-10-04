@@ -414,10 +414,8 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
     func progressAskPassword(forEncryptionCancelled cancelled: UnsafeMutablePointer<ObjCBool>) -> String? {
         passwordWasAsked = true
         if let password { return password }
-        var options = PasswordDialog.Options()
-        options.subject = self.options.titleFileName
-        options.requiresVerification = true
-        options.showsEncryptFileNames = self.options.showsEncryptFileNames
+        // CUpdateCallbackGUI2::CryptoGetTextPassword2: the plain CPasswordDialog (dlgfeel).
+        let options = PasswordDialog.Options()
         let result = onMain { () -> PasswordDialog.Result? in
             PasswordDialog.run(options, parent: self.dialog?.window ?? self.options.parentWindow)
         }

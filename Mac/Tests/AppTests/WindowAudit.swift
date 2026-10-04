@@ -122,7 +122,16 @@ enum WindowAudit {
                     || frame.minY < content.bounds.minY - slack || frame.maxY > content.bounds.maxY + slack {
                     findings.append("CLIPPED \(childPath): \(rect(frame)) leaves \(rect(content.bounds))")
                 }
-                if isControl(child) { siblings.append((child, frame, childPath)) }
+                // Overlap is judged on alignment rects: a label's frame reaches 2 pt past its text
+                // on each side, so two statics that touch on Windows (dlgfeel lays them out on the
+                // .rc rects) share those points without covering each other.
+                if isControl(child) {
+                    var aligned = frame
+                    if let field = child as? NSTextField, !field.isEditable, !field.isBezeled {
+                        aligned = frame.insetBy(dx: 2, dy: 0)
+                    }
+                    siblings.append((child, aligned, childPath))
+                }
                 if let tight = tightText(child, path: childPath) { findings.append(tight) }
             }
             if !isBoundary(child) {
@@ -144,7 +153,8 @@ enum WindowAudit {
     /// A scroll view's content is meant to run past the edge and be scrolled to; a tab view's
     /// unselected pages are laid out off-screen; a menu is not part of the window.
     private static func isBoundary(_ view: NSView) -> Bool {
-        view is NSScrollView || view is NSTabView || view is NSClipView
+        // A text field's subviews are its field editor's, laid out by AppKit while it edits.
+        view is NSScrollView || view is NSTabView || view is NSClipView || view is NSTextField
     }
 
     /// Views that draw their own content and must not cover a sibling.

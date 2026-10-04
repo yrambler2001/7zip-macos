@@ -121,22 +121,17 @@ final class OptGapsTests: AppHostTestCase {
         XCTAssertEqual(cellText(table, column: "user", row: row), before)
     }
 
-    /// The columns are sized to their content, so nothing the System and Language lists exist to
-    /// show is cut (requests.md, `packaging` -> `options`).
-    func testSystemAndLanguageColumnsFitTheirContent() throws {
+    /// The System list has 7zFM's columns: Type 80 px and the user's 152 px, centred (SystemPage.cpp
+    /// 166-211, dlgfeel finding 13); the Language page is one drop-down list (finding 21).
+    func testSystemColumnsAndLanguageComboAreWindows() throws {
         let system = try optionsPage(OptionsSystemPage.self)
         let systemTable = try XCTUnwrap(firstTable(in: system.view))
-        for column in systemTable.tableColumns {
-            XCTAssertGreaterThanOrEqual(column.width + 1, column.headerCell.cellSize.width,
-                                        "System column '\(column.title)' cuts its header")
-        }
+        XCTAssertEqual(systemTable.tableColumns.map(\.identifier.rawValue), ["type", "user"])
+        XCTAssertEqual(systemTable.tableColumns.map(\.width), [80, 152])
+        XCTAssertEqual(systemTable.tableColumns[1].headerCell.alignment, .center)
         let language = try optionsPage(OptionsLanguagePage.self)
-        let languageTable = try XCTUnwrap(firstTable(in: language.view))
-        let lines = languageTable.tableColumns[languageTable.column(withIdentifier: NSUserInterfaceItemIdentifier("lines"))]
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let total = SZLang.shared.englishStringCount
-        let widest = ("\(total) / \(total) = 100%" as NSString).size(withAttributes: [.font: font]).width
-        XCTAssertGreaterThan(lines.width, widest, "the Strings column cuts \"\(total) / \(total) = 100%\"")
+        XCTAssertNil(firstTable(in: language.view), "the Language page is a combo box, not a list")
+        XCTAssertEqual(language.comboTitles.first, "English : English  ---")
     }
 
     // MARK: - Options > Language (01b section 4.9, parity.md B 14 / D 12)
@@ -294,7 +289,9 @@ final class OptGapsTests: AppHostTestCase {
         }) { window in
             func walk(_ view: NSView) {
                 if let field = view as? NSTextField, !field.isEditable,
-                   Bidi.stripped(field.stringValue) == "الملفات: 1" { fields.append(field) }
+                   Bidi.stripped(field.stringValue).components(separatedBy: "\n").contains("الملفات: 1") {
+                    fields.append(field)
+                }
                 view.subviews.forEach(walk)
             }
             window.contentView.map(walk)
@@ -399,65 +396,6 @@ final class OptGapsTests: AppHostTestCase {
         useLanguage("-")
     }
 
-    /// Regression (`mac/syslayout`): the System page's "Associate 7-Zip with:" label shares a row
-    /// with a spacer and the +/-/* buttons. Its width there was ambiguous, and
-    /// `OptionsPageBase.viewDidLayout` wrote whatever width the solver picked back into
-    /// `preferredMaxLayoutWidth`, so in Ukrainian it flipped between 94.5 and 63.5 pt on every pass
-    /// until AppKit raised NSGenericException "more Update Constraints in Window passes than there
-    /// are views in the window". The flip depends on the solver's previous answer, so this test
-    /// seeds the label with the narrow widths seen in the failing run, lays the page out, and
-    /// requires the row to be unambiguous, the label to stay on one line at its full width, and
-    /// the width feedback to settle in a pass or two. Before the fix it raised the exception.
-    func testSystemPageHeaderLayoutSettles() throws {
-        continueAfterFailure = true
-        let window = try XCTUnwrap(OptionsWindowController.shared.window)
-        for code in ["-", "uk", "de", "ru", "ar", "he", "ja"] {
-            useLanguage(code)
-            XCTAssertTrue(ModalProbe.present({ OptionsWindowController.showOptions() }) { _ in })
-            let content = try XCTUnwrap(window.contentView)
-            let tabs = try XCTUnwrap(Self.firstTabView(in: content))
-            let item = try XCTUnwrap(tabs.tabViewItems.first { $0.viewController is OptionsSystemPage })
-            tabs.selectTabViewItem(item)
-            let page = try XCTUnwrap(item.viewController as? OptionsSystemPage)
-            content.layoutSubtreeIfNeeded()
-            let caption = Lang.text(2201, "Associate 7-Zip with:")
-            let label = try XCTUnwrap(Self.textField(in: page.view) { $0.stringValue == caption },
-                                      "no IDT_SYSTEM_ASSOCIATE label in '\(code)'")
-            let oneLine = ceil((caption as NSString).size(withAttributes: [.font: label.font!]).width)
-            for seed: CGFloat in [4, 63.5, 94.5, 200, 0] {
-                label.preferredMaxLayoutWidth = seed
-                label.invalidateIntrinsicContentSize()
-                page.view.needsLayout = true
-                let before = page.labelWidthUpdates
-                content.layoutSubtreeIfNeeded()
-                window.displayIfNeeded()
-                let passes = page.labelWidthUpdates - before
-                XCTAssertLessThanOrEqual(passes, 2, "'\(code)', seed \(seed): the label width did not settle")
-                XCTAssertFalse(label.hasAmbiguousLayout, "'\(code)': the header row is ambiguous")
-                for view in label.superview?.subviews ?? [] {
-                    XCTAssertFalse(view.hasAmbiguousLayout, "'\(code)': \(type(of: view)) in the header is ambiguous")
-                }
-                if let row = label.superview,
-                   let buttons = row.subviews.first(where: { $0 !== label && $0 is NSStackView }) {
-                    XCTAssertFalse(label.frame.intersects(buttons.frame),
-                                   "'\(code)': the label \(label.frame) runs into the buttons \(buttons.frame)")
-                    // Alignment rects: a label's frame reaches 2 pt past its text on each side.
-                    let slack = row.bounds.insetBy(dx: -1, dy: -1)
-                    let labelRect = label.alignmentRect(forFrame: label.frame)
-                    let buttonsRect = buttons.alignmentRect(forFrame: buttons.frame)
-                    XCTAssertTrue(slack.contains(labelRect) && slack.contains(buttonsRect),
-                                  "'\(code)': the header row \(row.bounds) does not hold \(labelRect) / \(buttonsRect)")
-                    XCTAssertLessThan(buttons.frame.width, buttons.fittingSize.width + 1,
-                                      "'\(code)': the button group stretched to \(buttons.frame.width) pt")
-                } else {
-                    XCTFail("'\(code)': no button group next to the label")
-                }
-                XCTAssertGreaterThanOrEqual(label.frame.width + 1, oneLine,
-                                            "'\(code)', seed \(seed): '\(caption)' wraps in \(label.frame.width) pt")
-            }
-            ModalProbe.close(window)
-        }
-    }
 
     static func textField(in view: NSView, where match: (NSTextField) -> Bool) -> NSTextField? {
         if let field = view as? NSTextField, match(field) { return field }

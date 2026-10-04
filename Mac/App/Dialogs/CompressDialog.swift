@@ -123,13 +123,14 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
     private let showPasswordBox = NSButton()                          // IDX_PASSWORD_SHOW 3803
     private let encryptionMethodCombo = NSPopUpButton()               // IDC_COMPRESS_ENCRYPTION_METHOD 122
     private let encryptNamesBox = NSButton()                          // IDX_COMPRESS_ENCRYPT_FILE_NAMES 4016
+    /// macOS addition the user asked for (dlgfeel finding 28): in the Options group, under
+    /// IDX_COMPRESS_DEL. Off by default; on, the archive gets no AppleDouble `._*` files, no
+    /// `.DS_Store` / `__MACOSX` and no resource-fork or extended-attribute streams.
+    private let excludeMacBox = NSButton()
     private var encryptionGroupViews: [NSView] = []
-    private var encryptionGroupBox: NSBox!
-    /// Grid rows that are shown / hidden as a whole, like Windows' ShowItem_Bool.
-    private var reenterRow: NSGridRow!
-    private var encryptNamesRow: NSGridRow!
-    private var memoryRow: NSGridRow!
-    private var memoryDeRow: NSGridRow!
+    private let optionsGroup = WinGroupBox(title: "")                 // IDG_COMPRESS_OPTIONS 4011
+    private let encryptionGroup = WinGroupBox(title: "")              // IDG_COMPRESS_ENCRYPTION 4014
+    private let enterLabel = DialogKit.label("")                      // IDT_PASSWORD_ENTER 3801
 
     // Labels that need enabling/hiding with their control.
     private let methodLabel = DialogKit.label("")                     // IDT_COMPRESS_METHOD 4005
@@ -206,6 +207,14 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
 
     // MARK: - Window construction
 
+    /// The caption of the macOS-only checkbox (no lang id: no language file has it).
+    static let excludeMacResourceForksTitle = "Exclude Mac resource forks"
+
+    /// The extra checkbox takes one more checkbox row (16 DLU) in the Options group, so the
+    /// group and everything in the Encryption group below it move down by that much; the
+    /// Encryption group still ends 16 DLU above the button row.
+    static let macRowDLU = 16
+
     private func buildWindow() {
         window = DialogKit.window(title: Lang.text(4000, "Add to Archive"), resizable: false)
 
@@ -220,7 +229,6 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         browseButton.bezelStyle = .rounded
         browseButton.target = self
         browseButton.action = #selector(browseForArchive(_:))
-        browseButton.setContentHuggingPriority(.required, for: .horizontal)
 
         for combo in [formatCombo, levelCombo, methodCombo, dictionaryCombo, orderCombo,
                       solidCombo, threadsCombo, memUseCombo, updateModeCombo, pathModeCombo,
@@ -240,8 +248,6 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         optionsButton.bezelStyle = .rounded
         optionsButton.target = self
         optionsButton.action = #selector(showOptionsSheet(_:))
-        optionsSummary.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-        optionsSummary.maximumNumberOfLines = 2
 
         sfxBox.setButtonType(.switch)
         sfxBox.title = Lang.text(4012, "Create SFX archive")
@@ -251,6 +257,9 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         sharedBox.title = Lang.text(4013, "Compress shared files")
         deleteBox.setButtonType(.switch)
         deleteBox.title = Lang.text(4019, "Delete files after compression")
+        excludeMacBox.setButtonType(.switch)
+        excludeMacBox.title = Self.excludeMacResourceForksTitle
+        excludeMacBox.setAccessibilityIdentifier("compressExcludeMacResourceForks")
 
         showPasswordBox.setButtonType(.switch)
         showPasswordBox.title = Lang.dialogText(4000, 3803, "Show Password")
@@ -266,190 +275,83 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         threadsLabel.stringValue = Lang.dialogText(4000, 4009, "Number of CPU threads:")
         memoryLabel.stringValue = Lang.text(4017, "Memory usage for Compressing:")
         memoryDeLabel.stringValue = Lang.text(4018, "Memory usage for Decompressing:")
-
-        // NSGridView sizes a cell to its view's intrinsic width, and a text field's is 0, so
-        // every editable control gets a minimum width (the .rc gives the left column 192 du).
-        for control in [formatCombo, levelCombo, methodCombo, dictionaryCombo, orderCombo,
-                        solidCombo, memUseCombo, updateModeCombo, pathModeCombo] as [NSControl] {
-            control.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
-            control.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        }
-        threadsCombo.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
-        encryptionMethodCombo.widthAnchor.constraint(greaterThanOrEqualToConstant: 150).isActive = true
-        for field in [volumeCombo, parametersField] as [NSControl] {
-            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
-            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        }
-        for field in [password1Field, password1Plain, password2Field] as [NSControl] {
-            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 170).isActive = true
-            field.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        }
-        memoryValueLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-        optionsSummary.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        let content = NSStackView()
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 10
-
-        // --- top: Archive: + folder line + name combo + browse
-        let topGrid = NSGridView(views: [
-            [DialogKit.label(Lang.text(4001, "Archive:")), folderLabel],
-        ])
-        topGrid.rowSpacing = 4
-        topGrid.columnSpacing = 8
-        let nameRow = NSStackView(views: [archiveCombo, browseButton])
-        nameRow.orientation = .horizontal
-        nameRow.spacing = 6
-        archiveCombo.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        content.addArrangedSubview(topGrid)
-        content.addArrangedSubview(nameRow)
-        nameRow.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-
-        // --- middle: two columns
-        let left = buildLeftColumn()
-        let right = buildRightColumn()
-        let columns = NSStackView(views: [left, right])
-        columns.orientation = .horizontal
-        columns.alignment = .top
-        columns.spacing = 20
-        content.addArrangedSubview(columns)
-
-        // --- bottom: buttons
-        let okButton = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okPressed(_:)), key: "\r")
-        let cancelButton = DialogKit.button(Lang.text(402, "Cancel"), target: self,
-                                            action: #selector(cancelPressed(_:)), key: "\u{1b}")
-        let helpButton = DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(helpPressed(_:)))
-        let spacer = NSView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let buttons = NSStackView(views: [helpButton, spacer, cancelButton, okButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-        content.addArrangedSubview(buttons)
-        buttons.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-
-        DialogKit.install(content, in: window, parent: input.parentWindow, minimumWidth: 720)
-        window.initialFirstResponder = archiveCombo
-    }
-
-    private func buildLeftColumn() -> NSView {
-        let memUseRow = NSStackView(views: [memUseCombo, memoryValueLabel])
-        memUseRow.orientation = .horizontal
-        memUseRow.spacing = 8
-        memoryValueLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        let threadsRow = NSStackView(views: [threadsCombo, hardwareThreadsLabel])
-        threadsRow.orientation = .horizontal
-        threadsRow.spacing = 8
-
-        let grid = NSGridView(views: [
-            [DialogKit.label(Lang.text(4003, "Archive format:")), formatCombo],     // IDT_COMPRESS_FORMAT 4003
-            [DialogKit.label(Lang.text(4004, "Compression level:")), levelCombo],   // IDT_COMPRESS_LEVEL 4004
-            [methodLabel, methodCombo],
-            [dictionaryLabel, dictionaryCombo],
-            [orderLabel, orderCombo],
-            [solidLabel, solidCombo],
-            [threadsLabel, threadsRow],
-            [memoryLabel, memUseRow],
-            [memoryDeLabel, memoryDeValueLabel],
-            [DialogKit.label(Lang.dialogText(4000, 7302, "Split to volumes, bytes:")), volumeCombo],  // IDT_SPLIT_TO_VOLUMES 7302
-            [DialogKit.label(Lang.text(4010, "Parameters:")), parametersField],      // IDT_COMPRESS_PARAMETERS 4010
-        ])
-        grid.rowSpacing = 6
-        grid.columnSpacing = 8
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 1).xPlacement = .fill
-        memoryRow = grid.row(at: 7)
-        memoryDeRow = grid.row(at: 8)
-
-        let optionsRow = NSStackView(views: [optionsButton, optionsSummary])
-        optionsRow.orientation = .horizontal
-        optionsRow.spacing = 8
-
-        let column = NSStackView(views: [grid, optionsRow])
-        column.orientation = .vertical
-        column.alignment = .leading
-        column.spacing = 10
-        grid.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
-        column.widthAnchor.constraint(greaterThanOrEqualToConstant: 380).isActive = true
-        return column
-    }
-
-    private func buildRightColumn() -> NSView {
-        let modeGrid = NSGridView(views: [
-            [DialogKit.label(Lang.text(4002, "Update mode:")), updateModeCombo],   // IDT_COMPRESS_UPDATE_MODE 4002
-            [DialogKit.label(Lang.text(3410, "Path mode:")), pathModeCombo],       // IDT_COMPRESS_PATH_MODE 3410
-        ])
-        modeGrid.rowSpacing = 6
-        modeGrid.columnSpacing = 8
-        modeGrid.column(at: 0).xPlacement = .trailing
-
-        // IDG_COMPRESS_OPTIONS 4011
-        let optionsStack = NSStackView(views: [sfxBox, sharedBox, deleteBox])
-        optionsStack.orientation = .vertical
-        optionsStack.alignment = .leading
-        optionsStack.spacing = 4
-        let optionsGroup = NSBox()
-        optionsGroup.title = Lang.text(4011, "Options")
-        optionsGroup.contentView = wrap(optionsStack)
-
-        // IDG_COMPRESS_ENCRYPTION 4014
-        let enterLabel = DialogKit.label(Lang.dialogText(4000, 3801, "Enter password:"))       // IDT_PASSWORD_ENTER 3801
+        enterLabel.stringValue = Lang.dialogText(4000, 3801, "Enter password:")
         password2Label.stringValue = Lang.text(3802, "Reenter password:")
-        // The secure field and the plain one occupy the same cell; "Show Password" swaps them
-        // (UpdatePasswordControl clears the password char on Windows).
+        optionsGroup.title = Lang.text(4011, "Options")
+        encryptionGroup.title = Lang.text(4014, "Encryption")
+        // The secure field and the plain one share IDE_COMPRESS_PASSWORD1's rect; "Show Password"
+        // swaps them (UpdatePasswordControl clears the password char on Windows).
         password1Plain.isHidden = true
-        let passwordCell = NSView()
-        for field in [password1Field, password1Plain] as [NSTextField] {
-            field.translatesAutoresizingMaskIntoConstraints = false
-            passwordCell.addSubview(field)
-            NSLayoutConstraint.activate([
-                field.leadingAnchor.constraint(equalTo: passwordCell.leadingAnchor),
-                field.trailingAnchor.constraint(equalTo: passwordCell.trailingAnchor),
-                field.topAnchor.constraint(equalTo: passwordCell.topAnchor),
-                field.bottomAnchor.constraint(equalTo: passwordCell.bottomAnchor),
-            ])
+
+        // IDD_COMPRESS 4000 (CompressDialog.rc): 416 x 336 DLU = 624 x 546 px, fixed size; every
+        // control on its template rect (RcLayout, reports/dlgfeel.md "Add to Archive").
+        let rc = RcDialog(4000)
+        let form = RcFormView()
+        form.add(folderLabel, rc, 130)
+        form.add(DialogKit.label(Lang.text(4001, "Archive:")), rc, 4001)          // IDT_COMPRESS_ARCHIVE 4001
+        form.add(archiveCombo, rc, 100)
+        form.add(browseButton, rc, 101)
+        // the left column
+        form.add(DialogKit.label(Lang.text(4003, "Archive format:")), rc, 4003)   // IDT_COMPRESS_FORMAT 4003
+        form.add(formatCombo, rc, 104)
+        form.add(DialogKit.label(Lang.text(4004, "Compression level:")), rc, 4004) // IDT_COMPRESS_LEVEL 4004
+        form.add(levelCombo, rc, 102)
+        form.add(methodLabel, rc, 4005)
+        form.add(methodCombo, rc, 106)
+        form.add(dictionaryLabel, rc, 4006)
+        form.add(dictionaryCombo, rc, 107)
+        form.add(orderLabel, rc, 4007)
+        form.add(orderCombo, rc, 108)
+        form.add(solidLabel, rc, 4008)
+        form.add(solidCombo, rc, 109)
+        form.add(threadsLabel, rc, 4009)
+        form.add(threadsCombo, rc, 110)
+        form.add(hardwareThreadsLabel, rc, 112)
+        form.add(memoryLabel, rc, 4017)
+        form.add(memUseCombo, rc, 117)
+        form.add(memoryValueLabel, rc, 113)
+        form.add(memoryDeLabel, rc, 4018)
+        form.add(memoryDeValueLabel, rc, 114)
+        form.add(DialogKit.label(Lang.dialogText(4000, 7302, "Split to volumes, bytes:")), rc, 7302) // IDT_SPLIT_TO_VOLUMES 7302
+        form.add(volumeCombo, rc, 105)
+        form.add(DialogKit.label(Lang.text(4010, "Parameters:")), rc, 4010)        // IDT_COMPRESS_PARAMETERS 4010
+        form.add(parametersField, rc, 111)
+        form.add(optionsButton, rc, 2100)
+        form.add(optionsSummary, rc, 141)
+        // the right column
+        form.add(DialogKit.label(Lang.text(4002, "Update mode:")), rc, 4002)       // IDT_COMPRESS_UPDATE_MODE 4002
+        form.add(updateModeCombo, rc, 103)
+        form.add(DialogKit.label(Lang.text(3410, "Path mode:")), rc, 3410)         // IDT_COMPRESS_PATH_MODE 3410
+        form.add(pathModeCombo, rc, 116)
+        let rowShift = DLU.y(Self.macRowDLU)
+        form.add(optionsGroup, rc, 4011)
+        optionsGroup.frame.size.height += rowShift
+        form.add(sfxBox, rc, 4012)
+        form.add(sharedBox, rc, 4013)
+        form.add(deleteBox, rc, 4019)
+        form.addSubview(excludeMacBox)
+        RcPlace.check(excludeMacBox, rc.rect(4019).offsetBy(dx: 0, dy: rowShift))
+        for (view, id) in [(encryptionGroup, 4014), (enterLabel, 3801), (password1Field, 120),
+                           (password2Label, 3802), (password2Field, 121), (showPasswordBox, 3803),
+                           (DialogKit.label(Lang.text(4015, "Encryption method:")), 4015),  // IDT_COMPRESS_ENCRYPTION_METHOD 4015
+                           (encryptionMethodCombo, 122), (encryptNamesBox, 4016)] as [(NSView, Int)] {
+            form.add(view, rc, id)
+            view.frame.origin.y += rowShift
         }
-        let passwordGrid = NSGridView(views: [
-            [enterLabel, passwordCell],
-            [password2Label, password2Field],
-            [DialogKit.label(""), showPasswordBox],
-            [DialogKit.label(Lang.text(4015, "Encryption method:")), encryptionMethodCombo],  // IDT_COMPRESS_ENCRYPTION_METHOD 4015
-            [DialogKit.label(""), encryptNamesBox],
-        ])
-        passwordGrid.rowSpacing = 6
-        passwordGrid.columnSpacing = 8
-        passwordGrid.column(at: 0).xPlacement = .trailing
-        reenterRow = passwordGrid.row(at: 1)
-        encryptNamesRow = passwordGrid.row(at: 4)
-        encryptionGroupBox = NSBox()
-        encryptionGroupBox.title = Lang.text(4014, "Encryption")
-        encryptionGroupBox.contentView = wrap(passwordGrid)
+        form.addSubview(password1Plain)
+        password1Plain.frame = password1Field.frame
+        password1Plain.font = password1Field.font
+        password1Plain.controlSize = password1Field.controlSize
         encryptionGroupViews = [enterLabel, password1Field, password1Plain, password2Label,
                                 password2Field, showPasswordBox, encryptionMethodCombo]
+        // the buttons
+        form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okPressed(_:)), key: "\r"), rc, 1)
+        form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self,
+                                  action: #selector(cancelPressed(_:)), key: "\u{1b}"), rc, 2)
+        form.add(DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(helpPressed(_:))), rc, 9)
 
-        let column = NSStackView(views: [modeGrid, optionsGroup, encryptionGroupBox])
-        column.orientation = .vertical
-        column.alignment = .leading
-        column.spacing = 10
-        for v in [modeGrid, optionsGroup, encryptionGroupBox] as [NSView] {
-            v.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
-        }
-        column.widthAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
-        return column
-    }
-
-    private func wrap(_ view: NSView) -> NSView {
-        let host = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        host.addSubview(view)
-        NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 8),
-            view.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -8),
-            view.topAnchor.constraint(equalTo: host.topAnchor, constant: 6),
-            view.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -6),
-        ])
-        return host
+        RcPlace.install(form, in: window, size: rc.size, parent: input.parentWindow)
+        window.initialFirstResponder = archiveCombo
     }
 
     // MARK: - Initial state (OnInit)
@@ -477,6 +379,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         sharedBox.state = input.openShareForWrite ? .on : .off
         deleteBox.state = input.deleteAfterCompressing ? .on : .off
         sfxBox.state = input.sfxMode ? .on : .off
+        excludeMacBox.state = Settings.compressExcludeMacResourceForks ? .on : .off
         showPasswordBox.state = Settings.compressShowPassword ? .on : .off
         encryptNamesBox.state = Settings.compressEncryptHeaders ? .on : .off
         password1Field.stringValue = input.password ?? ""
@@ -628,8 +531,10 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         memUseCombo.removeAllItems()
         for item in result.items { memUseCombo.addItem(withTitle: item.title) }
         let show = !result.items.isEmpty
-        memoryRow.isHidden = !show
-        memoryDeRow.isHidden = !show
+        // ShowItem_Bool on the five memory controls (CompressDialog.cpp:2775-2780).
+        for view in [memoryLabel, memoryValueLabel, memoryDeLabel, memoryDeValueLabel, memUseCombo] as [NSView] {
+            view.isHidden = !show
+        }
         memUseCombo.isEnabled = show
         if show, result.selection >= 0 {
             memUseCombo.selectItem(at: result.selection)
@@ -662,11 +567,13 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
     /// The encryption group (`FormatChanged` :747-762 + `SetEncryptionMethod`).
     private func updateEncryptionControls(storedMethod: String) {
         let encrypt = model.staticFormat.flags.contains(.encrypt)
+        encryptionGroup.isEnabled = encrypt               // EnableItem(IDG_COMPRESS_ENCRYPTION)
         for v in encryptionGroupViews { (v as? NSControl)?.isEnabled = encrypt }
+        enterLabel.textColor = encrypt ? .labelColor : .disabledControlTextColor
         password2Label.textColor = encrypt ? .labelColor : .disabledControlTextColor
         let namesAllowed = model.staticFormat.flags.contains(.encryptFileNames)
         encryptNamesBox.isEnabled = namesAllowed
-        encryptNamesRow.isHidden = !namesAllowed
+        encryptNamesBox.isHidden = !namesAllowed          // ShowItem_Bool (:760)
 
         let e = model.encryptionMethodItems(stored: storedMethod)
         encryptionMethodCombo.removeAllItems()
@@ -690,7 +597,8 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         }
         password1Field.isHidden = show
         password1Plain.isHidden = !show
-        reenterRow.isHidden = show
+        password2Label.isHidden = show                    // ShowItem_Bool(IDT_PASSWORD_REENTER)
+        password2Field.isHidden = show
     }
 
     private var currentPassword: String {
@@ -1110,6 +1018,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         r.sfxModulePath = input.sfxModulePath
         r.openShareForWrite = sharedBox.state == .on
         r.deleteAfterCompressing = deleteBox.state == .on
+        r.excludeMacResourceForks = excludeMacBox.state == .on
         r.password = password.isEmpty ? nil : password
         r.volumeSizes = volumeSizes
         r.timePrecision = timePrecision
@@ -1127,6 +1036,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         // 7. Settings.
         Settings.archiverType = currentFormat.name
         Settings.compressShowPassword = showPasswordBox.state == .on
+        Settings.compressExcludeMacResourceForks = excludeMacBox.state == .on
         Settings.compressEncryptHeaders = r.encryptHeaders
         Settings.compressSymLinks = symLinks
         Settings.compressHardLinks = hardLinks

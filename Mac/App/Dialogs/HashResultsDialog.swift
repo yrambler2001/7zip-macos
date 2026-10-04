@@ -215,54 +215,23 @@ final class HashListDialogView: NSView, NSTableViewDataSource, NSTableViewDelega
     func selectAll() { tableView.selectAll(nil) }
 }
 
-/// ShowHashResults (GUI/HashGUI.cpp:310-335).
-final class HashResultsDialog: NSObject {
-
-    private let window: NSWindow
-    private let list: HashListDialogView
-
-    private init(results: SZHashResults, title: String, parent: NSWindow?) {
-        window = DialogKit.window(title: title, resizable: true)
-        list = HashListDialogView(strings: results.rows.map { $0.name },
-                                  values: results.rows.map { $0.value },
-                                  selectFirst: false)          // SelectFirst = false
-        super.init()
-        list.deleteIsAllowed = true                            // DeleteIsAllowed = true
-        list.translatesAutoresizingMaskIntoConstraints = false
-        list.addConstraint(NSLayoutConstraint(item: list, attribute: .height, relatedBy: .greaterThanOrEqual,
-                                              toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 260))
-
-        let copy = DialogKit.button(Lang.text(7203, "Copy"), target: self, action: #selector(copyClicked))
-        let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r")
-        let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(okClicked),
-                                      key: "\u{1b}")
-        cancel.isHidden = true                                 // Esc closes; no separate button needed
-        let buttonRow = NSStackView(views: [copy, NSView(), ok, cancel])
-        buttonRow.orientation = .horizontal
-        buttonRow.spacing = 10
-
-        let stack = NSStackView(views: [list, buttonRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        for view in [list, buttonRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        }
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 720)
-        window.initialFirstResponder = list
-    }
-
-    @objc private func okClicked() { NSApp.stopModal() }
-    @objc private func copyClicked() { list.selectAll(); list.copyToClipboard() }
+/// ShowHashResults (GUI/HashGUI.cpp:310-335): the generic CListViewDialog (IDD_LISTVIEW 99) with
+/// two columns, OK and Cancel, Del removing rows and Ctrl+C copying "<name>: <value>" -- the
+/// port's ListViewDialog, laid out like every IDD_LISTVIEW (dlgfeel: no extra Copy button).
+enum HashResultsDialog {
 
     /// Shows the results modally over `parent`. `title` defaults to
     /// IDS_CHECKSUM_INFORMATION 7501 "Checksum information".
     static func show(results: SZHashResults,
                      title: String = Lang.text(7501, "Checksum information"),
                      parent: NSWindow? = nil) {
-        let dialog = HashResultsDialog(results: results, title: title, parent: parent)
-        NSApp.runModal(for: dialog.window)
-        dialog.window.orderOut(nil)
+        var options = ListViewDialogOptions()
+        options.title = title
+        options.strings = results.rows.map { $0.name }
+        options.values = results.rows.map { $0.value }
+        options.numColumns = 2
+        options.selectFirst = false                            // SelectFirst = false
+        options.deleteIsAllowed = true                         // DeleteIsAllowed = true
+        _ = ListViewDialog.run(options, parent: parent)
     }
 }

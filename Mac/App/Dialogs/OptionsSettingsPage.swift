@@ -2,9 +2,11 @@
 // manager's own behaviour switches (CFmSettings) plus the unpack memory limit.
 // 01b-fm-dialogs-settings.md section 4.19 / 5.2, 01-fm-feature-inventory.md section 9 #16.
 //
-// Windows-only rows, handled as the inventory's mapping table agreed (01 section 9): "Use large
-// memory pages" stays visible but disabled with the reason (#16), and "Show system menu" is kept
-// because the panel context menu gets the macOS equivalents of the shell System submenu (#2).
+// Windows-only rows: "Use large memory pages" (IDX_SETTINGS_LARGE_PAGES 2508) is not shown
+// (dlgfeel finding 19; macOS has no SeLockMemoryPrivilege, 01 section 9 #16) and the controls
+// under it keep their template places. "Show system menu" is kept with its Windows caption: on
+// macOS it adds Finder's own commands to the panel context menu (01 section 9 #2). Every control
+// sits on the IDD_SETTINGS template's rect (dlgfeel).
 
 import Cocoa
 import SevenZipKit
@@ -21,12 +23,10 @@ final class OptionsSettingsPage: OptionsPageBase {
         let fallback: String
         let get: () -> Bool
         let set: (Bool) -> Void
-        let note: String
     }
 
     private var flags: [Flag] = []
     private var boxes: [NSButton] = []
-    private var largePagesBox: NSButton!      // IDX_SETTINGS_LARGE_PAGES 2508
     private var memSetBox: NSButton!          // IDX_SETTINGS_MEM_SET 100
     private var memField: NSTextField!        // IDE_SETTINGS_MEM_SPIN_EDIT 101
     private var memStepper: NSStepper!        // IDC_SETTINGS_MEM_SPIN 102
@@ -50,47 +50,36 @@ final class OptionsSettingsPage: OptionsPageBase {
         flags = [
             // IDX_SETTINGS_SHOW_DOTS 2501
             Flag(langID: 2501, fallback: "Show \"..\" item", get: { Settings.showDots },
-                 set: { Settings.showDots = $0 }, note: ""),
+                 set: { Settings.showDots = $0 }),
             // IDX_SETTINGS_SHOW_REAL_FILE_ICONS 2502
             Flag(langID: 2502, fallback: "Show real file icons", get: { Settings.showRealFileIcons },
-                 set: { Settings.showRealFileIcons = $0 }, note: ""),
+                 set: { Settings.showRealFileIcons = $0 }),
             // IDX_SETTINGS_FULL_ROW 2504
             Flag(langID: 2504, fallback: "Full row select", get: { Settings.fullRow },
-                 set: { Settings.fullRow = $0 }, note: ""),
+                 set: { Settings.fullRow = $0 }),
             // IDX_SETTINGS_SHOW_GRID 2505
             Flag(langID: 2505, fallback: "Show grid lines", get: { Settings.showGrid },
-                 set: { Settings.showGrid = $0 }, note: ""),
+                 set: { Settings.showGrid = $0 }),
             // IDX_SETTINGS_SINGLE_CLICK 2506
             Flag(langID: 2506, fallback: "Single-click to open an item", get: { Settings.singleClick },
-                 set: { Settings.singleClick = $0 }, note: ""),
+                 set: { Settings.singleClick = $0 }),
             // IDX_SETTINGS_ALTERNATIVE_SELECTION 2507
             Flag(langID: 2507, fallback: "Alternative selection mode", get: { Settings.alternativeSelection },
-                 set: { Settings.alternativeSelection = $0 }, note: ""),
+                 set: { Settings.alternativeSelection = $0 }),
             // IDX_SETTINGS_SHOW_SYSTEM_MENU 2503
             Flag(langID: 2503, fallback: "Show system menu", get: { Settings.showSystemMenu },
-                 set: { Settings.showSystemMenu = $0 },
-                 note: "macOS: adds Finder's own commands (Open With, Show in Finder, Quick Look, Get Info) "
-                     + "to the panel context menu instead of the Windows shell System submenu."),
+                 set: { Settings.showSystemMenu = $0 }),
         ]
-        var views: [NSView] = []
+        let rc = self.rc
         boxes = flags.map { flag in
             let box = OptionsUI.checkbox(flag.langID, flag.fallback, self, #selector(flagClicked(_:)))
-            views.append(box)
-            if !flag.note.isEmpty { views.append(indented(OptionsUI.note(flag.note))) }
+            form.add(box, rc, Int(flag.langID))
             return box
         }
 
-        largePagesBox = OptionsUI.checkbox(2508, "Use large memory pages", self, #selector(flagClicked(_:)))
-        largePagesBox.isEnabled = Settings.largePagesSupported
-        views.append(largePagesBox)
-        views.append(indented(OptionsUI.note("Disabled: macOS has no SeLockMemoryPrivilege equivalent, so the "
-                                             + "Windows LargePages setting and the -slp switch are not ported "
-                                             + "(01 section 9 #16).")))
-
         memSetBox = NSButton(checkboxWithTitle: ":", target: self, action: #selector(memSetClicked(_:)))
         memField = NSTextField(string: "1")
-        memField.translatesAutoresizingMaskIntoConstraints = false
-        memField.widthAnchor.constraint(equalToConstant: 70).isActive = true
+        memField.alignment = .center                                  // ES_CENTER
         memField.delegate = self
         memStepper = NSStepper()
         memStepper.target = self
@@ -99,46 +88,26 @@ final class OptionsSettingsPage: OptionsPageBase {
         memStepper.maxValue = Double(maxMemGB)
         memStepper.increment = 1
         memStepper.valueWraps = false
+        memUnit.font = DialogMetrics.font
         memUnit.textColor = .labelColor
 
-        views.append(separator())
-        views.append(memLabel)
-        views.append(OptionsUI.hstack([memSetBox, memField, memStepper, memUnit], spacing: 6))
-        let stack = OptionsUI.vstack(views, spacing: 6)
-        install(stack)
-        NSLayoutConstraint.activate([
-            memLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
-        ])
-    }
-
-    private func indented(_ view: NSView) -> NSView {
-        let container = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(view)
-        NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
-            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            view.topAnchor.constraint(equalTo: container.topAnchor),
-            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
-        return container
-    }
-
-    private func separator() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
-        return box
+        form.add(memLabel, rc, 7816)
+        form.add(memSetBox, rc, 100)
+        // UDS_ALIGNRIGHT | UDS_AUTOBUDDY: the up-down control (18 x 20) takes the right end of the
+        // 75 px edit, which keeps 59 px (measured: edit 57,254 59x20, up-down 114,254 18x20).
+        let editRect = rc.rect(101)
+        form.addSubview(memField)
+        RcPlace.edit(memField, NSRect(x: editRect.minX, y: editRect.minY, width: editRect.width - 16, height: 20))
+        form.addSubview(memStepper)
+        memStepper.controlSize = .small
+        memStepper.frame = NSRect(x: editRect.maxX - 18, y: editRect.minY - 1, width: 18, height: 22)
+        form.add(memUnit, rc, 103)
     }
 
     // MARK: OnInit
 
     override func pageDidLoad() {
         for (index, flag) in flags.enumerated() { boxes[index].state = flag.get() ? .on : .off }
-        largePagesBox.state = .off
         // SettingsPage.cpp:229-240: unchecked (spin disabled) when MemLimit is 0 or -1.
         let limit = Settings.extractMemLimitGB
         let enabled = limit > 0
@@ -155,7 +124,6 @@ final class OptionsSettingsPage: OptionsPageBase {
 
     override func relabelPage() {
         for (index, flag) in flags.enumerated() { boxes[index].title = Lang.text(flag.langID, flag.fallback) }
-        largePagesBox.title = Lang.text(2508, "Use large memory pages")
         memLabel.stringValue = Lang.text(7816, "Maximum amount of RAM memory usage allowed to unpack archives:")
         // IDT_SETTINGS_MEM_GB 103 becomes "GB / <RAM> GB (RAM)" once the RAM size is known.
         memUnit.stringValue = ramGB > 0 ? "GB / \(ramGB) GB (RAM)" : "GB"

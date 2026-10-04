@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Properties outside an archive asks Finder for its Get Info windows (PanelFinderInfo.swift,
+	     reports/listfeel.md 4.1). Under the hardened runtime (a Developer ID build, package.sh
+	     -i ...) an Apple event to another app is refused without this entitlement, even after
+	     the user allowed it in Privacy & Security > Automation (reports/dlgfeel.md). -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>

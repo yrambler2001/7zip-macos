@@ -191,25 +191,11 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
             field.delegate = self
         }
 
-        // IDD_EXTRACT is a fixed 336 x 168 dialog-unit window (01b §4.25), so the macOS dialog is
-        // laid out at a fixed size too: the stack is pinned to the top and the two side margins
-        // and keeps its natural row heights. Sizing from `fittingSize` (DialogKit.install) lets
-        // the stack compress its rows into each other when the grid and the box report late.
-        let content = buildContent()
-        let host = NSView()
-        content.translatesAutoresizingMaskIntoConstraints = false
-        host.addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 20),
-            content.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -20),
-            content.topAnchor.constraint(equalTo: host.topAnchor, constant: 20),
-            content.bottomAnchor.constraint(lessThanOrEqualTo: host.bottomAnchor, constant: -20),
-        ])
-        window.contentView = host
-        let summaryHeight = CGFloat(min(options.summaryLines.count, 12)) * 14
-        window.setContentSize(NSSize(width: 560, height: 322 + summaryHeight))
-        host.layoutSubtreeIfNeeded()
-        DialogKit.center(window, over: options.parentWindow)   // the owner, not the screen
+        // IDD_EXTRACT 3400 (ExtractDialog.rc): a fixed 352 x 184 DLU = 528 x 299 px window, every
+        // control on its template rect (RcLayout, dlgfeel). IDX_EXTRACT_NT_SECUR 3431 keeps its
+        // place, hidden (above).
+        let form = buildContent()
+        RcPlace.install(form, in: window, size: RcDialog(3400).size, parent: options.parentWindow)
         applyShowPassword()
         window.initialFirstResponder = pathCombo
     }
@@ -232,22 +218,7 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         return (String(chars[0..<p]), String(chars[p...]))
     }
 
-    private func buildContent() -> NSView {
-        // "E&xtract to:" IDT_EXTRACT_EXTRACT_TO 3401
-        let extractToLabel = DialogKit.label(Lang.text(3401, "Extract to:"))
-        browseButton.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        let pathRow = NSStackView(views: [pathCombo, browseButton])
-        pathRow.orientation = .horizontal
-        pathRow.spacing = 6
-        pathCombo.translatesAutoresizingMaskIntoConstraints = false
-        pathCombo.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
-
-        // The unnamed checkbox + the sub-folder name edit (IDX_EXTRACT_NAME_ENABLE 131 /
-        // IDE_EXTRACT_NAME 130). Windows draws the box to the left of the edit with no text.
-        let nameRow = NSStackView(views: [nameEnableBox, nameField])
-        nameRow.orientation = .horizontal
-        nameRow.spacing = 6
-
+    private func buildContent() -> RcFormView {
         // "Path mode:" IDT_EXTRACT_PATH_MODE 3410 / "Overwrite mode:" IDT_EXTRACT_OVERWRITE_MODE 3420
         for (id, fallback, value) in Self.pathModes {
             pathModeCombo.addItem(withTitle: Lang.text(id, fallback))
@@ -261,87 +232,32 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
         let overwriteValue = SZOverwriteMode(rawValue: currentOverwriteModeRawValue) ?? .ask
         overwriteModeCombo.selectItem(at: Self.overwriteModes.firstIndex { $0.value == overwriteValue } ?? 0)
 
-        let modeGrid = NSGridView(views: [
-            [DialogKit.label(Lang.text(3410, "Path mode:")), pathModeCombo],
-            [DialogKit.label(Lang.text(3420, "Overwrite mode:")), overwriteModeCombo],
-        ])
-        modeGrid.rowSpacing = 6
-        modeGrid.columnSpacing = 10
-        modeGrid.column(at: 1).xPlacement = .fill
-
-        // Password group: IDG_PASSWORD 3807 group box with IDE_EXTRACT_PASSWORD 120 and
-        // IDX_PASSWORD_SHOW 3803.
-        let passwordBox = NSBox()
-        passwordBox.title = Lang.text(3807, "Password")
-        passwordBox.titlePosition = .atTop
-        let passwordStack = NSStackView(views: [passwordField, plainPasswordField, showPasswordBox])
-        passwordStack.orientation = .vertical
-        passwordStack.alignment = .leading
-        passwordStack.spacing = 6
-        passwordStack.translatesAutoresizingMaskIntoConstraints = false
-        // NSBox does not constrain a hand-made content view, so pin it explicitly; without this
-        // the box reports a zero fitting size and the whole dialog collapses.
-        let passwordContent = NSView()
-        passwordContent.translatesAutoresizingMaskIntoConstraints = false
-        passwordContent.addSubview(passwordStack)
-        NSLayoutConstraint.activate([
-            passwordStack.leadingAnchor.constraint(equalTo: passwordContent.leadingAnchor, constant: 8),
-            passwordStack.trailingAnchor.constraint(equalTo: passwordContent.trailingAnchor, constant: -8),
-            passwordStack.topAnchor.constraint(equalTo: passwordContent.topAnchor, constant: 8),
-            passwordStack.bottomAnchor.constraint(equalTo: passwordContent.bottomAnchor, constant: -8),
-        ])
-        passwordBox.contentView = passwordContent
-        // ... and pin the content view to the box, which NSBox does not do for a view that opts
-        // out of autoresizing: without it the box has no height and draws over its neighbour.
-        NSLayoutConstraint.activate([
-            passwordContent.leadingAnchor.constraint(equalTo: passwordBox.leadingAnchor),
-            passwordContent.trailingAnchor.constraint(equalTo: passwordBox.trailingAnchor),
-            passwordContent.topAnchor.constraint(equalTo: passwordBox.topAnchor, constant: 20),
-            passwordContent.bottomAnchor.constraint(equalTo: passwordBox.bottomAnchor),
-        ])
-        for field in [passwordField, plainPasswordField] {
-            field.translatesAutoresizingMaskIntoConstraints = false
-            passwordStack.addConstraint(NSLayoutConstraint(item: field, attribute: .width, relatedBy: .equal,
-                                                          toItem: passwordStack, attribute: .width,
-                                                          multiplier: 1, constant: 0))
-        }
-
-        let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(accept), key: "\r")
-        let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancel), key: "\u{1b}")
+        let rc = RcDialog(3400)
+        let form = RcFormView()
+        form.add(DialogKit.label(Lang.text(3401, "Extract to:")), rc, 3401)     // IDT_EXTRACT_EXTRACT_TO 3401
+        form.add(pathCombo, rc, 100)                                             // IDC_EXTRACT_PATH 100
+        form.add(browseButton, rc, 101)                                          // IDB_EXTRACT_SET_PATH 101
+        // The unnamed checkbox + the sub-folder name edit (IDX_EXTRACT_NAME_ENABLE 131 /
+        // IDE_EXTRACT_NAME 130). Windows draws the box to the left of the edit with no text.
+        form.add(nameEnableBox, rc, 131)
+        form.add(nameField, rc, 130)
+        form.add(DialogKit.label(Lang.text(3410, "Path mode:")), rc, 3410)
+        form.add(pathModeCombo, rc, 102)                                         // IDC_EXTRACT_PATH_MODE 102
+        form.add(elimDupBox, rc, 3430)                                           // IDX_EXTRACT_ELIM_DUP 3430
+        form.add(DialogKit.label(Lang.text(3420, "Overwrite mode:")), rc, 3420)
+        form.add(overwriteModeCombo, rc, 103)                                    // IDC_EXTRACT_OVERWRITE_MODE 103
+        // IDG_PASSWORD 3807 with IDE_EXTRACT_PASSWORD 120 and IDX_PASSWORD_SHOW 3803
+        form.add(WinGroupBox(title: Lang.text(3807, "Password")), rc, 3807)
+        form.add(passwordField, rc, 120)
+        form.addSubview(plainPasswordField)
+        RcPlace.edit(plainPasswordField, rc.rect(120))
+        form.add(showPasswordBox, rc, 3803)
+        form.add(ntSecurityBox, rc, 3431)                                        // IDX_EXTRACT_NT_SECUR 3431
+        form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(accept), key: "\r"), rc, 1)
+        form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancel), key: "\u{1b}"), rc, 2)
         // IDHELP -> kHelpTopic "fm/plugins/7-zip/extract.htm" (ExtractDialog.cpp:414)
-        let help = DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(showHelp))
-        let buttons = NSStackView(views: [help, NSView(), cancel, ok])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-
-        var views: [NSView] = [extractToLabel, pathRow, nameRow, modeGrid, elimDupBox, ntSecurityBox, passwordBox]
-        if !options.summaryLines.isEmpty {
-            let summary = DialogKit.label(options.summaryLines.joined(separator: "\n"))
-            summary.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-            summary.textColor = .secondaryLabelColor
-            summary.maximumNumberOfLines = 12
-            summary.lineBreakMode = .byTruncatingMiddle
-            views.append(summary)
-        }
-        views.append(buttons)
-
-        let stack = NSStackView(views: views)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        // Without this the stack happily compresses its rows into each other and the window is
-        // sized from the compressed fitting size.
-        stack.setHuggingPriority(.required, for: .vertical)
-        stack.setClippingResistancePriority(.required, for: .vertical)
-        stack.setClippingResistancePriority(.required, for: .horizontal)
-        for view in views {
-            view.setContentCompressionResistancePriority(.required, for: .vertical)
-        }
-        for view in [pathRow, nameRow, modeGrid, passwordBox, buttons] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        }
-        return stack
+        form.add(DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(showHelp)), rc, 9)
+        return form
     }
 
     private var currentOverwriteModeRawValue: Int {

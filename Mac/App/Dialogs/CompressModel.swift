@@ -1091,6 +1091,8 @@ struct CompressDialogResult {
     var sfxModulePath: String?            // nil = the bundled 7z.sfx (CompressDialogInput.sfxModulePath)
     var openShareForWrite = false
     var deleteAfterCompressing = false
+    /// "Exclude Mac resource forks" (macOS only, dlgfeel): see `CompressMacMetadata`.
+    var excludeMacResourceForks = false
     var password: String?
     var volumeSizes: [UInt64] = []
     // Compress Options sheet
@@ -1199,5 +1201,33 @@ struct CompressDialogResult {
         options.storeAltStreams = altStreams.map { NSNumber(value: $0) }
         options.storeNtSecurity = ntSecurity.map { NSNumber(value: $0) }
         return options
+    }
+}
+
+/// What "Exclude Mac resource forks" (the Add to Archive dialog, dlgfeel finding 28) keeps out of
+/// an archive: the files macOS writes next to the user's own -- AppleDouble `._*` companions (a
+/// resource fork and extended attributes on a volume that cannot hold them), Finder's
+/// `.DS_Store`, and Archive Utility's `__MACOSX` folder -- and any resource-fork or extended-
+/// attribute stream (`storeAltStreams` off; the engine stores none on macOS anyway). They are the
+/// censor's recursive excludes, exactly `-xr!._* -xr!.DS_Store -xr!__MACOSX` on the command line,
+/// so the engine's own matcher does the work (03 section 2.2).
+enum CompressMacMetadata {
+    static let excludedNames = ["._*", ".DS_Store", "__MACOSX"]
+
+    static var excludeSpecs: [SZPathSpec] {
+        excludedNames.map {
+            SZPathSpec.spec(path: $0, include: false, recursedType: .recursed,
+                            wildcardMatching: true, markMode: .fileOrDir)
+        }
+    }
+
+    /// The update's censor entries: the items, then the excludes when the box was checked.
+    static func pathSpecs(items: [SZPathSpec], exclude: Bool) -> [SZPathSpec] {
+        exclude ? items + excludeSpecs : items
+    }
+
+    /// Turns the stream options off when excluding.
+    static func apply(to options: SZUpdateOptions, exclude: Bool) {
+        if exclude { options.storeAltStreams = NSNumber(value: false) }
     }
 }

@@ -27,18 +27,18 @@ final class OptionsFoldersPage: OptionsPageBase {
         currentRadio = OptionsUI.radio(2403, "Current", self, #selector(modeChanged(_:)))
         specifiedRadio = OptionsUI.radio(2404, "Specified:", self, #selector(modeChanged(_:)))
         pathField = OptionsUI.textField(self, #selector(pathEdited(_:)))
-        pathField.translatesAutoresizingMaskIntoConstraints = false
-        pathField.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
         browseButton = OptionsUI.browseButton(self, #selector(browse(_:)))
         removableCheckbox = OptionsUI.checkbox(2405, "Use for removable drives only", self, #selector(removableChanged(_:)))
 
-        let pathRow = OptionsUI.hstack([pathField, browseButton])
-        let stack = OptionsUI.vstack([
-            workingLabel, systemRadio, currentRadio, specifiedRadio, pathRow, removableCheckbox,
-            OptionsUI.note("\u{201C}Current\u{201D} means the folder the archive itself is in. "
-                           + "Stored as Options.WorkDirType / Options.WorkDirPath / Options.TempRemovableOnly."),
-        ], spacing: 8)
-        install(stack)
+        // IDD_FOLDERS (FoldersPage2.rc): every control on its template rect, no note (dlgfeel).
+        let rc = self.rc
+        form.add(workingLabel, rc, 2401)
+        form.add(systemRadio, rc, 2402)
+        form.add(currentRadio, rc, 2403)
+        form.add(specifiedRadio, rc, 2404)
+        form.add(pathField, rc, 100)
+        form.add(browseButton, rc, 101)
+        form.add(removableCheckbox, rc, 2405)
     }
 
     // MARK: OnInit (m_WorkDirInfo.Load())

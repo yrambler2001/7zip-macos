@@ -8,7 +8,7 @@
 // A POSIX symlink does not distinguish file from directory, so the two symbolic types differ
 // only in the kind check they enforce, exactly like the Windows "Incorrect link type" test.
 // "Directory Junction" (7714) and "WSL" (7715) are NTFS reparse-point flavours that do not
-// exist here; the dialog says so in a footnote instead of hiding the fact.
+// exist here: their radio buttons are shown, as on Windows, but disabled (dlgfeel).
 
 import AppKit
 
@@ -85,73 +85,49 @@ final class LinkDialog: NSObject {
         for combo in [fromCombo, toCombo] {
             combo.usesDataSource = false
             combo.completes = false
-            combo.translatesAutoresizingMaskIntoConstraints = false
-            combo.addConstraint(NSLayoutConstraint(item: combo, attribute: .width, relatedBy: .greaterThanOrEqual,
-                                                  toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 400))
         }
-        currentTarget.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-
-        let browseFrom = DialogKit.button("...", target: self, action: #selector(browseFromClicked))  // IDB_LINK_PATH_FROM 103
-        let browseTo = DialogKit.button("...", target: self, action: #selector(browseToClicked))      // IDB_LINK_PATH_TO 104
-        let fromRow = NSStackView(views: [fromCombo, browseFrom])
-        fromRow.orientation = .horizontal
-        fromRow.spacing = 8
-        let toRow = NSStackView(views: [toCombo, browseTo])
-        toRow.orientation = .horizontal
-        toRow.spacing = 8
-
-        // IDG_LINK_TYPE 7710 "Link Type"
-        let typeStack = NSStackView(views: [hardRadio, symFileRadio, symDirRadio])
-        typeStack.orientation = .vertical
-        typeStack.alignment = .leading
-        typeStack.spacing = 4
-        let typeBox = NSBox()
-        typeBox.title = Lang.text(7710, "Link Type")
-        // The stack goes into a *wrapper* that becomes the box's content view. Constraining it
-        // against `typeBox.contentView` after assigning the stack as that content view made every
-        // constraint self-referential ("leading == own leading + 8"), Auto Layout broke them and
-        // the box collapsed onto its own title, over the third radio button.
-        let typeContent = NSView()
-        typeStack.translatesAutoresizingMaskIntoConstraints = false
-        typeContent.addSubview(typeStack)
-        NSLayoutConstraint.activate([
-            typeStack.leadingAnchor.constraint(equalTo: typeContent.leadingAnchor, constant: 8),
-            typeStack.topAnchor.constraint(equalTo: typeContent.topAnchor, constant: 6),
-            typeStack.bottomAnchor.constraint(equalTo: typeContent.bottomAnchor, constant: -6),
-            typeStack.trailingAnchor.constraint(lessThanOrEqualTo: typeContent.trailingAnchor, constant: -8),
-        ])
-        typeBox.contentView = typeContent
-
-        // IDR_LINK_TYPE_JUNCTION 7714 and IDR_LINK_TYPE_WSL 7715 are NTFS-only.
-        let footnote = DialogKit.label("Directory Junction and WSL links are NTFS reparse points; macOS has no equivalent.")
-        footnote.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-        footnote.textColor = .secondaryLabelColor
-
-        let link = DialogKit.button(Lang.text(7701, "Link"), target: self, action: #selector(linkClicked), key: "\r")  // IDB_LINK_LINK 7701
-        let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked),
-                                      key: "\u{1b}")
-        let buttons = NSStackView(views: [NSView(), link, cancel])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-
-        let stack = NSStackView(views: [
-            DialogKit.label(Lang.text(7702, "Link from:")),      // IDT_LINK_PATH_FROM 7702
-            fromRow,
-            DialogKit.label(Lang.text(7703, "Link to:")),        // IDT_LINK_PATH_TO 7703
-            toRow,
-            currentTarget,
-            typeBox,
-            footnote,
-            buttons,
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        for view in [fromRow, toRow, typeBox, buttons] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
+        // IDR_LINK_TYPE_JUNCTION 7714 / IDR_LINK_TYPE_WSL 7715: NTFS-only, so never selectable.
+        let junctionRadio = DialogKit.radio(Lang.text(7714, "Directory Junction"), target: self,
+                                            action: #selector(linkTypeChanged))
+        let wslRadio = DialogKit.radio(Lang.text(7715, "WSL"), target: self, action: #selector(linkTypeChanged))
+        for radio in [junctionRadio, wslRadio] {
+            radio.state = .off
+            radio.isEnabled = false
         }
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 540)
+
+        // IDD_LINK 7700 (LinkDialog.rc): 304 x 230 DLU = 456 x 374 px, resizable; OnSize
+        // (LinkDialog.cpp:182-212) keeps the two "..." at the right, stretches the combos and keeps
+        // Link / Cancel at the bottom right (dlgfeel).
+        let rc = RcDialog(7700)
+        let form = RcFormView()
+        form.add(DialogKit.label(Lang.text(7702, "Link from:")), rc, 7702)       // IDT_LINK_PATH_FROM 7702
+        form.add(fromCombo, rc, 100)
+        let browseFrom = form.add(DialogKit.button("...", target: self, action: #selector(browseFromClicked)), rc, 103)  // IDB_LINK_PATH_FROM 103
+        form.add(DialogKit.label(Lang.text(7703, "Link to:")), rc, 7703)         // IDT_LINK_PATH_TO 7703
+        form.add(toCombo, rc, 101)
+        let browseTo = form.add(DialogKit.button("...", target: self, action: #selector(browseToClicked)), rc, 104)      // IDB_LINK_PATH_TO 104
+        form.add(currentTarget, rc, 102)
+        form.add(WinGroupBox(title: Lang.text(7710, "Link Type")), rc, 7710)     // IDG_LINK_TYPE 7710
+        form.add(hardRadio, rc, 7711)
+        form.add(symFileRadio, rc, 7712)
+        form.add(symDirRadio, rc, 7713)
+        form.add(junctionRadio, rc, 7714)
+        form.add(wslRadio, rc, 7715)
+        let link = form.add(DialogKit.button(Lang.text(7701, "Link"), target: self, action: #selector(linkClicked),
+                                             key: "\r"), rc, 7701)             // IDB_LINK_LINK 7701
+        let cancel = form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked),
+                                               key: "\u{1b}"), rc, 2)
+        let fromRect = rc.rect(100), toRect = rc.rect(101), dotsFrom = rc.rect(103), dotsTo = rc.rect(104)
+        form.onResize = { [fromCombo, toCombo] size in
+            let mx = RcResize.mx
+            RcResize.bottomRightButtons([(cancel, rc.rect(2).size), (link, rc.rect(7701).size)], in: size)
+            let x = size.width - mx - dotsFrom.width
+            RcPlace.button(browseFrom, NSRect(x: x, y: dotsFrom.minY, width: dotsFrom.width, height: dotsFrom.height))
+            RcPlace.button(browseTo, NSRect(x: x, y: dotsTo.minY, width: dotsTo.width, height: dotsTo.height))
+            RcResize.setWidth(fromCombo, x - mx - mx, rect: fromRect)
+            RcResize.setWidth(toCombo, x - mx - mx, rect: toRect)
+        }
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
         window.initialFirstResponder = fromCombo
     }
 

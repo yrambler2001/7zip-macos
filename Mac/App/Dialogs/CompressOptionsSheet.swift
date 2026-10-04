@@ -4,6 +4,10 @@
 // Every value is a tri-state: a ":" set-box next to the real checkbox. Unchecked means
 // "leave the handler default": the value box shows `DefaultVal`, is disabled, and nothing is
 // emitted (`CBoolPair{Def, Val}`). Parity: 01b-fm-dialogs-settings.md section 4.24.
+//
+// The layout is IDD_COMPRESS_OPTIONS's template (CompressOptionsDialog.rc, 256 x 248 DLU =
+// 384 x 403 px, fixed): every control on its rect, and a control Windows hides with
+// ShowItem_Bool leaves its place empty, as on Windows (dlgfeel finding 25).
 
 import AppKit
 import SevenZipKit
@@ -54,15 +58,11 @@ final class CompressOptionsSheet: NSObject {
         let sheet = CompressOptionsSheet(state: state)
         sheet.build()
         sheet.reload()
-        sheet.sizeToFit()      // after reload: hidden rows must not reserve space
-        if let parent {
-            parent.beginSheet(sheet.window) { _ in }
-            NSApp.runModal(for: sheet.window)
-            parent.endSheet(sheet.window)
-        } else {
-            NSApp.runModal(for: sheet.window)
-            sheet.window.orderOut(nil)
-        }
+        // A modal dialog of its own over the Add to Archive dialog (DoModal with the dialog as
+        // owner), with its own caption -- not a sheet.
+        DialogKit.center(sheet.window, over: parent)
+        NSApp.runModal(for: sheet.window)
+        sheet.window.orderOut(nil)
         guard sheet.accepted else { return false }
         state = sheet.state
         return true
@@ -83,7 +83,7 @@ final class CompressOptionsSheet: NSObject {
     private let hardLinksBox = NSButton()         // IDX_COMPRESS_NT_HARD_LINKS 4041
     private let altStreamsBox = NSButton()        // IDX_COMPRESS_NT_ALT_STREAMS 4042
     private let ntSecurityBox = NSButton()        // IDX_COMPRESS_NT_SECUR 4043
-    private var ntfsGroup: NSBox!                 // IDG_COMPRESS_NTFS 115
+    private let ntfsGroup = WinGroupBox(title: "") // IDG_COMPRESS_NTFS 115
     private let typeInfoLabel = DialogKit.label("")            // IDT_COMPRESS_TIME_INFO 191
     private let precSetBox = NSButton()           // IDX_COMPRESS_PREC_SET 201
     private let precLabel = DialogKit.label("")   // IDT_COMPRESS_TIME_PREC 4081
@@ -97,11 +97,7 @@ final class CompressOptionsSheet: NSObject {
     private let zTimeSetBox = NSButton()          // IDX_COMPRESS_ZTIME_SET 205
     private let zTimeBox = NSButton()             // IDX_COMPRESS_ZTIME 4085
     private let preserveATimeBox = NSButton()     // IDX_COMPRESS_PRESERVE_ATIME 4086
-    private var timeGroup: NSBox!                 // IDG_COMPRESS_TIME 4080
-    private var precRow: NSStackView!
-    private var mTimeRow: NSStackView!
-    private var cTimeRow: NSStackView!
-    private var aTimeRow: NSStackView!
+    private let timeGroup = WinGroupBox(title: "") // IDG_COMPRESS_TIME 4080
 
     /// The precisions currently offered, parallel to `precCombo`'s items.
     private var precisions: [Int] = []
@@ -123,15 +119,8 @@ final class CompressOptionsSheet: NSObject {
             box.target = self
             box.action = #selector(valueChanged(_:))
         }
-        let ntfsStack = NSStackView(views: [symLinksBox, hardLinksBox, altStreamsBox, ntSecurityBox])
-        ntfsStack.orientation = .vertical
-        ntfsStack.alignment = .leading
-        ntfsStack.spacing = 4
-        ntfsStack.setHuggingPriority(.required, for: .vertical)
-        ntfsStack.setContentCompressionResistancePriority(.required, for: .vertical)
-        ntfsGroup = NSBox()
         ntfsGroup.title = Lang.text(115, "NTFS")
-        ntfsGroup.contentView = wrap(ntfsStack)
+        timeGroup.title = Lang.text(4080, "Time")
 
         precLabel.stringValue = Lang.text(4081, "Timestamp precision:")
         precSetBox.setButtonType(.switch)
@@ -140,11 +129,8 @@ final class CompressOptionsSheet: NSObject {
         precSetBox.action = #selector(precSetToggled(_:))
         precCombo.target = self
         precCombo.action = #selector(precChanged(_:))
-        precRow = NSStackView(views: [precSetBox, precLabel, precCombo])
-        precRow.orientation = .horizontal
-        precRow.spacing = 6
 
-        func timeRow(_ setBox: NSButton, _ box: NSButton, _ id: UInt32, _ fallback: String) -> NSStackView {
+        func timeRow(_ setBox: NSButton, _ box: NSButton, _ id: UInt32, _ fallback: String) {
             setBox.setButtonType(.switch)
             setBox.title = ":"
             setBox.target = self
@@ -153,77 +139,32 @@ final class CompressOptionsSheet: NSObject {
             box.title = Lang.text(id, fallback)
             box.target = self
             box.action = #selector(valueChanged(_:))
-            let row = NSStackView(views: [setBox, box])
-            row.orientation = .horizontal
-            row.spacing = 6
-            return row
         }
-        mTimeRow = timeRow(mTimeSetBox, mTimeBox, 4082, "Store modification time")
-        cTimeRow = timeRow(cTimeSetBox, cTimeBox, 4083, "Store creation time")
-        aTimeRow = timeRow(aTimeSetBox, aTimeBox, 4084, "Store last access time")
-        let zRow = timeRow(zTimeSetBox, zTimeBox, 4085, "Set archive time to latest file time")
+        timeRow(mTimeSetBox, mTimeBox, 4082, "Store modification time")
+        timeRow(cTimeSetBox, cTimeBox, 4083, "Store creation time")
+        timeRow(aTimeSetBox, aTimeBox, 4084, "Store last access time")
+        timeRow(zTimeSetBox, zTimeBox, 4085, "Set archive time to latest file time")
 
         preserveATimeBox.setButtonType(.switch)
         preserveATimeBox.title = Lang.text(4086, "Do not change source files last access time")
         preserveATimeBox.target = self
         preserveATimeBox.action = #selector(valueChanged(_:))
 
-        let timeStack = NSStackView(views: [precRow, mTimeRow, cTimeRow, aTimeRow, zRow])
-        timeStack.orientation = .vertical
-        timeStack.alignment = .leading
-        timeStack.spacing = 6
-        // Without this an NSBox can squash the stack and the rows draw on top of each other.
-        timeStack.setHuggingPriority(.required, for: .vertical)
-        timeStack.setContentCompressionResistancePriority(.required, for: .vertical)
-        for row in [precRow, mTimeRow, cTimeRow, aTimeRow, zRow] as [NSStackView] {
-            row.setHuggingPriority(.required, for: .vertical)
-            row.setContentCompressionResistancePriority(.required, for: .vertical)
+        let rc = RcDialog(14001)
+        let form = RcFormView()
+        for (view, id) in [(ntfsGroup, 115), (symLinksBox, 4040), (hardLinksBox, 4041),
+                           (altStreamsBox, 4042), (ntSecurityBox, 4043), (typeInfoLabel, 191),
+                           (timeGroup, 4080), (precSetBox, 201), (precLabel, 4081), (precCombo, 190),
+                           (mTimeSetBox, 202), (mTimeBox, 4082), (cTimeSetBox, 203), (cTimeBox, 4083),
+                           (aTimeSetBox, 204), (aTimeBox, 4084), (zTimeSetBox, 205), (zTimeBox, 4085),
+                           (preserveATimeBox, 4086)] as [(NSView, Int)] {
+            form.add(view, rc, id)
         }
-        timeGroup = NSBox()
-        timeGroup.title = Lang.text(4080, "Time")
-        timeGroup.contentView = wrap(timeStack)
-
-        let okButton = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okPressed(_:)), key: "\r")
-        let cancelButton = DialogKit.button(Lang.text(402, "Cancel"), target: self,
-                                            action: #selector(cancelPressed(_:)), key: "\u{1b}")
-        let helpButton = DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(helpPressed(_:)))
-        let spacer = NSView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let buttons = NSStackView(views: [helpButton, spacer, cancelButton, okButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-
-        let stack = NSStackView(views: [ntfsGroup, typeInfoLabel, timeGroup, preserveATimeBox, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        for v in [ntfsGroup, timeGroup, buttons] as [NSView] {
-            v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        }
-        stack.widthAnchor.constraint(greaterThanOrEqualToConstant: 380).isActive = true
-        stack.setHuggingPriority(.required, for: .vertical)
-        stack.setContentCompressionResistancePriority(.required, for: .vertical)
-        content = stack
-    }
-
-    private var content: NSStackView!
-
-    /// Lays out and sizes the window once the rows' visibility is final.
-    private func sizeToFit() {
-        DialogKit.install(content, in: window, parent: nil, minimumWidth: 420)
-    }
-
-    private func wrap(_ view: NSView) -> NSView {
-        let host = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        host.addSubview(view)
-        NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 8),
-            view.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -8),
-            view.topAnchor.constraint(equalTo: host.topAnchor, constant: 6),
-            view.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -6),
-        ])
-        return host
+        form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okPressed(_:)), key: "\r"), rc, 1)
+        form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self,
+                                  action: #selector(cancelPressed(_:)), key: "\u{1b}"), rc, 2)
+        form.add(DialogKit.button(Lang.text(409, "Help"), target: self, action: #selector(helpPressed(_:))), rc, 9)
+        RcPlace.install(form, in: window, size: rc.size, parent: nil)
     }
 
     // MARK: - OnInit / SetPrec / SetTimeMAC
@@ -236,7 +177,7 @@ final class CompressOptionsSheet: NSObject {
         // (01 section 9 #6, #7) but kept so the settings round-trip.
         altStreamsBox.isHidden = true
         ntSecurityBox.isHidden = true
-        ntfsGroup.isHidden = !(state.supportsSymLinks || state.supportsHardLinks)
+        ntfsGroup.isHidden = !(state.supportsSymLinks || state.supportsHardLinks)   // IDG_COMPRESS_NTFS
         symLinksBox.state = (state.symLinks ?? false) ? .on : .off
         hardLinksBox.state = (state.hardLinks ?? false) ? .on : .off
         altStreamsBox.state = (state.altStreams ?? false) ? .on : .off
@@ -315,13 +256,13 @@ final class CompressOptionsSheet: NSObject {
             mAllow = false
         }
 
-        configure(row: mTimeRow, setBox: mTimeSetBox, box: mTimeBox,
+        configure(setBox: mTimeSetBox, box: mTimeBox,
                   supported: state.supportsMTime, enabled: mAllow, setVisible: mSetVisible,
                   value: state.mTime, defaultValue: state.mTimeDefault)
-        configure(row: cTimeRow, setBox: cTimeSetBox, box: cTimeBox,
+        configure(setBox: cTimeSetBox, box: cTimeBox,
                   supported: state.supportsCTime, enabled: cAllow, setVisible: cAllow,
                   value: state.cTime, defaultValue: state.cTimeDefault)
-        configure(row: aTimeRow, setBox: aTimeSetBox, box: aTimeBox,
+        configure(setBox: aTimeSetBox, box: aTimeBox,
                   supported: state.supportsATime, enabled: aAllow, setVisible: aAllow,
                   value: state.aTime, defaultValue: state.aTimeDefault)
         // "Set archive time to latest file time" is always shown, default off.
@@ -331,13 +272,12 @@ final class CompressOptionsSheet: NSObject {
     }
 
     /// `CheckButton_BoolBox`: the tri-state pair.
-    private func configure(row: NSStackView, setBox: NSButton, box: NSButton,
+    private func configure(setBox: NSButton, box: NSButton,
                            supported: Bool, enabled: Bool, setVisible: Bool,
                            value: Bool?, defaultValue: Bool) {
-        // NSStackView keeps an arranged subview's slot when it is hidden, so the row itself is
-        // hidden through the stack (ShowItem_Bool on Windows).
-        row.isHidden = !supported
-        setBox.isHidden = !setVisible
+        // ShowItem_Bool(Set_Id / Id, supported): both boxes go, their places stay.
+        box.isHidden = !supported
+        setBox.isHidden = !(supported && setVisible)
         setBox.state = value != nil ? .on : .off
         box.state = (value ?? defaultValue) ? .on : .off
         box.isEnabled = enabled && value != nil

@@ -76,6 +76,8 @@ enum Settings {
         static let compressHardLinks = "Compression.HardLinks"
         static let compressSymLinks = "Compression.SymLinks"
         static let compressPreserveATime = "Compression.PreserveATime"
+        /// macOS only (dlgfeel): the Add to Archive dialog's "Exclude Mac resource forks".
+        static let compressExcludeMacResourceForks = "Compression.ExcludeMacResourceForks"
         static let formatOptionsPrefix = "Compression.Options."            // + <FormatID>.<name>
 
         // HKCU\Software\7-Zip\Options (5.5)
@@ -525,6 +527,13 @@ enum Settings {
     static var compressShowPassword: Bool {
         get { bool(Key.compressShowPassword) }
         set { setBool(newValue, Key.compressShowPassword) }
+    }
+
+    /// `Compression.ExcludeMacResourceForks` (bool, default false): the Add to Archive dialog's
+    /// macOS checkbox, remembered like Compression.ShowPassword.
+    static var compressExcludeMacResourceForks: Bool {
+        get { bool(Key.compressExcludeMacResourceForks) }
+        set { setBool(newValue, Key.compressExcludeMacResourceForks) }
     }
 
     static var compressEncryptHeaders: Bool {

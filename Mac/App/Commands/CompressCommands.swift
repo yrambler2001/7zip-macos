@@ -241,8 +241,13 @@ enum CompressCommands {
         options.showsEncryptFileNames = result.encryptHeadersIsAllowed
         options.password = result.password
 
+        // "Exclude Mac resource forks" (dlgfeel): the same items as `sourcePaths` (literal
+        // censor entries, what update(with:sourcePaths:) builds) plus the recursive excludes.
+        CompressMacMetadata.apply(to: updateOptions, exclude: result.excludeMacResourceForks)
+        let specs = CompressMacMetadata.pathSpecs(items: sourcePaths.map { SZPathSpec.literal($0) },
+                                                  exclude: result.excludeMacResourceForks)
         let outcome = OperationRunner.run(options) { runner -> SZUpdateResult in
-            try SZUpdater.update(with: updateOptions, sourcePaths: sourcePaths, progress: runner)
+            try SZUpdater.update(with: updateOptions, pathSpecs: specs, progress: runner)
         }
 
         switch outcome {

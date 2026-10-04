@@ -2,9 +2,12 @@
 // editor. 01b-fm-dialogs-settings.md section 4.21, 03-shell-integration-inventory.md sections
 // 3.1 / 3.4 / 6.2, 01-fm-feature-inventory.md section 9 #3.
 //
-// Windows writes HKCU|HKLM\Software\Classes entries (two columns: current user / all users).
-// macOS has no machine-wide association store, so there is exactly one column -- the current
-// user -- and the page says so. Associating calls NSWorkspace.setDefaultApplication(at:toOpen:),
+// Windows writes HKCU|HKLM\Software\Classes entries (two state columns: current user / all
+// users). macOS has no machine-wide association store, so the page is the NUM_EXT_GROUPS == 1
+// build of SystemPage.cpp: the Type column and one state column, headed with the user's name.
+// The controls sit on the IDD_SYSTEM template's rects (dlgfeel): no Description or Default
+// application column, no extra buttons, no note. Associating calls
+// NSWorkspace.setDefaultApplication(at:toOpen:),
 // which shows the system's own confirmation and answers asynchronously; releasing a type hands it
 // back to the application that owned it when the page was opened, because macOS has no API to
 // remove a default handler.
@@ -47,14 +50,11 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
     }
 
     private var rows: [Row] = []
-    private let table = OptionsAssociationTableView()
-    private let associateLabel = OptionsUI.label(2201, "Associate 7-Zip with:")     // IDT_SYSTEM_ASSOCIATE
+    private let table = OptionsAssociationTableView()                               // IDL_SYSTEM_ASSOCIATE 100
+    private let associateLabel = OptionsUI.label(2201, "Associate 7-Zip with:")     // IDT_SYSTEM_ASSOCIATE 2201
     private var typeColumn: NSTableColumn?
     private var userColumn: NSTableColumn?
     private let setButton = NSButton()         // IDB_SYSTEM_CURRENT 101 ("+")
-    private let clearButton = NSButton()       // the "-" key of SystemPage.cpp:440-470
-    private let selectAllButton = NSButton()   // "*" / Ctrl+A
-    private let perUserNote = OptionsUI.note("")
     private static let ourBundleID = Bundle.main.bundleIdentifier ?? "com.yrambler2001.7zip"
 
     override func loadView() {
@@ -66,20 +66,11 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         }
 
         let userName = NSUserName().isEmpty ? "Current User" : NSUserName()     // GetUserNameW fallback
-        typeColumn = OptionsUI.column("type", Lang.text(1020, "Type"), width: 110)    // IDS_PROP_FILE_TYPE 1020
-        // Windows shows only Type + the two state columns; the description is the ProgID title it
-        // writes ("<EXT> Archive", SystemPage.cpp:304), shown here as its own column.
-        let descriptionColumn = OptionsUI.column("description", "Description", width: 150)
-        userColumn = OptionsUI.column("user", userName, width: 180)
-        let ownerColumn = OptionsUI.column("owner", "Default application", width: 170)
-
+        // SystemPage.cpp:166-211: Type 80 px (LVCFMT_LEFT), the user's column 152 px LVCFMT_CENTER.
+        typeColumn = OptionsUI.column("type", Lang.text(1020, "Type"), width: 80)    // IDS_PROP_FILE_TYPE 1020
+        userColumn = OptionsUI.column("user", userName, width: 152, alignment: .center)
         table.addTableColumn(typeColumn!)
-        table.addTableColumn(descriptionColumn)
         table.addTableColumn(userColumn!)
-        table.addTableColumn(ownerColumn)
-        table.usesAlternatingRowBackgroundColors = true
-        table.style = .fullWidth
-        table.rowHeight = 20
         table.allowsMultipleSelection = true
         table.dataSource = self
         table.delegate = self
@@ -100,54 +91,19 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
             return true
         }
 
-        configure(setButton, "+", #selector(setSelected(_:)),
-                  tip: "Make 7-Zip the default application for the selected types (every type when nothing is selected)")
-        configure(clearButton, "\u{2212}", #selector(clearSelected(_:)),
-                  tip: "Give the selected types back to the application that owned them")
-        configure(selectAllButton, "*", #selector(selectAllRows(_:)),
-                  tip: "Select every row (Windows: * or Ctrl+A)")
+        setButton.title = "+"
+        setButton.bezelStyle = .rounded
+        setButton.target = self
+        setButton.action = #selector(setSelected(_:))
 
-        let buttons = OptionsUI.hstack([setButton, clearButton, selectAllButton], spacing: 6)
-        // IDT_SYSTEM_ASSOCIATE is a one-line static on Windows. It shares the row with the buttons,
-        // so it must not be a wrapping label: a wrapping label sized by its own intrinsic width in
-        // a row, next to a spacer view with no width of its own, had an ambiguous width, and
-        // OptionsPageBase.viewDidLayout wrote each answer back into preferredMaxLayoutWidth -- in
-        // Ukrainian it flipped 94.5 <-> 63.5 pt until AppKit raised "more Update Constraints in
-        // Window passes than there are views" (Mac/docs/reports/syslayout.md). Gravity areas pin
-        // the label to the leading edge and the buttons to the trailing one with no spacer view.
-        associateLabel.maximumNumberOfLines = 1
-        associateLabel.lineBreakMode = .byTruncatingTail
-        associateLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        associateLabel.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(749), for: .horizontal)
-        buttons.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-        // A stack view hugs at 250 by default; it must not stretch, or the free space between
-        // the gravity areas would be split ambiguously again.
-        buttons.setHuggingPriority(.defaultHigh, for: .horizontal)
-        let header = NSStackView()
-        header.orientation = .horizontal
-        header.alignment = .centerY
-        header.spacing = 8
-        header.setViews([associateLabel], in: .leading)
-        header.setViews([buttons], in: .trailing)
-        header.translatesAutoresizingMaskIntoConstraints = false
-
-        let scroll = OptionsUI.scrollTable(table, minHeight: 260)
-        let stack = OptionsUI.vstack([header, scroll, perUserNote], spacing: 8)
-        install(stack)
-        NSLayoutConstraint.activate([
-            header.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            perUserNote.widthAnchor.constraint(equalTo: stack.widthAnchor),
-        ])
-    }
-
-    private func configure(_ button: NSButton, _ title: String, _ action: Selector, tip: String) {
-        button.title = title
-        button.bezelStyle = .rounded
-        button.target = self
-        button.action = action
-        button.toolTip = tip
-        button.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        let rc = self.rc
+        form.add(associateLabel, rc, 2201)
+        // IDB_SYSTEM_CURRENT sits over the user's column (x 138 = list 12 + Type 80 + 46); the
+        // All-users button IDB_SYSTEM_ALL 102 has no column to sit over on macOS.
+        form.add(setButton, rc, 101)
+        let scroll = OptionsUI.listTable(table, header: true)
+        form.addSubview(scroll)
+        scroll.frame = rc.rect(100)
     }
 
     // MARK: OnInit (CExtDatabase::Read + CShellExtInfo::ReadFromRegistry)
@@ -165,28 +121,9 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
         relabelPage()
     }
 
-    /// Every column as wide as its header and its widest cell (the icon adds 20 pt to Type).
-    private func sizeColumns() {
-        var owners = rows.compactMap { $0.ownerURL.map(Self.displayName) }
-        owners.append("\u{2014}")
-        OptionsUI.sizeColumnsToContent(table, texts: [
-            "type": rows.map(\.type.ext),
-            "description": rows.map(\.type.localizedDescription),
-            "user": rows.map(stateText) + ["7-Zip", "[7-Zip]"],
-            "owner": owners,
-        ], extra: ["type": 20])
-    }
-
     override func relabelPage() {
         associateLabel.stringValue = Lang.text(2201, "Associate 7-Zip with:")
-        associateLabel.toolTip = associateLabel.stringValue      // in case a translation is cut
         typeColumn?.title = Lang.text(1020, "Type")
-        // IDS_SYSTEM_ALL_USERS 2202 ("All users", IDB_SYSTEM_ALL 102) has no macOS counterpart: associations are
-        // per-user only (01 section 9 #3), so the second Windows column is replaced by this note.
-        perUserNote.stringValue = "macOS keeps file associations per user only, so the Windows "
-            + "\u{201C}\(Lang.text(2202, "All users"))\u{201D} column does not apply. "
-            + "Changing a default application asks for confirmation in a system dialog."
-        sizeColumns()
         table.reloadData()
     }
 
@@ -246,61 +183,34 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row rowIndex: Int) -> NSView? {
         let row = rows[rowIndex]
-        let cell = NSTableCellView()
-        let text = NSTextField(labelWithString: "")
-        text.translatesAutoresizingMaskIntoConstraints = false
-        text.lineBreakMode = .byTruncatingTail
-        cell.addSubview(text)
-        cell.textField = text
-        var leading: CGFloat = 2
-
         switch tableColumn?.identifier.rawValue ?? "" {
         case "type":
-            // The format icon, as Windows draws it from 7z.dll (SystemPage.cpp:95).
-            let image = NSImageView()
-            image.translatesAutoresizingMaskIntoConstraints = false
+            // The format icon at the item's left, as Windows draws it from 7z.dll (SystemPage.cpp:95),
+            // then the extension.
+            let cell = NSTableCellView()
+            let image = NSImageView(frame: NSRect(x: 4, y: 0, width: 16, height: 16))
             image.image = Self.formatIcon(for: row.type)
             image.imageScaling = .scaleProportionallyDown
+            image.autoresizingMask = [.minYMargin, .maxYMargin]
             cell.addSubview(image)
             cell.imageView = image
+            let text = NSTextField(labelWithString: row.type.ext)
+            text.font = PanelMetrics.listFont
+            text.lineBreakMode = .byTruncatingTail
+            text.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(text)
+            cell.textField = text
             NSLayoutConstraint.activate([
-                image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                image.widthAnchor.constraint(equalToConstant: 16),
-                image.heightAnchor.constraint(equalToConstant: 16),
+                text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 20),
+                text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             ])
-            leading = 22
-            text.stringValue = row.type.ext
-            text.toolTip = "icon \(row.type.iconIndex) (\(row.type.iconFileName).ico), format \(row.type.format)"
-        case "description":
-            text.stringValue = row.type.localizedDescription      // "<EXT> Archive"
-        case "user":
-            text.stringValue = stateText(row)
-            text.alignment = .center
-            if row.wantsOurs != row.originalIsOurs {
-                text.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-            }
-            if row.utType == nil {
-                text.stringValue = "\u{2014}"
-                text.toolTip = "macOS has no type declared for .\(row.type.ext) yet "
-                    + "(the app's imported type declarations are added by the Finder integration scope)"
-            }
+            return cell
         default:
-            if let url = row.ownerURL {
-                text.stringValue = Self.displayName(url)
-                text.toolTip = url.path
-            } else {
-                text.stringValue = "\u{2014}"
-            }
-            text.textColor = .secondaryLabelColor
+            let cell = OptionsUI.cellText(stateText(row), alignment: .center)
+            if row.utType == nil { cell.textField?.stringValue = "" }
+            return cell
         }
-
-        NSLayoutConstraint.activate([
-            text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: leading),
-            text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
-            text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
-        return cell
     }
 
     private var targetRowIndices: [Int] {

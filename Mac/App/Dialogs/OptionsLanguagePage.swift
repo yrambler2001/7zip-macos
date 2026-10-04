@@ -1,20 +1,17 @@
 // OptionsLanguagePage.swift -- Options > Language (IDD_LANG 2101, "Language").
 // 01b-fm-dialogs-settings.md section 4.9, 01-fm-feature-inventory.md section 7.1, section 9 #18.
 //
-// Windows shows a combo box; this page shows the same entries as a list with the English name,
-// the native name and the translated-line count, because a list can carry all three columns at
-// once. Entry order: the system default, then the built-in English entry ("-", LangPage.cpp:88-99),
-// then every Lang/*.txt in the bundle. Entries that match the user's locale are marked ***
-// (exact) or +++ (same primary language), as Lang_GetShortNames_for_DefaultLang does.
-//
-// Selecting a language switches it immediately (loadLanguage + relabel + notification), so open
-// windows re-label without a restart; Apply/OK persist the `Lang` value and Cancel puts the
-// original language back.
+// As on Windows (LangPage.cpp, dlgfeel finding 21): one drop-down list (IDC_LANG_LANG 100,
+// CBS_DROPDOWNLIST, 240 px) of "<English name> : <native name>" with the "---" / "***" / "+++"
+// marks, the built-in English first and the rest by name; and the static IDT_LANG_INFO 101 under
+// it with ShowLangInfo's text. Picking an entry only shows its info and enables Apply
+// (CBN_SELCHANGE); Apply / OK store the `Lang` value and switch the language (OnApply ->
+// SaveRegLang + ReloadLang), and the sheet re-labels everything (OptionsDialog.cpp:31-50).
 
 import Cocoa
 import SevenZipKit
 
-final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTableViewDelegate {
+final class OptionsLanguagePage: OptionsPageBase {
 
     override var pageID: UInt32 { 2101 }                      // IDD_LANG
     override var fallbackTitle: String { "Language" }
@@ -32,73 +29,39 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
     }
 
     private(set) var entries: [Entry] = []
-    private let table = NSTableView()      // IDC_LANG_LANG 100 (the language combo, as a table)
+    private let combo = NSPopUpButton(frame: .zero, pullsDown: false)   // IDC_LANG_LANG 100
     private let langLabel = OptionsUI.label(2102, "Language:")      // IDT_LANG_LANG 2102
-    // IDT_LANG_INFO 101: a static on Windows that the text simply overflows; a read-only text view
-    // here, because ShowLangInfo can list up to 50 missing and 50 extra ids.
-    private let infoView = NSTextView()
-    private var infoScroll: NSScrollView!
+    // IDT_LANG_INFO 101: a multi-line static (SS_NOPREFIX) the text simply overflows.
+    private let infoField = RcPlace.makeWrappingLabel("")
     /// The files that did not load, reported once per page load (LangPage.cpp:262-263).
     private(set) var reportedLoadErrors: [String] = []
 
     /// The text IDT_LANG_INFO shows right now (for tests).
-    var infoText: String { infoView.string }
+    var infoText: String { infoField.stringValue }
+    /// The combo's entries as Windows writes them (for tests).
+    var comboTitles: [String] { combo.itemTitles }
     private var originalCode = ""
-    private var appliedCode = ""
     private var needSave = false
 
     override func loadView() {
         super.loadView()
-        table.addTableColumn(OptionsUI.column("mark", "", width: 34))
-        table.addTableColumn(OptionsUI.column("english", "English name", width: 170))
-        table.addTableColumn(OptionsUI.column("native", "Native name", width: 170))
-        table.addTableColumn(OptionsUI.column("code", "Code", width: 64))
-        table.addTableColumn(OptionsUI.column("lines", "Strings", width: 120))
-        table.usesAlternatingRowBackgroundColors = true
-        table.style = .fullWidth
-        table.rowHeight = 19
-        table.allowsMultipleSelection = false
-        table.dataSource = self
-        table.delegate = self
-
-        infoView.isEditable = false
-        infoView.isSelectable = true
-        infoView.drawsBackground = false
-        infoView.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        infoView.textColor = .secondaryLabelColor
-        infoView.textContainerInset = NSSize(width: 2, height: 2)
-        infoView.isVerticallyResizable = true
-        infoView.isHorizontallyResizable = false
-        infoView.autoresizingMask = [.width]
-        infoView.textContainer?.widthTracksTextView = true
-        infoScroll = NSScrollView()
-        infoScroll.documentView = infoView
-        infoScroll.hasVerticalScroller = true
-        infoScroll.autohidesScrollers = true
-        infoScroll.drawsBackground = false
-        infoScroll.borderType = .noBorder
-        infoScroll.translatesAutoresizingMaskIntoConstraints = false
-        infoScroll.heightAnchor.constraint(equalToConstant: 110).isActive = true
-
-        let scroll = OptionsUI.scrollTable(table, minHeight: 200)
-        let stack = OptionsUI.vstack([langLabel, scroll, infoScroll], spacing: 8)
-        install(stack)
-        NSLayoutConstraint.activate([
-            scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            infoScroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            langLabel.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
-        ])
+        combo.target = self
+        combo.action = #selector(comboChanged(_:))
+        infoField.lineBreakMode = .byWordWrapping
+        infoField.cell?.truncatesLastVisibleLine = false
+        let rc = self.rc
+        form.add(langLabel, rc, 2102)
+        form.add(combo, rc, 100)
+        form.add(infoField, rc, 101)
+        infoField.frame.size.height = rc.rect(101).height
     }
 
-    // MARK: OnInit (LangPage.cpp:88-158)
+    // MARK: OnInit (LangPage.cpp:57-265)
 
     override func pageDidLoad() {
         originalCode = Settings.language
-        appliedCode = originalCode
         needSave = false
         buildEntries()
-        table.reloadData()
-        selectRow(for: originalCode)
         relabelPage()
         reportLoadErrors(SZLang.shared.failedLanguageFiles)
     }
@@ -125,13 +88,10 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
         let primary = candidates.last?.lowercased()
         let englishCount = SZLang.shared.englishStringCount
 
-        var list: [Entry] = [
-            Entry(code: "", englishName: "System default", nativeName: candidates.first ?? "",
-                  stringCount: 0, mark: ""),
-            // LangPage.cpp:88-99: the first combo entry is the built-in English resource set.
-            Entry(code: "-", englishName: "English", nativeName: "English",
-                  stringCount: englishCount, mark: "---"),       // LangPage.cpp:69: Mark = "---"
-        ]
+        // LangPage.cpp:66-76: the built-in English record, Order 0, Mark "---".
+        let english = Entry(code: "-", englishName: "English", nativeName: "English",
+                            stringCount: englishCount, mark: "---")
+        var others: [Entry] = []
         for info in SZLang.shared.availableLanguages {
             let code = info.code.lowercased()
             var mark = ""
@@ -140,73 +100,59 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
             } else if let primary, code == primary || code.hasPrefix(primary + "-") {
                 mark = "+++"
             }
-            list.append(Entry(code: info.code,
-                              englishName: info.englishName.isEmpty ? info.code : info.englishName,
-                              nativeName: info.nativeName,
-                              stringCount: info.stringCount,
-                              mark: mark,
-                              comments: info.comments,
-                              missingLines: info.missingLines,
-                              extraLines: info.extraLines))
+            others.append(Entry(code: info.code,
+                                englishName: info.englishName.isEmpty ? info.code : info.englishName,
+                                nativeName: info.nativeName,
+                                stringCount: info.stringCount,
+                                mark: mark,
+                                comments: info.comments,
+                                missingLines: info.missingLines,
+                                extraLines: info.extraLines))
         }
-        entries = list
-        sizeColumns()
+        // CLangListRecord::Compare: Order, then the displayed name, case-insensitively.
+        others.sort { Self.comboTitle($0, withMark: false).caseInsensitiveCompare(Self.comboTitle($1, withMark: false))
+            == .orderedAscending }
+        entries = [english] + others
+        combo.removeAllItems()
+        for entry in entries { combo.addItem(withTitle: Self.comboTitle(entry, withMark: true)) }
+        // The selected record: the language in use (g_LangID), else the English one.
+        let current = originalCode.isEmpty ? SZLang.shared.currentLanguageCode : originalCode
+        let index = entries.firstIndex { $0.code.caseInsensitiveCompare(current) == .orderedSame } ?? 0
+        combo.selectItem(at: index)
     }
 
-    private func countText(_ entry: Entry) -> String {
-        let total = max(SZLang.shared.englishStringCount, 1)
-        return entry.stringCount > 0 ? "\(entry.stringCount) / \(total) = \(entry.stringCount * 100 / total)%" : ""
-    }
-
-    private func sizeColumns() {
-        OptionsUI.sizeColumnsToContent(table, texts: [
-            "mark": entries.map(\.mark),
-            "english": entries.map(\.englishName),
-            "native": entries.map(\.nativeName),
-            "code": entries.map { $0.code.isEmpty ? "auto" : $0.code },
-            "lines": entries.map(countText),
-        ])
+    /// "<English> : <native>" (NativeLangString) and "  <mark>" (LangPage.cpp:245-252).
+    static func comboTitle(_ entry: Entry, withMark: Bool) -> String {
+        var s = entry.englishName
+        if !entry.nativeName.isEmpty { s += " : " + entry.nativeName }
+        if withMark, !entry.mark.isEmpty { s += "  " + entry.mark }
+        return s
     }
 
     override func relabelPage() {
         langLabel.stringValue = Lang.text(2102, "Language:")
         showLangInfo()
-        table.reloadData()
-    }
-
-    private func selectRow(for code: String) {
-        let index = entries.firstIndex { $0.code.caseInsensitiveCompare(code) == .orderedSame } ?? 0
-        table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
-        table.scrollRowToVisible(index)
     }
 
     /// ShowLangInfo (LangPage.cpp:334-358): "<name> : <lines> / <en.ttt lines> = NN%", the file's
     /// comment lines, then "------ Missing lines: N :" and "------ Extra lines: N :" with up to 50
     /// "<id> : <text>" rows each (AddVectorToString / AddVectorToString2, LangPage.cpp:300-332).
     private func showLangInfo() {
-        let row = table.selectedRow
+        let row = combo.indexOfSelectedItem
         guard entries.indices.contains(row) else {
-            infoView.string = ""
+            infoField.stringValue = ""
             return
         }
-        infoView.string = Self.langInfoText(entries[row], englishCount: SZLang.shared.englishStringCount)
-        infoView.scrollToBeginningOfDocument(nil)
+        infoField.stringValue = Self.langInfoText(entries[row], englishCount: SZLang.shared.englishStringCount)
     }
 
     static func langInfoText(_ entry: Entry, englishCount: Int) -> String {
         var s = ""
-        switch entry.code {
-        case "":
-            // macOS addition: the system-default entry has no file of its own.
-            s = "System default \u{2014} the lang file that matches "
-                + "\(SZLang.systemLanguageCandidates.joined(separator: ", ")), else built-in English.\n"
-        default:
-            s = entry.code + " : \(entry.stringCount)"
-            if englishCount != 0 {
-                s += " / \(englishCount) = \(entry.stringCount * 100 / englishCount)%"
-            }
-            s += "\n"
+        s = entry.code + " : \(entry.stringCount)"
+        if englishCount != 0 {
+            s += " / \(englishCount) = \(entry.stringCount * 100 / englishCount)%"
         }
+        s += "\n"
         appendLines(&s, entry.comments)
         appendSection(&s, "Missing lines", entry.missingLines)
         appendSection(&s, "Extra lines", entry.extraLines)
@@ -231,85 +177,44 @@ final class OptionsLanguagePage: OptionsPageBase, NSTableViewDataSource, NSTable
         appendLines(&s, lines)
     }
 
-    // MARK: Table
-
-    func numberOfRows(in tableView: NSTableView) -> Int { entries.count }
-
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let entry = entries[row]
-        let text: String
-        switch tableColumn?.identifier.rawValue ?? "" {
-        case "mark": text = entry.mark
-        case "english": text = entry.englishName
-        case "native": text = entry.nativeName
-        case "code": text = entry.code.isEmpty ? "auto" : entry.code
-        default: text = countText(entry)
-        }
-        let cell = NSTableCellView()
-        let field = NSTextField(labelWithString: text)
-        field.translatesAutoresizingMaskIntoConstraints = false
-        field.lineBreakMode = .byTruncatingTail
-        cell.addSubview(field)
-        cell.textField = field
-        NSLayoutConstraint.activate([
-            field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
-            field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
-        return cell
-    }
-
-    /// CBN_SELCHANGE (LangPage.cpp:288-297) plus the immediate switch this port adds.
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        guard !initMode, entries.indices.contains(table.selectedRow) else { return }
-        let code = entries[table.selectedRow].code
-        guard code != appliedCode else { return }
-        switchLanguage(to: code)
+    /// CBN_SELCHANGE (LangPage.cpp:282-292): the info, and Apply.
+    @objc private func comboChanged(_ sender: Any?) {
+        showLangInfo()
+        guard !initMode else { return }
         needSave = true
         changed()
-    }
-
-    private func switchLanguage(to code: String) {
-        do {
-            try SZLang.shared.loadLanguage(code: code)
-        } catch {
-            // LangPage.cpp:262-263 reports unreadable files in one "Error in Lang file" box.
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Error in Lang file"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-            return
-        }
-        appliedCode = code
-        showLangInfo()
-        // Re-label this window, the menu bar and the toolbars, then tell everyone else.
-        owner?.languageDidChange()
-        NotificationCenter.default.post(name: Settings.Group.language.notificationName, object: nil,
-                                        userInfo: [Settings.keyUserInfoKey: Settings.Key.lang,
-                                                   Settings.groupUserInfoKey: Settings.Group.language])
     }
 
     // MARK: OnApply (LangPage.cpp:267-280)
 
     override func applyPage() -> Bool {
         guard needSave else { return true }
-        Settings.language = appliedCode
-        originalCode = appliedCode
+        let row = combo.indexOfSelectedItem
+        guard entries.indices.contains(row) else { return true }
+        let code = entries[row].code
+        Settings.language = code
+        originalCode = code
         needSave = false
+        // ReloadLang(); LangWasChanged = true -> the sheet and the main window re-label.
+        do {
+            try SZLang.shared.loadLanguage(code: code)
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Error in Lang file"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+            return true
+        }
+        owner?.languageDidChange()
+        NotificationCenter.default.post(name: Settings.Group.language.notificationName, object: nil,
+                                        userInfo: [Settings.keyUserInfoKey: Settings.Key.lang,
+                                                   Settings.groupUserInfoKey: Settings.Group.language])
         return true
     }
 
-    /// Cancel: put the language that was active when the page opened back.
+    /// Cancel: nothing was switched before Apply.
     override func cancelPage() {
-        guard appliedCode != originalCode else { return }
-        let code = originalCode
-        try? SZLang.shared.loadLanguage(code: code)
-        appliedCode = code
         needSave = false
-        withoutChangeTracking {
-            selectRow(for: code)
-            owner?.languageDidChange()
-        }
     }
 }

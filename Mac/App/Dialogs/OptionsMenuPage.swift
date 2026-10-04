@@ -4,9 +4,11 @@
 //
 // On Windows the first checkbox registers 7-zip.dll as a context-menu handler. On macOS the
 // context menu comes from the Finder Sync extension, which only the user can enable (System
-// Settings > General > Login Items & Extensions), so the checkbox becomes a live status display
-// plus the button and the pluginkit commands that turn it on. Everything else is stored under the
-// same Options.* keys Windows uses, so the extension (the `finder` scope) reads them unchanged.
+// Settings > General > Login Items & Extensions): the checkbox shows whether it is enabled, and
+// clicking it opens that pane. Everything else is stored under the same Options.* keys Windows
+// uses, so the extension (the `finder` scope) reads them unchanged. The controls sit on the
+// IDD_MENU template's rects (dlgfeel); the context-menu list shows all 14 items without a
+// scroll bar, as on Windows.
 
 import Cocoa
 import SevenZipKit
@@ -47,19 +49,16 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         MenuItemRow(langID: 1046, fallback: "Checksum", flag: .crcCascaded, suffix: " >", argument: nil, literal: "7-Zip > CRC SHA"),
     ]
 
-    // IDX_SYSTEM_INTEGRATE_TO_MENU 2301 -- read-only on macOS (see the file header).
+    // IDX_SYSTEM_INTEGRATE_TO_MENU 2301 -- the Finder extension's state (see the file header).
     // IDX_SYSTEM_INTEGRATE_TO_MENU_2 2310 (the 32-bit shell DLL on 64-bit Windows) has no
-    // counterpart: there is one Finder extension (03 §1.8).
+    // counterpart: there is one Finder extension (03 §1.8). MenuPage.cpp hides it the same way on
+    // a 32-bit Windows (HideItem, the others keep their places).
     private let integrateCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-    private let integrateStatus = OptionsUI.note("")
-    private let enableButton = NSButton()
-    private let diagnosticsField = NSTextField(labelWithString: "")
     private var cascadedCheckbox: NSButton!      // IDX_SYSTEM_CASCADED_MENU 2302
     private var iconsCheckbox: NSButton!         // IDX_SYSTEM_ICON_IN_MENU 2304
     private var elimDupCheckbox: NSButton!       // IDX_EXTRACT_ELIM_DUP 3430
     private let zoneLabel = OptionsUI.label(3440, "Propagate Zone.Id stream:")   // IDT_SYSTEM_ZONE 3440
     private let zoneCombo = NSPopUpButton(frame: .zero, pullsDown: false)        // IDC_SYSTEM_ZONE 101
-    private let zoneNote = OptionsUI.note("")
     private let itemsLabel = OptionsUI.label(2303, "Context menu items:")        // IDT_SYSTEM_CONTEXT_MENU_ITEMS 2303
     private let itemsTable = NSTableView()                                        // IDL_SYSTEM_OPTIONS 100
     private var itemChecked = [Bool](repeating: true, count: OptionsMenuPage.menuItems.count)
@@ -74,71 +73,37 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     private var cascadedWasDefined = false
     private var iconsWasDefined = false
     private var elimDupWasDefined = false
+    /// The Finder extension's state as `pluginkit` last reported it (nil while checking).
+    private(set) var finderExtensionEnabled: Bool?
 
     override func loadView() {
         super.loadView()
 
         integrateCheckbox.target = self
         integrateCheckbox.action = #selector(integrateClicked(_:))
-        enableButton.title = "Open Login Items & Extensions\u{2026}"
-        enableButton.bezelStyle = .rounded
-        enableButton.target = self
-        enableButton.action = #selector(openSystemSettings(_:))
-        diagnosticsField.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-        diagnosticsField.textColor = .secondaryLabelColor
-        diagnosticsField.isSelectable = true
-        diagnosticsField.lineBreakMode = .byTruncatingTail
-        // `lineBreakMode` alone only says *how* to truncate: a label still resists compression
-        // below its full text, and this one's text is a pluginkit command line with a bundle
-        // identifier, a version and a path in it. Tied to the stack width, that pushed the whole
-        // Options window out to 2191 pt -- wider than the screen, with the tab strip and the
-        // OK / Cancel buttons off the right edge. Let it be squeezed and truncated instead.
-        diagnosticsField.cell?.usesSingleLineMode = true
-        diagnosticsField.maximumNumberOfLines = 1
-        diagnosticsField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
         cascadedCheckbox = OptionsUI.checkbox(2302, "Cascaded context menu", self, #selector(optionClicked(_:)))
         iconsCheckbox = OptionsUI.checkbox(2304, "Icons in context menu", self, #selector(optionClicked(_:)))
         elimDupCheckbox = OptionsUI.checkbox(3430, "Eliminate duplication of root folder", self, #selector(optionClicked(_:)))
-
         zoneCombo.target = self
         zoneCombo.action = #selector(optionClicked(_:))
-        zoneCombo.translatesAutoresizingMaskIntoConstraints = false
-        zoneCombo.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
 
-        // LVS_SINGLESEL | LVS_NOCOLUMNHEADER with LVS_EX_CHECKBOXES (MenuPage.cpp:232-236).
-        itemsTable.addTableColumn(OptionsUI.column("item", "", width: 420))
-        itemsTable.headerView = nil
-        itemsTable.rowHeight = 20
-        itemsTable.style = .plain
+        // LVS_REPORT | LVS_SINGLESEL | LVS_NOCOLUMNHEADER with LVS_EX_CHECKBOXES |
+        // LVS_EX_FULLROWSELECT, one 200 px column (MenuPage.cpp:230-236).
+        itemsTable.addTableColumn(OptionsUI.column("item", "", width: 200))
         itemsTable.dataSource = self
         itemsTable.delegate = self
-        let itemsScroll = OptionsUI.scrollTable(itemsTable, minHeight: 120)
+        let itemsScroll = OptionsUI.listTable(itemsTable, header: false)
 
-        let zoneRow = OptionsUI.hstack([zoneLabel, zoneCombo])
-        let stack = OptionsUI.vstack([
-            integrateCheckbox, integrateStatus,
-            OptionsUI.hstack([enableButton]), diagnosticsField,
-            separator(),
-            cascadedCheckbox, iconsCheckbox, elimDupCheckbox,
-            zoneRow, zoneNote,
-            itemsLabel, itemsScroll,
-        ], spacing: 7)
-        install(stack)
-        NSLayoutConstraint.activate([
-            itemsScroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            integrateStatus.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            diagnosticsField.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            zoneNote.widthAnchor.constraint(equalTo: stack.widthAnchor),
-        ])
-    }
-
-    private func separator() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.widthAnchor.constraint(greaterThanOrEqualToConstant: 400).isActive = true
-        return box
+        let rc = self.rc
+        form.add(integrateCheckbox, rc, 2301)
+        form.add(cascadedCheckbox, rc, 2302)
+        form.add(iconsCheckbox, rc, 2304)
+        form.add(elimDupCheckbox, rc, 3430)
+        form.add(zoneLabel, rc, 3440)
+        form.add(zoneCombo, rc, 101)
+        form.add(itemsLabel, rc, 2303)
+        form.addSubview(itemsScroll)
+        itemsScroll.frame = rc.rect(100)
     }
 
     /// MenuPage.cpp:241-278.
@@ -177,8 +142,6 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         elimDupCheckbox.title = Lang.text(3430, "Eliminate duplication of root folder")
         zoneLabel.stringValue = Lang.text(3440, "Propagate Zone.Id stream:")
         itemsLabel.stringValue = Lang.text(2303, "Context menu items:")
-        zoneNote.stringValue = "On macOS this propagates the com.apple.quarantine attribute to "
-            + "extracted files instead of the Windows Zone.Identifier stream."
         itemsTable.reloadData()
         rebuildZoneCombo()
     }
@@ -209,40 +172,17 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     // MARK: Finder Sync state (03 section 6.4 / section 7)
 
     private func refreshIntegrationState() {
-        integrateCheckbox.isEnabled = false
-        integrateStatus.stringValue = "Checking the Finder integration state\u{2026}"
-        setDiagnostics("pluginkit -e use -i \(Self.finderSyncBundleID)")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let output = Self.runPluginkit()
             let line = output.split(separator: "\n").first { $0.contains(Self.finderSyncBundleID) }
             let enabled = line?.hasPrefix("+") ?? false
-            let registered = line != nil
             DispatchQueue.main.async {
                 guard let self else { return }
+                self.finderExtensionEnabled = enabled
                 self.integrateCheckbox.state = enabled ? .on : .off
-                if enabled {
-                    self.integrateStatus.stringValue = "The Finder extension is enabled. Finder shows the 7-Zip menu "
-                        + "for the items you select."
-                } else if registered {
-                    self.integrateStatus.stringValue = "The Finder extension is registered but not enabled. Enable "
-                        + "\u{201C}7-Zip\u{201D} in System Settings > General > Login Items & Extensions "
-                        + "(File Providers / Finder), or run the command below."
-                } else {
-                    self.integrateStatus.stringValue = "The Finder extension is not registered yet. Launch the app "
-                        + "from /Applications once, then enable it in System Settings > General > "
-                        + "Login Items & Extensions."
-                }
-                self.setDiagnostics("pluginkit -e use -i \(Self.finderSyncBundleID)"
-                    + "   |   " + (line.map(String.init) ?? "pluginkit -m -p com.apple.FinderSync -v: not listed"))
+                self.integrateCheckbox.toolTip = line.map(String.init)
             }
         }
-    }
-
-    /// The field truncates (it must not widen the window), so the full command stays reachable
-    /// as a tool tip and by selecting the text.
-    private func setDiagnostics(_ text: String) {
-        diagnosticsField.stringValue = text
-        diagnosticsField.toolTip = text
     }
 
     private static func runPluginkit() -> String {
@@ -262,8 +202,11 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// The extension can only be switched on and off by the user in System Settings: the click
+    /// opens that pane and the box goes back to the real state.
     @objc private func integrateClicked(_ sender: Any?) {
-        // Not user-settable from inside the app; keep the displayed state truthful.
+        integrateCheckbox.state = finderExtensionEnabled == true ? .on : .off
+        openSystemSettings(sender)
         refreshIntegrationState()
     }
 
@@ -319,17 +262,17 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     func numberOfRows(in tableView: NSTableView) -> Int { Self.menuItems.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        // LVS_EX_CHECKBOXES: the state box 4 px in, the text after it in the list font.
         let box = NSButton(checkboxWithTitle: Self.title(for: Self.menuItems[row]),
                            target: self, action: #selector(itemToggled(_:)))
         box.tag = row
         box.state = itemChecked[row] ? .on : .off
+        box.font = PanelMetrics.listFont
+        box.controlSize = .small
         let cell = NSTableCellView()
-        box.translatesAutoresizingMaskIntoConstraints = false
+        box.frame = NSRect(x: 4, y: 0, width: 196, height: 17)
+        box.autoresizingMask = [.width]
         cell.addSubview(box)
-        NSLayoutConstraint.activate([
-            box.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            box.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
         return cell
     }
 

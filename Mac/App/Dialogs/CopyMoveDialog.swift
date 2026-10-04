@@ -15,7 +15,18 @@ enum CopyMoveDialog {
     /// Returns the typed destination path, or nil when cancelled.
     static func run(move: Bool, value: String, history: [String], info: String,
                     parent: NSWindow?) -> String? {
-        let dialog = CopyMoveDialogController(move: move, value: value, history: history,
+        // IDD_COPY 96: Title = IDS_COPY 6000 "Copy" / IDS_MOVE 6001 "Move" (App.cpp); IDT_COPY 100:
+        // IDS_COPY_TO 6002 "Copy to:" / IDS_MOVE_TO 6003 "Move to:".
+        run(title: move ? Lang.text(6001, "Move") : Lang.text(6000, "Copy"),
+            label: move ? Lang.text(6003, "Move to:") : Lang.text(6002, "Copy to:"),
+            value: value, history: history, info: info, parent: parent)
+    }
+
+    /// The same dialog with another caption and label: Combine (IDS_COMBINE 7400 + the first
+    /// part's name, IDS_COMBINE_TO 7401, PanelSplitFile.cpp:412-492).
+    static func run(title: String, label: String, value: String, history: [String], info: String,
+                    parent: NSWindow?) -> String? {
+        let dialog = CopyMoveDialogController(title: title, label: label, value: value, history: history,
                                               info: info, parent: parent)
         return dialog.run()
     }
@@ -30,87 +41,56 @@ private final class CopyMoveDialogController: NSObject {
     private let combo = NSComboBox()                    // IDC_COPY 101 (MY_COMBO_WITH_EDIT)
     private var result: String?
 
-    init(move: Bool, value: String, history: [String], info: String, parent: NSWindow?) {
-        // IDD_COPY 96: Title = IDS_COPY 6000 "Copy" / IDS_MOVE 6001 "Move" (App.cpp).
-        window = DialogKit.window(title: move ? Lang.text(6001, "Move") : Lang.text(6000, "Copy"), resizable: true)
+    init(title: String, label: String, value: String, history: [String], info: String, parent: NSWindow?) {
+        window = DialogKit.window(title: title, resizable: true)
         super.init()
-
-        // IDT_COPY 100: IDS_COPY_TO 6002 "Copy to:" / IDS_MOVE_TO 6003 "Move to:".
-        let label = DialogKit.label(move ? Lang.text(6003, "Move to:") : Lang.text(6002, "Copy to:"))
 
         // CopyDialog.cpp:30-32: AddString(Strings[i]) + SetText(Value).
         combo.isEditable = true
         combo.completes = true
         combo.usesDataSource = false
         combo.numberOfVisibleItems = 12
-        combo.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         if !history.isEmpty { combo.addItems(withObjectValues: history) }
         combo.stringValue = value
-        combo.translatesAutoresizingMaskIntoConstraints = false
-        combo.addConstraint(NSLayoutConstraint(item: combo, attribute: .width, relatedBy: .greaterThanOrEqual,
-                                               toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 420))
-        combo.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        // IDB_COPY_SET_PATH 102: PUSHBUTTON "..." (bxsDots wide), right of the combo.
-        let dots = DialogKit.button("...", target: self, action: #selector(browseClicked))
-        dots.setContentHuggingPriority(.required, for: .horizontal)
-        let pathRow = NSStackView(views: [combo, dots])
-        pathRow.orientation = .horizontal
-        pathRow.spacing = 6
-
-        // IDT_COPY_INFO 103
-        let infoView = CopyMoveDialogController.infoView(info)
-
-        // OK_CANCEL: OK is the default button, Cancel answers Escape.
-        let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r")
-        let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked), key: "\u{1b}")
-        let buttons = NSStackView(views: [cancel, ok])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-        let buttonRow = NSStackView(views: [NSView(), buttons])   // OnSize keeps them bottom-right
-        buttonRow.orientation = .horizontal
-
-        let stack = NSStackView(views: [label, pathRow, infoView, buttonRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        for view in [label, pathRow, infoView, buttonRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        }
-
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 480)
-        window.initialFirstResponder = combo
-    }
-
-    /// IDT_COPY_INFO 103: SS_LEFTNOWORDWRAP text, at most kCopyDialog_NumInfoLines lines. One
-    /// single-line, tail-truncating label per line: a single NSTextField with
-    /// maximumNumberOfLines soft-wraps long lines, which the Windows control never does.
-    private static func infoView(_ info: String) -> NSView {
+        // IDD_COPY 96 (CopyDialog.rc): 336 x 160 DLU = 504 x 260 px, resizable; OnSize
+        // (CopyDialog.cpp:38-68) keeps "..." at the right, stretches the combo and the info text,
+        // and keeps OK / Cancel at the bottom right (dlgfeel).
+        let rc = RcDialog(96)
+        let form = RcFormView()
+        form.add(DialogKit.label(label), rc, 100)                                // IDT_COPY 100
+        form.add(combo, rc, 101)                                                 // IDC_COPY 101
+        // IDB_COPY_SET_PATH 102: PUSHBUTTON "..." right of the combo.
+        let dots = form.add(DialogKit.button("...", target: self, action: #selector(browseClicked)), rc, 102)
+        // IDT_COPY_INFO 103 (SS_NOPREFIX | SS_LEFTNOWORDWRAP): at most kCopyDialog_NumInfoLines
+        // lines, never wrapped, clipped at the right edge.
         let lines = info.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
-            .prefix(numInfoLines)
-        let labels: [NSView] = lines.map { line in
-            let field = NSTextField(labelWithString: String(line))
-            field.alignment = .left
-            // The info lines arrive bidi-isolated (PanelFormat.itemsInfo); a left-to-right base
-            // keeps "Files: 1" in that order in Arabic or Hebrew too (`Bidi`, requests.md).
-            Bidi.makeLeftToRight(field)
-            field.usesSingleLineMode = true
-            field.maximumNumberOfLines = 1
-            field.lineBreakMode = .byTruncatingTail
-            field.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-            field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            return field
+            .prefix(Self.numInfoLines)
+        let infoField = RcPlace.makeLabel(lines.joined(separator: "\n"))
+        // The info lines arrive bidi-isolated (PanelFormat.itemsInfo); a left-to-right base
+        // keeps "Files: 1" in that order in Arabic or Hebrew too (`Bidi`, requests.md).
+        Bidi.makeLeftToRight(infoField)
+        form.add(infoField, rc, 103)
+        infoField.cell?.wraps = false
+        infoField.lineBreakMode = .byClipping
+        // OK_CANCEL: OK is the default button, Cancel answers Escape.
+        let ok = form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r"), rc, 1)
+        let cancel = form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self,
+                                               action: #selector(cancelClicked), key: "\u{1b}"), rc, 2)
+        let comboRect = rc.rect(101), dotsRect = rc.rect(102), infoRect = rc.rect(103)
+        form.onResize = { [combo] size in
+            let mx = RcResize.mx
+            let y = RcResize.bottomRightButtons([(cancel, rc.rect(2).size), (ok, rc.rect(1).size)], in: size)
+            RcPlace.button(dots, NSRect(x: size.width - mx - dotsRect.width, y: dotsRect.minY,
+                                        width: dotsRect.width, height: dotsRect.height))
+            RcResize.setWidth(combo, size.width - mx - mx - dotsRect.width - mx, rect: comboRect)
+            RcPlace.label(infoField, NSRect(x: mx, y: infoRect.minY, width: size.width - 2 * mx,
+                                            height: max(0, y - 2 - infoRect.minY)))
+            infoField.cell?.wraps = false
+            infoField.lineBreakMode = .byClipping
         }
-        let stack = NSStackView(views: labels)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 2
-        for view in labels {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        }
-        return stack
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
+        window.initialFirstResponder = combo
     }
 
     /// Runs modally on the main thread; the whole value is selected first so typing replaces it.

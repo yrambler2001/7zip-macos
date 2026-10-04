@@ -19,23 +19,20 @@ final class MessagesDialog: NSObject {
         super.init()
 
         list.setMessages(messages)
-        list.translatesAutoresizingMaskIntoConstraints = false
-        list.addConstraint(NSLayoutConstraint(item: list, attribute: .height, relatedBy: .greaterThanOrEqual,
-                                             toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 220))
 
-        let close = DialogKit.button(Lang.text(408, "Close"), target: self, action: #selector(closeClicked), key: "\r")
-        let buttonRow = NSStackView(views: [NSView(), close])
-        buttonRow.orientation = .horizontal
-
-        let stack = NSStackView(views: [list, buttonRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        for view in [list, buttonRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
+        // IDD_MESSAGES 6602 (MessagesDialog.rc): 456 x 176 DLU = 684 x 286 px, resizable; OnSize
+        // (MessagesDialog.cpp:62-76): Close at the bottom right, the list above it in the margins.
+        let rc = RcDialog(6602)
+        let form = RcFormView()
+        form.addSubview(list)
+        let close = form.add(DialogKit.button(Lang.text(408, "Close"), target: self, action: #selector(closeClicked),
+                                              key: "\r"), rc, 1)
+        form.onResize = { [list] size in
+            let mx = RcResize.mx, my = RcResize.my
+            let y = RcResize.bottomRightButtons([(close, rc.rect(1).size)], in: size)
+            list.frame = NSRect(x: mx, y: my, width: max(0, size.width - 2 * mx), height: max(0, y - 2 * my))
         }
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 640)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
     }
 
     @objc private func closeClicked() { NSApp.stopModal() }
