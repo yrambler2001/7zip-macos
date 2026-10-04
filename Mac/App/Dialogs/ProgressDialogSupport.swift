@@ -344,6 +344,22 @@ final class DialogWindow: NSWindow {
         return super.performKeyEquivalent(with: event)
     }
 
+    /// Esc in a dialog with no Cancel button (About): DefDlgProc still sends IDCANCEL, which
+    /// CModalDialog::OnCancel ends the dialog with -- measured, Esc closes 7zFM's About (recheck §6).
+    override func cancelOperation(_ sender: Any?) {
+        guard NSApp.modalWindow === self, Self.cancelButton(in: contentView) == nil else { return }
+        performClose(sender)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+           NSApp.modalWindow === self, Self.cancelButton(in: contentView) == nil {
+            performClose(nil)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     /// Whatever closed it, a dialog that is gone must not keep its modal session: once the window
     /// is off screen and the session is still its own on the next run-loop pass, end it.
     override func close() {

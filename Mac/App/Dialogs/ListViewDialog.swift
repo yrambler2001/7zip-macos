@@ -200,6 +200,7 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, N
         let rc = RcDialog(99)
         let form = RcFormView()
         form.addSubview(scrollView)
+        form.tabStop(scrollView, rc, 100)                                        // IDL_LISTVIEW 100
         // OK_CANCEL: OK is the default button, Cancel answers Escape.
         let ok = form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r"), rc, 1)
         let cancel = form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self,

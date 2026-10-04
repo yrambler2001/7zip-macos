@@ -159,6 +159,7 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         form.add(parentButton, rc, 110)                                          // IDB_BROWSE2_PARENT 110
         form.add(folderLabel, rc, 101)                                           // IDT_BROWSE2_FOLDER 101
         form.addSubview(scroll)
+        form.tabStop(scroll, rc, 100)
         scroll.frame = rc.rect(100)                                              // IDL_BROWSE2 100
         form.add(filterCombo, rc, 103)                                           // IDC_BROWSE2_FILTER 103
         form.add(close, rc, 8)                                                   // IDCLOSE

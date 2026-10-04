@@ -264,4 +264,41 @@ final class RecheckTests: AppHostTestCase {
         scroll.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: cg)))
         XCTAssertEqual(scroll.contentView.bounds.origin.y - y0, 3 * PanelMetrics.rowHeight, accuracy: 0.5)
     }
+
+    // MARK: - §6 dialogs: Tab order, Esc
+
+    private func tabChain(_ present: () -> Void) -> [String] {
+        var lines: [String] = []
+        let appeared = ModalProbe.present(timeout: 30, present) { window in
+            lines = DialogKeys.dump("x", window).split(separator: "\n").map(String.init)
+        }
+        XCTAssertTrue(appeared)
+        return lines.filter { $0.hasPrefix("  tab ") }.map { String($0.split(separator: ":", maxSplits: 1)[1]).trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// Tab walks the controls in .rc template order, as on 7zFM (recheck-data/win/keys.txt).
+    func testDialogTabOrderFollowsTheTemplate() {
+        let copy = tabChain { _ = CopyMoveDialog.run(move: false, value: "/tmp/", history: [], info: "", parent: nil) }
+        XCTAssertEqual(copy, ["NSButton '...'", "NSButton 'OK'", "NSButton 'Cancel'", "NSComboBox '/tmp/'"])
+        let link = tabChain {
+            _ = LinkDialog.run(currentDirPrefix: TestPaths.fixtures + "/", filePath: TestPaths.fixture("test.7z"),
+                               anotherPath: "/tmp", parent: nil)
+        }
+        XCTAssertEqual(link.filter { $0.contains("Link'") || $0.contains("Hard") }, ["NSButton 'Hard Link'", "NSButton 'Link'"],
+                       "the radio group is one Tab stop")
+        var pw = PasswordDialog.Options()
+        pw.subject = "a.7z"
+        let password = tabChain { _ = PasswordDialog.run(pw, parent: nil) }
+        XCTAssertEqual(password, ["NSButton 'Show password'", "NSButton 'OK'", "NSButton 'Cancel'", "NSSecureTextField ''"])
+    }
+
+    /// Esc closes About, which has no Cancel button (DefDlgProc -> IDCANCEL).
+    func testEscapeClosesAbout() {
+        var closed = false
+        let appeared = ModalProbe.present(timeout: 30, { AboutDialog.show(parent: nil); closed = true }) { window in
+            window.cancelOperation(nil)
+        }
+        XCTAssertTrue(appeared)
+        XCTAssertTrue(wait(for: "About closed by Esc", timeout: 5) { closed })
+    }
 }

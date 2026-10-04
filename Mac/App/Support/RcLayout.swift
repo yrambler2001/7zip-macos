@@ -117,6 +117,19 @@ enum DialogMetrics {
 class RcFormView: NSView {
     override var isFlipped: Bool { true }
 
+    /// Each added control's place in its template: Windows' Tab order is the template's control
+    /// order (the dialog's z-order) over the WS_TABSTOP controls (recheck §6, measured with Tab on
+    /// every 7zFM dialog). `install` turns it into the window's key view loop.
+    var templateOrder: [ObjectIdentifier: (view: NSView, order: Double)] = [:]
+
+    /// Puts a view placed by hand (a list in its scroll view, a control with no template entry)
+    /// into the Tab order at control `id`'s place, or just after it.
+    func tabStop(_ view: NSView, _ dialog: RcDialog, _ id: Int, nth: Int = 0, after: Bool = false) {
+        let indices = dialog.template.controls.indices.filter { dialog.template.controls[$0].id == id }
+        guard nth < indices.count else { return }
+        templateOrder[ObjectIdentifier(view)] = (view, Double(indices[nth]) + (after ? 0.5 : 0))
+    }
+
     /// OnSize: called with the new client size whenever the window resizes the form (the
     /// resizable dialogs move their controls here, as their CDialog::OnSize does).
     var onResize: ((NSSize) -> Void)?
@@ -308,6 +321,8 @@ extension RcFormView {
     func add<V: NSView>(_ view: V, _ dialog: RcDialog, _ id: Int, _ nth: Int = 0) -> V {
         if view.superview !== self { addSubview(view) }
         RcPlace.place(view, dialog.control(id, nth))
+        let indices = dialog.template.controls.indices.filter { dialog.template.controls[$0].id == id }
+        if nth < indices.count { templateOrder[ObjectIdentifier(view)] = (view, Double(indices[nth])) }
         return view
     }
 }
@@ -327,6 +342,29 @@ extension RcPlace {
             window.contentMaxSize = size
         }
         DialogKit.center(window, over: parent)
+        (form as? RcFormView)?.applyTemplateTabOrder(in: window)
+    }
+}
+
+extension RcFormView {
+    /// The key view loop in template order: edit fields, combos, buttons, check boxes, lists;
+    /// never a static. A Tab from the last goes back to the first, as in a Win32 dialog.
+    func applyTemplateTabOrder(in window: NSWindow) {
+        var previousWasRadio = false
+        let stops: [NSView] = templateOrder.values.sorted { $0.order < $1.order }.compactMap { entry in
+            let v = entry.view
+            // A run of radio buttons is one Tab stop (WS_GROUP), arrows move inside it.
+            let isRadio = (v as? NSButton).map { ($0.cell?.value(forKey: "buttonType") as? UInt) == 4 } ?? false
+            defer { previousWasRadio = isRadio }
+            if isRadio && previousWasRadio { return nil }
+            if let scroll = v as? NSScrollView { return scroll.documentView }
+            if let field = v as? NSTextField, !(v is NSComboBox) { return field.isEditable || field.isSelectable ? field : nil }
+            if v is NSControl || v is NSTableView || v is NSCollectionView { return v }
+            return nil
+        }
+        guard stops.count > 1 else { return }
+        window.autorecalculatesKeyViewLoop = false
+        for (i, v) in stops.enumerated() { v.nextKeyView = stops[(i + 1) % stops.count] }
     }
 }
 

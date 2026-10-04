@@ -350,7 +350,10 @@ extension PanelViewController {
                 DispatchQueue.main.async {
                     self.apply(snap, selectNames: names, focusName: names.first)
                     if names.isEmpty, let row = fallbackRow {
-                        self.setFocus(min(max(0, row), max(0, self.rows.count - 1)))
+                        // After Delete 7zFM focuses the item now at the deleted one's place
+                        // without selecting it: "0 / 15 object(s) selected" (recheck §4).
+                        self.setFocus(min(max(0, row), max(0, self.rows.count - 1)), extendingSelection: true)
+                        self.refreshSelectionAppearance()
                     }
                 }
             } catch {

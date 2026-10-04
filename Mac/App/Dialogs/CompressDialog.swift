@@ -330,6 +330,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         form.add(sharedBox, rc, 4013)
         form.add(deleteBox, rc, 4019)
         form.addSubview(excludeMacBox)
+        form.tabStop(excludeMacBox, rc, 4019, after: true)    // Tab: right after "Delete files after compression"
         RcPlace.check(excludeMacBox, rc.rect(4019).offsetBy(dx: 0, dy: rowShift))
         for (view, id) in [(encryptionGroup, 4014), (enterLabel, 3801), (password1Field, 120),
                            (password2Label, 3802), (password2Field, 121), (showPasswordBox, 3803),

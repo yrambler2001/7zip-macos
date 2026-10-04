@@ -59,7 +59,7 @@ final class SplitDialog: NSObject {
             RcResize.setWidth(pathCombo, size.width - mx - mx - dotsRect.width - mx, rect: pathRect)
         }
         RcPlace.install(form, in: window, size: rc.size, parent: parent)
-        window.initialFirstResponder = volumeCombo
+        window.initialFirstResponder = pathCombo           // CSplitDialog: the path has the focus (recheck §6)
     }
 
     @objc private func browseClicked() {
