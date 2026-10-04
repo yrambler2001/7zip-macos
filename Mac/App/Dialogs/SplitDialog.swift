@@ -30,46 +30,35 @@ final class SplitDialog: NSObject {
         pathCombo.stringValue = path
         pathCombo.usesDataSource = false
         pathCombo.completes = false
-        pathCombo.translatesAutoresizingMaskIntoConstraints = false
-        pathCombo.addConstraint(NSLayoutConstraint(item: pathCombo, attribute: .width, relatedBy: .greaterThanOrEqual,
-                                                  toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 380))
 
         volumeCombo.usesDataSource = false
         volumeCombo.removeAllItems()
         volumeCombo.addItems(withObjectValues: SZSplitVolumePresets())     // AddVolumeItems
         volumeCombo.stringValue = SZSplitVolumePresets().first ?? "10M"    // first entry selected
-        volumeCombo.translatesAutoresizingMaskIntoConstraints = false
-        volumeCombo.addConstraint(NSLayoutConstraint(item: volumeCombo, attribute: .width, relatedBy: .equal,
-                                                    toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 200))
 
+        // IDD_SPLIT 7300 (SplitDialog.rc): 304 x 112 DLU = 456 x 182 px, resizable; OnSize
+        // (SplitDialog.cpp:50-74) keeps "..." at the right, stretches the path combo and keeps
+        // OK / Cancel at the bottom right (dlgfeel).
+        let rc = RcDialog(7300)
+        let form = RcFormView()
+        form.add(DialogKit.label(Lang.text(7301, "Split to:")), rc, 7301)                          // IDT_SPLIT_PATH 7301
+        form.add(pathCombo, rc, 100)
         // IDB_SPLIT_PATH 101 "..." -> MyBrowseForFolder(IDS_SET_FOLDER)
-        let browse = DialogKit.button("...", target: self, action: #selector(browseClicked))
-        let pathRow = NSStackView(views: [pathCombo, browse])
-        pathRow.orientation = .horizontal
-        pathRow.spacing = 8
-
-        let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r")
-        let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked),
-                                      key: "\u{1b}")
-        let buttons = NSStackView(views: [NSView(), ok, cancel])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-
-        let stack = NSStackView(views: [
-            DialogKit.label(Lang.text(7301, "Split to:")),          // IDT_SPLIT_PATH 7301
-            pathRow,
-            DialogKit.label(Lang.dialogText(7300, 7302, "Split to volumes,  bytes:")),   // IDT_SPLIT_VOLUME 7302
-            volumeCombo,
-            buttons,
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        for view in [pathRow, buttons] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
+        let dots = form.add(DialogKit.button("...", target: self, action: #selector(browseClicked)), rc, 101)
+        form.add(DialogKit.label(Lang.dialogText(7300, 7302, "Split to volumes,  bytes:")), rc, 7302)  // IDT_SPLIT_VOLUME 7302
+        form.add(volumeCombo, rc, 102)
+        let ok = form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r"), rc, 1)
+        let cancel = form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked),
+                                               key: "\u{1b}"), rc, 2)
+        let pathRect = rc.rect(100), dotsRect = rc.rect(101)
+        form.onResize = { [pathCombo] size in
+            let mx = RcResize.mx
+            RcResize.bottomRightButtons([(cancel, rc.rect(2).size), (ok, rc.rect(1).size)], in: size)
+            RcPlace.button(dots, NSRect(x: size.width - mx - dotsRect.width, y: dotsRect.minY,
+                                        width: dotsRect.width, height: dotsRect.height))
+            RcResize.setWidth(pathCombo, size.width - mx - mx - dotsRect.width - mx, rect: pathRect)
         }
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 480)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
         window.initialFirstResponder = volumeCombo
     }
 

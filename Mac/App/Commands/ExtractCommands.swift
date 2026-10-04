@@ -182,13 +182,18 @@ enum ExtractCommands {
 
     // MARK: - inside an archive (IArchiveFolder::Extract, the Agent's own path)
 
-    /// 7zFM turns the Extract command inside an archive into `CPanel::OnCopy`, which asks for a
-    /// destination and then runs `CAgentFolder::CopyTo` (01 §8.1). The macOS port shows the
-    /// Extract dialog instead of the Copy dialog: it is the same question plus the path and
-    /// overwrite modes, and it keeps the Extraction.* history in one place. The extraction
-    /// itself is the archive folder's own extract path, with kCurPaths (what CopyTo uses).
+    /// 7zFM turns the Extract command inside an archive into `CPanel::OnCopy`
+    /// (CPanel::ExtractArchives: `_panelCallback->OnCopy(false, false)`), which asks for a
+    /// destination in the Copy dialog (IDD_COPY, with the items' info lines) and then runs
+    /// `CAgentFolder::CopyTo` (01 §8.1). The port does the same (dlgfeel): F5's own path, Copy
+    /// dialog, copy history and all. The Extract-dialog variant below is only the fallback for a
+    /// context without a main window.
     private static func extractFromArchiveFolder(_ context: OperationContext) {
         guard !context.indices.isEmpty else { return }
+        if let controller = context.window?.windowController as? MainWindowController {
+            controller.performCopyOrMove(move: false, copyToSame: false)
+            return
+        }
         let archivePath = realFileSystemPath(context.displayPath)
         let proposal = ExtractCommands.normalizeDirectory(
             context.otherPanelPath ?? (archivePath as NSString).deletingLastPathComponent)

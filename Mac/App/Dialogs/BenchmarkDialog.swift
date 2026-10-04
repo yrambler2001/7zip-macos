@@ -14,6 +14,7 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
 
     private static let timerInterval: TimeInterval = 1.0      // kTimerElapse 1000 ms
     private static let processingString = "..."               // kProcessingString
+    static let defaultPasses: UInt32 = 10                     // k_NumBenchIterations_Default
 
     // MARK: state
 
@@ -39,11 +40,12 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
     private let threadsCombo = NSPopUpButton()                // IDC_BENCH_NUM_THREADS 103
     private let hardwareThreads = DialogKit.label("")         // IDT_BENCH_HARDWARE_THREADS 104
     private let passesCombo = NSPopUpButton()                 // IDC_BENCH_NUM_PASSES 143
-    private let elapsedValue = DialogKit.value("")            // IDT_BENCH_ELAPSED_VAL 140
-    private let passesValue = DialogKit.value("")             // IDT_BENCH_PASSES_VAL 142
+    private let elapsedValue = DialogKit.label("", alignment: .right)   // IDT_BENCH_ELAPSED_VAL 140
+    private let passesValue = DialogKit.label("", alignment: .right)    // IDT_BENCH_PASSES_VAL 142
     private let errorMessage = DialogKit.label("", alignment: .right)   // IDT_BENCH_ERROR_MESSAGE 161
-    private let logLabel = NSTextView()                       // IDT_BENCH_LOG 160
+    private let logLabel = RcPlace.makeWrappingLabel("")      // IDT_BENCH_LOG 160 (a static)
     private let consoleEdit = NSTextView()                    // IDE_BENCH2_EDIT 100
+    private let consoleScroll = NSScrollView()
     private let restartButton: NSButton                       // IDB_RESTART 443
     private let stopButton: NSButton                          // IDB_STOP 442
     private let helpButton: NSButton                          // IDHELP
@@ -98,11 +100,6 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
         sys1Label.isHidden = sys1Label.stringValue.isEmpty
         sys2Label.isHidden = sys2Label.stringValue.isEmpty
         hardwareThreads.stringValue = SZBenchmark.hardwareThreadsText
-        for label in [cpuLabel, featureLabel, sys1Label, sys2Label, hardwareThreads] {
-            label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-            label.lineBreakMode = .byTruncatingTail
-        }
-        versionLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
 
         // ----- Number of CPU threads (:531-548): 1, 2, 4, 6, ... up to 2 x system threads
         let processThreads = SZBenchmark.processThreadCount
@@ -184,14 +181,17 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
         }
         passesCombo.removeAllItems()
         passesCombo.addItems(withTitles: passCounts.map { "\($0)" })
-        passesCombo.selectItem(at: 0)
+        // NumPasses_Limit = k_NumBenchIterations_Default (10) when 7zFM starts `7zG b`
+        // (GUI.cpp:229-234); 7zFM 26.03 shows "10" (dlgfeel-data/win/dlg-bench-start.txt).
+        passesCombo.selectItem(at: passCounts.firstIndex(of: Self.defaultPasses) ?? 0)
         passesCombo.target = self
         passesCombo.action = #selector(comboChanged)
 
-        for view in [logLabel, consoleEdit] {
+        for view in [consoleEdit] {
             view.isEditable = false
             view.isSelectable = true
-            view.font = NSFont.monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+            // IDE_BENCH2_EDIT gets a fixed-pitch font (BenchmarkDialog.cpp: CreateFont "Courier New").
+            view.font = NSFont(name: "Courier New", size: 13) ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
             view.drawsBackground = true
             view.backgroundColor = .textBackgroundColor
             view.isVerticallyResizable = true
@@ -200,137 +200,124 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
             view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                                   height: CGFloat.greatestFiniteMagnitude)
         }
-        errorMessage.textColor = .systemRed
-        errorMessage.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
     }
 
     private func valueRow() -> [NSTextField] {
-        (0..<5).map { _ in DialogKit.value(Self.processingString) }
+        (0..<5).map { _ in DialogKit.label(Self.processingString, alignment: .right) }
     }
 
+    /// IDD_BENCH 7600 (BenchmarkDialog.rc): 488 x 264 DLU = 732 x 429 px, every control on its
+    /// template rect; the value columns never move. The window is resizable as on Windows
+    /// (WS_THICKFRAME, measured), and OnSize only stretches the log static IDT_BENCH_LOG
+    /// (BenchmarkDialog.cpp:645-659, dlgfeel-data/win/dlg-bench-resized.txt).
+    /// IDD_BENCH_TOTAL 7699 for TotalMode: the console edit fills the window, Help / Cancel stay
+    /// at the bottom right.
     private func buildLayout(parent: NSWindow?) {
-        // ----- header: dictionary, memory usage, threads
-        let header = NSGridView(numberOfColumns: 4, rows: 2)
-        header.addRow(with: [DialogKit.label(Lang.text(4006, "Dictionary size:")),   // IDT_BENCH_DICTIONARY 4006
-                             dictionaryCombo,
-                             DialogKit.label(Lang.text(7601, "Memory usage:")),      // IDT_BENCH_MEMORY 7601
-                             memoryValue])
-        header.addRow(with: [DialogKit.label(Lang.dialogText(7600, 4009, "Number of CPU threads:")), // IDT_BENCH_NUM_THREADS 4009
-                             threadsCombo,
-                             DialogKit.label(""),
-                             hardwareThreads])
-        header.rowSpacing = 6
-        header.columnSpacing = 8
-
-        let content: NSView
+        let form = RcFormView()
+        let rc: RcDialog
         if totalMode {
-            let scroll = NSScrollView()
-            scroll.documentView = consoleEdit
-            scroll.hasVerticalScroller = true
-            scroll.borderType = .bezelBorder
-            scroll.translatesAutoresizingMaskIntoConstraints = false
-            scroll.addConstraint(NSLayoutConstraint(item: scroll, attribute: .height, relatedBy: .greaterThanOrEqual,
-                                                    toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 320))
-            consoleEdit.minSize = NSSize(width: 0, height: 320)
+            rc = RcDialog(7699)
+            form.add(DialogKit.label(Lang.text(3900, "Elapsed time:")), rc, 3900)       // IDT_BENCH_ELAPSED 3900
+            form.add(elapsedValue, rc, 140)
+            consoleScroll.documentView = consoleEdit
+            consoleScroll.hasVerticalScroller = true
+            consoleScroll.hasHorizontalScroller = true
+            consoleScroll.borderType = .lineBorder
             consoleEdit.autoresizingMask = [.width]
-            content = scroll
+            form.addSubview(consoleScroll)
+            consoleScroll.frame = rc.rect(100)
+            form.add(helpButton, rc, 9)
+            form.add(cancelButton, rc, 2)
+            let margin = RcDialog.margin
+            form.onResize = { [weak self] size in
+                guard let self else { return }
+                // OnSize (TotalMode): Cancel and Help at the bottom right, the edit above them.
+                let cancel = rc.rect(2), help = rc.rect(9)
+                let y = size.height - margin.height - cancel.height
+                RcPlace.button(self.cancelButton, NSRect(x: size.width - margin.width - cancel.width, y: y,
+                                                         width: cancel.width, height: cancel.height))
+                RcPlace.button(self.helpButton, NSRect(x: size.width - margin.width - cancel.width - margin.width - help.width,
+                                                       y: y, width: help.width, height: help.height))
+                let top = rc.rect(100).minY
+                self.consoleScroll.frame = NSRect(x: margin.width, y: top, width: size.width - 2 * margin.width,
+                                                  height: max(20, y - margin.height - top))
+            }
         } else {
-            content = buildResultsView()
+            rc = RcDialog(7600)
+            buildResultsView(form, rc)
+            form.onResize = { [weak self] size in
+                guard let self else { return }
+                let log = rc.rect(160)
+                let margin = RcDialog.margin
+                RcPlace.label(self.logLabel, NSRect(x: log.minX, y: log.minY,
+                                                    width: max(0, size.width - log.minX - margin.width),
+                                                    height: max(0, size.height - log.minY - margin.height)))
+            }
         }
-
-        let buttons = NSStackView(views: [restartButton, stopButton, NSView(), helpButton, cancelButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-
-        let info = NSStackView(views: [cpuLabel, versionLabel, featureLabel, sys1Label, sys2Label])
-        info.orientation = .vertical
-        info.alignment = .leading
-        info.spacing = 2
-
-        let stack = NSStackView(views: [header, content, errorMessage, info, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        for view in [header, content, errorMessage, info, buttons] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        }
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: totalMode ? 720 : 900)
+        window.contentView = form
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
     }
 
-    /// The value grid plus the log column (IDD_BENCH is 332 + 140 du wide).
-    private func buildResultsView() -> NSView {
+    private func buildResultsView(_ form: RcFormView, _ rc: RcDialog) {
         compressCurrent = valueRow()          // IDT_BENCH_COMPRESS_SIZE1 170 is element [4]
         compressResulting = valueRow()
         decompressCurrent = valueRow()        // the IDT_BENCH_CURRENT2 7656 row
         decompressResulting = valueRow()      // the IDT_BENCH_RESULTING2 7657 row
-        totalValues = [DialogKit.value(Self.processingString),    // IDT_BENCH_TOTAL_USAGE_VAL 133
-                       DialogKit.value(Self.processingString),    // IDT_BENCH_TOTAL_RPU_VAL 131
-                       DialogKit.value(Self.processingString)]    // IDT_BENCH_TOTAL_RATING_VAL 130
+        totalValues = (0..<3).map { _ in DialogKit.label(Self.processingString, alignment: .right) }
 
-        // Column headers, localized with the colon removed (kLangIDs_RemoveColon for Speed).
-        func header(_ id: UInt32, _ text: String) -> NSTextField {
-            DialogKit.label(Lang.text(id, text).replacingOccurrences(of: ":", with: ""), alignment: .right, bold: true)
+        form.add(DialogKit.label(Lang.text(4006, "Dictionary size:")), rc, 4006)        // IDT_BENCH_DICTIONARY 4006
+        form.add(dictionaryCombo, rc, 101)
+        form.add(DialogKit.label(Lang.text(7601, "Memory usage:")), rc, 7601)           // IDT_BENCH_MEMORY 7601
+        form.add(memoryValue, rc, 102)
+        form.add(DialogKit.label(Lang.dialogText(7600, 4009, "Number of CPU threads:")), rc, 4009)  // IDT_BENCH_NUM_THREADS 4009
+        form.add(threadsCombo, rc, 103)
+        form.add(hardwareThreads, rc, 104)
+        form.add(restartButton, rc, 443)
+        form.add(stopButton, rc, 442)
+
+        // Column headers (RTEXT), localized with the colon removed (kLangIDs_RemoveColon: Speed).
+        func header(_ id: UInt32, _ text: String) {
+            form.add(DialogKit.label(Lang.text(id, text).replacingOccurrences(of: ":", with: ""), alignment: .right),
+                     rc, Int(id))
         }
-        let grid = NSGridView(numberOfColumns: 6, rows: 0)
-        grid.addRow(with: [DialogKit.label(""),
-                           header(1007, "Size"),          // IDT_BENCH_SIZE 1007
-                           header(7608, "CPU Usage"),     // IDT_BENCH_USAGE_LABEL 7608
-                           header(3903, "Speed:"),        // IDT_BENCH_SPEED 3903
-                           header(7609, "Rating / Usage"),// IDT_BENCH_RPU_LABEL 7609
-                           header(7604, "Rating")])       // IDT_BENCH_RATING_LABEL 7604
+        header(1007, "Size")             // IDT_BENCH_SIZE 1007
+        header(7608, "CPU Usage")        // IDT_BENCH_USAGE_LABEL 7608
+        header(3903, "Speed:")           // IDT_BENCH_SPEED 3903
+        header(7609, "Rating / Usage")   // IDT_BENCH_RPU_LABEL 7609
+        header(7604, "Rating")           // IDT_BENCH_RATING_LABEL 7604
 
-        func addGroup(_ title: String, current: [NSTextField], resulting: [NSTextField]) {
-            let group = DialogKit.label(title, bold: true)
-            grid.addRow(with: [group])
-            // IDT_BENCH_CURRENT 7606 (IDT_BENCH_CURRENT2 7656 in the decompress group, which
-            // Windows also labels with 7606 text)
-            grid.addRow(with: [DialogKit.label("    " + Lang.text(7606, "Current")),
-                               current[4], current[0], current[1], current[2], current[3]])
-            // IDT_BENCH_RESULTING 7607 / IDT_BENCH_RESULTING2 7657
-            grid.addRow(with: [DialogKit.label("    " + Lang.text(7607, "Resulting")),
-                               resulting[4], resulting[0], resulting[1], resulting[2], resulting[3]])
+        form.add(WinGroupBox(title: Lang.text(7602, "Compressing")), rc, 7602)          // IDG_BENCH_COMPRESSING 7602
+        form.add(WinGroupBox(title: Lang.text(7603, "Decompressing")), rc, 7603)        // IDG_BENCH_DECOMPRESSING 7603
+        form.add(WinGroupBox(title: Lang.text(7605, "Total Rating")), rc, 7605)         // IDG_BENCH_TOTAL_RATING 7605
+        // IDT_BENCH_CURRENT 7606 / IDT_BENCH_RESULTING 7607, and their decompress twins 7656 / 7657
+        // (labelled with the 7606 / 7607 texts, BenchmarkDialog.cpp kLangIDs).
+        form.add(DialogKit.label(Lang.text(7606, "Current")), rc, 7606)
+        form.add(DialogKit.label(Lang.text(7607, "Resulting")), rc, 7607)
+        form.add(DialogKit.label(Lang.text(7606, "Current")), rc, 7656)
+        form.add(DialogKit.label(Lang.text(7607, "Resulting")), rc, 7657)
+        // [usage, speed, rpu, rating, size] -> the k_Ids_* of each row
+        let rows: [([NSTextField], [Int])] = [(compressCurrent, [114, 110, 116, 112, 170]),
+                                              (compressResulting, [115, 111, 117, 113, 171]),
+                                              (decompressCurrent, [122, 118, 124, 120, 172]),
+                                              (decompressResulting, [123, 119, 125, 121, 173])]
+        for (fields, ids) in rows {
+            for (field, id) in zip(fields, ids) { form.add(field, rc, id) }
         }
-        addGroup(Lang.text(7602, "Compressing"), current: compressCurrent, resulting: compressResulting)  // IDG_BENCH_COMPRESSING 7602
-        addGroup(Lang.text(7603, "Decompressing"), current: decompressCurrent, resulting: decompressResulting)  // IDG_BENCH_DECOMPRESSING 7603
-        // IDG_BENCH_TOTAL_RATING 7605
-        grid.addRow(with: [DialogKit.label(Lang.text(7605, "Total Rating"), bold: true),
-                           DialogKit.label(""), totalValues[0], DialogKit.label(""),
-                           totalValues[1], totalValues[2]])
-        grid.rowSpacing = 4
-        grid.columnSpacing = 10
-
-        // Elapsed time / Passes
-        let footer = NSGridView(numberOfColumns: 3, rows: 2)
-        footer.addRow(with: [DialogKit.label(Lang.text(3900, "Elapsed time:")),   // IDT_BENCH_ELAPSED 3900
-                             elapsedValue, DialogKit.label("")])
-        footer.addRow(with: [DialogKit.label(Lang.text(7610, "Passes:")),         // IDT_BENCH_PASSES 7610
-                             passesValue, passesCombo])
-        footer.rowSpacing = 6
-        footer.columnSpacing = 8
-
-        let left = NSStackView(views: [grid, footer])
-        left.orientation = .vertical
-        left.alignment = .leading
-        left.spacing = 12
-
-        let logScroll = NSScrollView()
-        logScroll.documentView = logLabel
-        logScroll.hasVerticalScroller = true
-        logScroll.borderType = .bezelBorder
-        logScroll.translatesAutoresizingMaskIntoConstraints = false
-        logLabel.minSize = NSSize(width: 0, height: 260)
-        logLabel.autoresizingMask = [.width]
-        logScroll.addConstraint(NSLayoutConstraint(item: logScroll, attribute: .width, relatedBy: .greaterThanOrEqual,
-                                                   toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 260))
-        logScroll.addConstraint(NSLayoutConstraint(item: logScroll, attribute: .height, relatedBy: .greaterThanOrEqual,
-                                                   toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 260))
-
-        let row = NSStackView(views: [left, logScroll])
-        row.orientation = .horizontal
-        row.alignment = .top
-        row.spacing = 12
-        return row
+        for (field, id) in zip(totalValues, [133, 131, 130]) { form.add(field, rc, id) }  // IDT_BENCH_TOTAL_*_VAL
+        form.add(errorMessage, rc, 161)
+        form.add(DialogKit.label(Lang.text(3900, "Elapsed time:")), rc, 3900)           // IDT_BENCH_ELAPSED 3900
+        form.add(DialogKit.label(Lang.text(7610, "Passes:")), rc, 7610)                 // IDT_BENCH_PASSES 7610
+        form.add(elapsedValue, rc, 140)
+        form.add(passesValue, rc, 142)
+        form.add(passesCombo, rc, 143)
+        form.add(cpuLabel, rc, 106)
+        form.add(versionLabel, rc, 105)
+        form.add(featureLabel, rc, 109)
+        form.add(sys1Label, rc, 107)
+        form.add(sys2Label, rc, 108)
+        form.add(logLabel, rc, 160)
+        form.add(helpButton, rc, 9)
+        form.add(cancelButton, rc, 2)
     }
 
     // MARK: current combo values
@@ -379,7 +366,7 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
         for field in compressCurrent + compressResulting + decompressCurrent + decompressResulting + totalValues {
             field.stringValue = Self.processingString
         }
-        logLabel.string = ""
+        logLabel.stringValue = ""
         elapsedValue.stringValue = ""
         passesValue.stringValue = ""
         passesFinishedPrevious = UInt32.max
@@ -576,7 +563,7 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
                 totalValues[2].stringValue = total.ratingString
             }
         }
-        logLabel.string = bench.logText
+        logLabel.stringValue = bench.logText
     }
 
     /// PrintBenchRes (:1139-1170): [usage, speed, rpu, rating, size].

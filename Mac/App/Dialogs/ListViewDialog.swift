@@ -192,30 +192,24 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, N
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
-        scrollView.borderType = .bezelBorder
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addConstraint(NSLayoutConstraint(item: scrollView, attribute: .height, relatedBy: .greaterThanOrEqual,
-                                                    toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 400))
+        scrollView.borderType = .lineBorder
 
+        // IDD_LISTVIEW 99 (ListViewDialog.rc): 496 x 336 DLU = 744 x 546 px, resizable. OnSize
+        // (ListViewDialog.cpp:133-160) puts OK / Cancel at the bottom right and gives the list the
+        // rest, inside the 8 DLU margins (12,13 720x481 at the template size, dlgfeel).
+        let rc = RcDialog(99)
+        let form = RcFormView()
+        form.addSubview(scrollView)
         // OK_CANCEL: OK is the default button, Cancel answers Escape.
-        let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r")
-        let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked), key: "\u{1b}")
-        let buttons = NSStackView(views: [cancel, ok])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-        let buttonRow = NSStackView(views: [NSView(), buttons])
-        buttonRow.orientation = .horizontal
-
-        let stack = NSStackView(views: [scrollView, buttonRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        for view in [scrollView, buttonRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
+        let ok = form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r"), rc, 1)
+        let cancel = form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self,
+                                               action: #selector(cancelClicked), key: "\u{1b}"), rc, 2)
+        form.onResize = { size in
+            let mx = RcResize.mx, my = RcResize.my
+            let y = RcResize.bottomRightButtons([(cancel, rc.rect(2).size), (ok, rc.rect(1).size)], in: size)
+            scrollView.frame = NSRect(x: mx, y: my, width: max(0, size.width - 2 * mx), height: max(0, y - 2 * my))
         }
-
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 720)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
         if options.selectFirst, !strings.isEmpty {              // SelectFirst: first row focused + selected
             table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
             table.scrollRowToVisible(0)
@@ -397,7 +391,7 @@ private final class TextViewerDialogController: NSObject {
         textView.isSelectable = true
         textView.isRichText = false
         textView.usesFontPanel = false
-        textView.font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.font = DialogMetrics.font                 // the edit control has the dialog font
         textView.textContainerInset = NSSize(width: 4, height: 4)
         textView.isHorizontallyResizable = true
         textView.isVerticallyResizable = true
@@ -414,26 +408,22 @@ private final class TextViewerDialogController: NSObject {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
-        scrollView.borderType = .bezelBorder
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addConstraint(NSLayoutConstraint(item: scrollView, attribute: .height, relatedBy: .greaterThanOrEqual,
-                                                    toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 320))
+        scrollView.borderType = .lineBorder
 
+        // IDD_EDIT_DLG 94 (EditDialog.rc): 336 x 256 DLU = 504 x 416 px, resizable; OnSize
+        // (EditDialog.cpp:28-55): Close at the bottom right, the edit above it in the margins.
+        let rc = RcDialog(94)
+        let form = RcFormView()
+        form.addSubview(scrollView)
         // MY_BUTTON__CLOSE: IDCLOSE "&Close" (IDS_CLOSE 408), DEFPUSHBUTTON.
-        let close = DialogKit.button(Lang.text(408, "Close"), target: self, action: #selector(closeClicked), key: "\r")
-        let buttonRow = NSStackView(views: [NSView(), close])
-        buttonRow.orientation = .horizontal
-
-        let stack = NSStackView(views: [scrollView, buttonRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        for view in [scrollView, buttonRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
+        let close = form.add(DialogKit.button(Lang.text(408, "Close"), target: self, action: #selector(closeClicked),
+                                              key: "\r"), rc, 8)
+        form.onResize = { size in
+            let mx = RcResize.mx, my = RcResize.my
+            let y = RcResize.bottomRightButtons([(close, rc.rect(8).size)], in: size)
+            scrollView.frame = NSRect(x: mx, y: my, width: max(0, size.width - 2 * mx), height: max(0, y - 2 * my))
         }
-
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 480)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
         window.initialFirstResponder = textView
     }
 

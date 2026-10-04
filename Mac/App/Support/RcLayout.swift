@@ -116,6 +116,15 @@ enum DialogMetrics {
 /// The client area of a dialog: flipped, so frames read like the .rc (top-left origin).
 class RcFormView: NSView {
     override var isFlipped: Bool { true }
+
+    /// OnSize: called with the new client size whenever the window resizes the form (the
+    /// resizable dialogs move their controls here, as their CDialog::OnSize does).
+    var onResize: ((NSSize) -> Void)?
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        onResize?(newSize)
+    }
 }
 
 /// GROUPBOX (BS_GROUPBOX) as Windows 11 draws it: a one-pixel frame whose top edge runs through the
@@ -363,7 +372,57 @@ final class WinPopUpButtonCell: NSPopUpButtonCell {
         cell.arrowPosition = old.arrowPosition
         cell.autoenablesItems = old.autoenablesItems
         cell.tag = old.tag
+        cell.alignment = .left                      // CBS_DROPDOWNLIST text is left-aligned
         popup.cell = cell
         if selected >= 0, selected < cell.numberOfItems { cell.selectItem(at: selected) }
+    }
+}
+
+/// The pieces every resizable dialog's OnSize uses (CDialog::GetMargins(8), GetItemSizes,
+/// MoveItem): the 8 DLU margins and "these buttons at the bottom right, in this order".
+enum RcResize {
+    static var mx: CGFloat { RcDialog.margin.width }
+    static var my: CGFloat { RcDialog.margin.height }
+
+    /// MoveItem(IDCANCEL, x, y ...); MoveItem(IDOK, x - mx - bx2, y ...): `buttons` from right to
+    /// left, each `mx` apart, their bottom `my` above the client's. Returns the row's top (y).
+    @discardableResult
+    static func bottomRightButtons(_ buttons: [(NSButton, NSSize)], in size: NSSize) -> CGFloat {
+        guard let height = buttons.first?.1.height else { return size.height }
+        let y = size.height - my - height
+        var x = size.width - mx
+        for (button, buttonSize) in buttons {
+            x -= buttonSize.width
+            RcPlace.button(button, NSRect(x: x, y: y, width: buttonSize.width, height: buttonSize.height))
+            x -= mx
+        }
+        return y
+    }
+
+    /// ChangeSubWindowSizeX: a control keeps its origin and height, takes a new width.
+    static func setWidth(_ view: NSView, _ width: CGFloat, rect: NSRect) {
+        var r = rect
+        r.size.width = max(0, width)
+        RcPlace.reframe(view, r)
+    }
+}
+
+extension RcPlace {
+    /// Puts `view` on a Windows rect by its kind (a re-layout from OnSize).
+    static func reframe(_ view: NSView, _ r: NSRect) {
+        switch view {
+        case let p as NSPopUpButton: popup(p, r)
+        case let c as NSComboBox: combo(c, r)
+        case let b as NSButton:
+            if b.cell is NSButtonCell, (b.cell as? NSButtonCell)?.bezelStyle == .rounded || b.bezelStyle == .rounded {
+                button(b, r)
+            } else {
+                check(b, r)
+            }
+        case let f as NSTextField where f.isEditable || f.isBezeled: edit(f, r)
+        case let f as NSTextField: label(f, r)
+        case let g as WinGroupBox: group(g, r)
+        default: view.frame = r
+        }
     }
 }

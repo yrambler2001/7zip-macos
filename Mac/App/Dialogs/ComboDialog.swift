@@ -31,39 +31,30 @@ private final class ComboDialogController: NSObject {
         window = DialogKit.window(title: title, resizable: true)
         super.init()
 
-        let staticText = DialogKit.label(label)         // IDT_COMBO 100 (LTEXT)
-
         // ComboDialog.cpp:35-37: SetText(Value) + AddString(Strings[i]).
         combo.isEditable = true
         combo.completes = true
         combo.usesDataSource = false
         combo.numberOfVisibleItems = 12
-        combo.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         if !strings.isEmpty { combo.addItems(withObjectValues: strings) }
         combo.stringValue = value
-        combo.translatesAutoresizingMaskIntoConstraints = false
-        combo.addConstraint(NSLayoutConstraint(item: combo, attribute: .width, relatedBy: .greaterThanOrEqual,
-                                               toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 320))
 
+        // IDD_COMBO 98 (ComboDialog.rc): 256 x 80 DLU = 384 x 130 px, resizable (WS_THICKFRAME);
+        // OnSize keeps OK / Cancel at the bottom right and stretches the combo (dlgfeel).
+        let rc = RcDialog(98)
+        let form = RcFormView()
+        form.add(DialogKit.label(label), rc, 100)                                // IDT_COMBO 100 (LTEXT)
+        form.add(combo, rc, 101)
         // OK_CANCEL: OK is the default button, Cancel answers Escape.
-        let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r")
-        let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(cancelClicked), key: "\u{1b}")
-        let buttons = NSStackView(views: [cancel, ok])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-        let buttonRow = NSStackView(views: [NSView(), buttons])   // OnSize keeps them bottom-right
-        buttonRow.orientation = .horizontal
-
-        let stack = NSStackView(views: [staticText, combo, buttonRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        for view in [staticText, combo, buttonRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
+        let ok = form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r"), rc, 1)
+        let cancel = form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self,
+                                               action: #selector(cancelClicked), key: "\u{1b}"), rc, 2)
+        let comboRect = rc.rect(101)
+        form.onResize = { [combo] size in
+            RcResize.bottomRightButtons([(cancel, rc.rect(2).size), (ok, rc.rect(1).size)], in: size)
+            RcResize.setWidth(combo, size.width - 2 * RcResize.mx, rect: comboRect)
         }
-
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 360)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
         window.initialFirstResponder = combo
     }
 
