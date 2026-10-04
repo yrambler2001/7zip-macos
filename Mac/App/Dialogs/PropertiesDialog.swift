@@ -16,110 +16,143 @@ struct PanelPropertyLines {
     var names: [String] = []
     var values: [String] = []
 
+    /// kSeparator / kSeparatorSmall (PanelMenu.cpp:79-80): a row of hyphens in the name column.
+    static let separator = "------------------------"
+    static let separatorSmall = "----------------"
+
     mutating func add(_ name: String, _ value: String) {
         names.append(name)
         values.append(value)
     }
 
-    mutating func addSeparator() {
-        add("", "")
+    /// AddSeparator: kSeparator with an empty value (AddListAscii).
+    mutating func addSeparator() { add(Self.separator, "") }
+    /// AddSeparatorSmall, between two archive levels.
+    mutating func addSeparatorSmall() { add(Self.separatorSmall, "") }
+
+    static func isSeparator(_ name: String) -> Bool {
+        !name.isEmpty && name.allSatisfy { $0 == "-" }
     }
 }
 
 enum PanelProperties {
 
-    /// kSpecProps (PanelMenu.cpp:172): the archive-level block header properties, in order.
+    /// kSpecProps (PanelMenu.cpp:157-169): the archive-level block header properties, in order.
     static let specProps: [SZPropID] = [.path, .type, .errorType, .error, .errorFlags,
                                         .warning, .warningFlags, .offset, .phySize, .tailSize]
 
-    /// Folder-level properties 7zFM shows after the item block (GetFolderProperty).
-    static let folderProps: [SZPropID] = [.type, .path, .readOnly, .isHash, .totalSize, .freeSpace,
-                                          .clusterSize, .volumeName, .fileSystem, .comment]
-
-    /// Called on the panel queue.
+    /// CPanel::Properties (PanelMenu.cpp:171-415) for an archive folder, row for row -- checked
+    /// against 7zFM 26.03 for a file, a folder, two files, a file and a folder, nothing selected,
+    /// a file in a sub-folder (7z) and a zip item (listfeel-data/win1/dlg-prop-*.txt):
+    ///
+    ///  1. one operated item: every folder property of the item (GetNumberOfProperties, kpidIsDir
+    ///     included, as "Folder -" in a zip), then the raw properties, then kSeparator;
+    ///     several: "" | "N object(s) selected", Folders and Files when not 0 (a folder counts
+    ///     itself plus its kpidNumSubDirs, its files are its kpidNumSubFiles), Size, Packed Size,
+    ///     kSeparator; none: nothing;
+    ///  2. the folder's kpidPath under the name of kpidName ("Name sub/"; nothing at the archive
+    ///     root, where it is empty), then IFolderProperties (Size, Packed Size, Folders, Files,
+    ///     CRC for an archive folder);
+    ///  3. per archive level, innermost first: kSeparator, kSpecProps, the handler's archive
+    ///     properties; between two levels kSeparatorSmall and the outer handler's properties of
+    ///     the item the inner level was opened from (GetArcProp2);
+    ///  4. the level that failed to open (NonOpen_ErrorInfo): CAgent answers GetArcProp for it
+    ///     with S_OK, so 7zFM always ends with two kSeparator rows, then any error there.
+    ///
+    /// Values are AddPropertyString's: sizes grouped ("1 234"), times at ns precision, booleans
+    /// "+" / "-", error flags as their message. Called on the panel queue.
     static func build(folder: SZFolder, itemIndices: [Int], snapshot: PanelSnapshot,
                       level: SZTimestampLevel) -> PanelPropertyLines {
         var lines = PanelPropertyLines()
-        if let first = itemIndices.first {
-            for info in folder.properties where info.propID != .isDir {
-                // Raw properties (IArchiveGetRawProps) follow the folder's own, rendered the way
+        if itemIndices.count == 1, let index = itemIndices.first {
+            for info in folder.properties {
+                // Raw properties (IArchiveGetRawProps) follow the folder's own, rendered as
                 // PanelMenu.cpp:212-246 does: hex up to 256 bytes ("data:<n>" beyond), upper case
                 // for a CRC / checksum of at most 8 bytes (01 §3.11).
-                // AddPropertyString (PanelMenu.cpp:110-148): sizes through ConvertSizeToString
-                // ("1 234"), everything else through ConvertPropertyToString2 at level 9, the ns
-                // precision ("2024-01-15 11:30:00.0000000" for a 7z item) -- not the list's level.
                 let text = info.isRawProperty
-                    ? folder.rawPropertyString(at: first, propID: info.propID, forPropertiesDialog: true)
-                    : sizeGrouped(info.propID, folder.displayStringOfItem(at: first, propID: info.propID,
+                    ? folder.rawPropertyString(at: index, propID: info.propID, forPropertiesDialog: true)
+                    : sizeGrouped(info.propID, folder.displayStringOfItem(at: index, propID: info.propID,
                                                                           timestampLevel: .NS))
                 guard !text.isEmpty else { continue }
+                if info.propID == .errorType { lines.add("Open WARNING:", "Cannot open the file as expected archive type") }
                 lines.add(info.localizedName, text)
             }
-        }
-        if itemIndices.count > 1 {
             lines.addSeparator()
-            var size: UInt64 = 0, packed: UInt64 = 0, dirs = 0, files = 0
-            for index in itemIndices {
-                size &+= (folder.propertyOfItem(at: index, propID: .size) as? NSNumber)?.uint64Value ?? 0
-                packed &+= (folder.propertyOfItem(at: index, propID: .packSize) as? NSNumber)?.uint64Value ?? 0
-                if folder.isDirectory(at: index) { dirs += 1 } else { files += 1 }
+        } else if itemIndices.count > 1 {
+            var size: UInt64 = 0, packed: UInt64 = 0, dirs: UInt64 = 0, files: UInt64 = 0
+            func number(_ index: Int, _ propID: SZPropID) -> UInt64 {
+                (folder.propertyOfItem(at: index, propID: propID) as? NSNumber)?.uint64Value ?? 0
             }
-            lines.add(Lang.text(1007, "Size"), Formatting.size(size))
-            lines.add(Lang.text(1008, "Packed Size"), Formatting.size(packed))
-            lines.add(Lang.text(1031, "Folders"), "\(dirs)")
-            lines.add(Lang.text(1032, "Files"), "\(files)")
+            for index in itemIndices {
+                size &+= number(index, .size)                      // GetItemSize
+                packed &+= number(index, .packSize)
+                if folder.isDirectory(at: index) {
+                    dirs &+= 1 &+ number(index, .numSubDirs)
+                    files &+= number(index, .numSubFiles)
+                } else {
+                    files &+= 1
+                }
+            }
+            lines.add("", Lang.format(Lang.get(3002, "{0} object(s) selected"), "\(itemIndices.count)"))  // IDS_N_SELECTED_ITEMS
+            if dirs != 0 { lines.add(propertyName(.numSubDirs), Formatting.size(dirs)) }
+            if files != 0 { lines.add(propertyName(.numSubFiles), Formatting.size(files)) }
+            lines.add(propertyName(.size), Formatting.size(size))
+            lines.add(propertyName(.packSize), Formatting.size(packed))
+            lines.addSeparator()
         }
-        lines.addSeparator()
-        for propID in folderProps {
-            guard let value = folder.folderProperty(forID: propID) else { continue }
-            let text = displayString(value)
+
+        // GetFolderProperty(kpidPath), named as kpidName.
+        let path = folder.propertiesDialogString(forFolderProperty: .path)
+        if !path.isEmpty { lines.add(propertyName(.name), path) }
+        for info in folder.folderPropertyInfos {
+            let text = sizeGrouped(info.propID, folder.propertiesDialogString(forFolderProperty: info.propID))
             guard !text.isEmpty else { continue }
-            lines.add(propertyName(propID), text)
+            lines.add(info.localizedName, text)
         }
-        if let arcProps = folder.arcProps, arcProps.levelCount > 0 {
-            // PanelMenu.cpp:345-410: innermost level first; each level's kSpecProps and handler
-            // properties, then -- between two levels only -- the outer handler's properties of
-            // the item the inner level was opened from (GetArcProp2, which reads Arcs[level - 1]
-            // and so does not exist for level 0: asking for it read out of bounds and crashed).
+
+        if let arcProps = folder.arcProps {
             let levels = arcProps.levelCount
             for level2 in 0..<levels {
                 let level0 = levels - 1 - level2
                 lines.addSeparator()
-                lines.add("----" + Lang.text(1003, "Path") + " \(level0 + 1)----", "")
                 for propID in specProps {
-                    let text = sizeGrouped(propID, arcProps.displayString(atLevel: level0, propID: propID))
-                    guard !text.isEmpty else { continue }
-                    lines.add(propertyName(propID), text)
+                    add(&lines, propID, propertyName(propID),
+                        arcProps.propertiesDialogString(atLevel: level0, propID: propID, answered: nil))
                 }
                 for info in arcProps.properties(atLevel: level0) {
-                    let text = sizeGrouped(info.propID, arcProps.displayString(atLevel: level0, propID: info.propID))
-                    guard !text.isEmpty else { continue }
-                    lines.add(info.localizedName, text)
+                    add(&lines, info.propID, info.localizedName,
+                        arcProps.propertiesDialogString(atLevel: level0, propID: info.propID, answered: nil))
                 }
                 if level2 < levels - 1 {
-                    lines.addSeparator()                       // kSeparatorSmall
+                    // GetArcProp2 reads Arcs[level - 1], which exists for level0 >= 1 only.
+                    lines.addSeparatorSmall()
                     for info in arcProps.properties2(atLevel: level0) {
-                        guard let value = arcProps.property2(atLevel: level0, propID: info.propID) else { continue }
-                        let text = displayString(value)
-                        guard !text.isEmpty else { continue }
-                        lines.add(info.localizedName, text)
+                        add(&lines, info.propID, info.localizedName,
+                            arcProps.propertiesDialogString2(atLevel: level0, propID: info.propID))
                     }
                 }
             }
-            // The level that failed to open (NonOpen_ErrorInfo), after a double separator.
+            // The level that failed to open: two kSeparator rows once GetArcProp answers at all.
             var needSeparator = true
             for propID in specProps {
-                let text = arcProps.displayString(atLevel: levels, propID: propID)
-                guard !text.isEmpty else { continue }
+                var answered: ObjCBool = false
+                let text = withUnsafeMutablePointer(to: &answered) {
+                    arcProps.propertiesDialogString(atLevel: levels, propID: propID, answered: $0)
+                }
+                guard answered.boolValue else { continue }
                 if needSeparator { lines.addSeparator(); lines.addSeparator(); needSeparator = false }
-                lines.add(propertyName(propID), text)
+                add(&lines, propID, propertyName(propID), text)
             }
         }
-        if !snapshot.archivePath.isEmpty {
-            lines.addSeparator()
-            lines.add(Lang.text(1096, "ArcFileName"), snapshot.archivePath)
-        }
         return lines
+    }
+
+    /// AddPropertyString's tail: grouped sizes, the "Open WARNING:" row before kpidErrorType.
+    private static func add(_ lines: inout PanelPropertyLines, _ propID: SZPropID, _ name: String, _ text: String) {
+        let value = sizeGrouped(propID, text)
+        guard !value.isEmpty else { return }
+        if propID == .errorType { lines.add("Open WARNING:", "Cannot open the file as expected archive type") }
+        lines.add(name, value)
     }
 
     /// IsSizeProp -> ConvertSizeToString (PanelMenu.cpp:129-134): a size reads "101 156" in the
@@ -134,28 +167,6 @@ enum PanelProperties {
         Lang.get(1000 + propID.rawValue, "\(propID.rawValue)")
     }
 
-    private static func displayString(_ value: Any) -> String {
-        switch value {
-        case let text as String: return text
-        case let number as NSNumber:
-            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number.boolValue ? "+" : "" }
-            return Formatting.size(number.uint64Value)
-        case let date as Date:
-            return PanelPropertiesDateFormatter.string(from: date)
-        default: return "\(value)"
-        }
-    }
-}
-
-enum PanelPropertiesDateFormatter {
-    private static let formatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return f
-    }()
-
-    static func string(from date: Date) -> String { formatter.string(from: date) }
 }
 
 enum PropertiesDialog {

@@ -921,6 +921,8 @@
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>7-Zip asks Finder to open its Get Info window when you choose Properties for files outside an archive.</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>7-Zip needs access to your Desktop to compress and extract files stored there.</string>
 	<key>NSDocumentsFolderUsageDescription</key>

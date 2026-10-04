@@ -179,6 +179,7 @@ extension PanelViewController: NSUserInterfaceValidations {
     @objc func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField, field !== pathCombo, let index = renamingRow else { return }
         renamingRow = nil
+        (field.superview as? PanelCellView)?.editingConstraint?.isActive = false
         field.isEditable = false
         field.isBordered = false
         field.drawsBackground = false

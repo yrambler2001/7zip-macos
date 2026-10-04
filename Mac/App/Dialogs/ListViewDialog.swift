@@ -13,6 +13,32 @@ import AppKit
 
 // MARK: - IDD_LISTVIEW 99
 
+/// The list's geometry in 7zFM 26.03's Properties dialog (listfeel-data/win1/dlg-prop-*.png/.txt,
+/// LVM_GETCOLUMN and pixel measurements; listfeel.md §3): 17 px rows (no image list), a 24 px empty
+/// header, the text 6 px into each column, and LVSCW_AUTOSIZE widths -- the first column the
+/// widest name plus 8 px (80 px, set by the 72 px kSeparator), the second the widest value plus
+/// 12 px (326 px for the archive's path).
+enum ListViewMetrics {
+    static let rowHeight: CGFloat = 17
+    static let headerHeight: CGFloat = 24
+    static let textX: CGFloat = 6
+    static let firstColumnExtra: CGFloat = 8
+    static let otherColumnExtra: CGFloat = 12
+    /// kSeparator ("------------------------") in Segoe UI 9 pt: 72 px of ink. The Mac font's
+    /// hyphen is wider, so the separator counts as what it measures on Windows and is cut at the
+    /// column's edge instead of widening the column (it would make it 30 % wider than 7zFM's).
+    static let separatorWidth: CGFloat = 72
+
+    static func autosizedWidths(strings: [String], values: [String]) -> (strings: CGFloat, values: CGFloat) {
+        func width(_ text: String) -> CGFloat {
+            PanelPropertyLines.isSeparator(text) ? separatorWidth : PanelMetrics.textWidth(text)
+        }
+        let first = (strings.map(width).max() ?? 0) + firstColumnExtra
+        let second = (values.map(PanelMetrics.textWidth).max() ?? 0) + otherColumnExtra
+        return (max(24, first), max(24, second))
+    }
+}
+
 struct ListViewDialogOptions {
     var title: String = ""
     var strings: [String] = []          // column 1 ("Strings")
@@ -126,27 +152,32 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, N
         // ListViewDialog.rc inserts both columns without a header text, so the port does the
         // same (a lang ID here showed an unrelated string in the Properties dialog).
         stringsColumn.title = ""
-        stringsColumn.minWidth = 60
+        stringsColumn.minWidth = 24
         table.addTableColumn(stringsColumn)
+        // SetColumnWidthAuto (LVSCW_AUTOSIZE) on both columns after filling the list
+        // (ListViewDialog.cpp:124-126): each column as wide as its widest text (ListViewMetrics).
+        let widths = ListViewMetrics.autosizedWidths(strings: strings, values: values)
+        stringsColumn.width = widths.strings
         if options.numColumns > 1 {
-            stringsColumn.width = 200
             let valuesColumn = NSTableColumn(identifier: ListViewDialogController.valuesColumn)
             valuesColumn.title = ""
-            valuesColumn.minWidth = 60
-            valuesColumn.width = 460
+            valuesColumn.minWidth = 24
+            valuesColumn.width = widths.values
             table.addTableColumn(valuesColumn)
-            table.headerView = NSTableHeaderView()
+            table.headerView = NSTableHeaderView(frame: NSRect(x: 0, y: 0, width: 600, height: ListViewMetrics.headerHeight))
         } else {
-            stringsColumn.width = 660
             table.headerView = nil                          // LVS_NOCOLUMNHEADER
         }
         table.allowsMultipleSelection = true
         table.allowsColumnSelection = false
         table.allowsEmptySelection = true
-        table.usesAlternatingRowBackgroundColors = true
-        table.rowSizeStyle = .small
+        // A plain report list: no alternating rows, 17 px rows, no gaps (7zFM 26.03, listfeel §3).
+        table.usesAlternatingRowBackgroundColors = false
         table.style = .plain
         table.usesAutomaticRowHeights = false
+        table.rowHeight = ListViewMetrics.rowHeight
+        table.intercellSpacing = .zero
+        table.columnAutoresizingStyle = .noColumnAutoresizing
         table.dataSource = self
         table.delegate = self
         table.keyHandler = self
@@ -185,7 +216,6 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, N
         }
 
         DialogKit.install(stack, in: window, parent: parent, minimumWidth: 720)
-        table.sizeLastColumnToFit()
         if options.selectFirst, !strings.isEmpty {              // SelectFirst: first row focused + selected
             table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
             table.scrollRowToVisible(0)
@@ -220,19 +250,23 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, N
             cell = NSTableCellView()
             cell.identifier = identifier
             let field = NSTextField(labelWithString: "")
-            field.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+            field.font = PanelMetrics.listFont              // the list's Segoe UI 9 pt metrics
             field.lineBreakMode = .byTruncatingTail
             field.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(field)
             cell.textField = field
+            // The text 6 px into the column; it may run to the column's edge before it is cut.
             NSLayoutConstraint.activate([
-                field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                field.leadingAnchor.constraint(equalTo: cell.leadingAnchor,
+                                               constant: ListViewMetrics.textX - PanelMetrics.textFieldInset),
+                field.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
                 field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             ])
         }
         let text = self.tableView(tableView, objectValueFor: tableColumn, row: row) as? String ?? ""
         cell.textField?.stringValue = text
+        // A kSeparator row is a run of hyphens cut at the column's edge, as on Windows.
+        cell.textField?.lineBreakMode = PanelPropertyLines.isSeparator(text) ? .byClipping : .byTruncatingTail
         cell.setAccessibilityLabel(text)
         return cell
     }

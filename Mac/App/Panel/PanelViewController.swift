@@ -126,6 +126,11 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     /// outermost archive when browsing inside one.
     var pathToPersist: String { snapshot?.fileSystemPath ?? "" }
 
+    /// Where the last Properties command went (PanelFinderInfo.swift); read by tests.
+    var lastPropertiesRoute: FinderInfo.Route?
+    /// ComboBoxPaths: the path each address drop-down entry binds (PanelAddressDropdown.swift).
+    var addressDropdownPaths: [String] = []
+
     // MARK: views
     let pathBar = PathBarView()
     private let upButton = NSButton()
@@ -182,11 +187,14 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         pathCombo.action = #selector(pathComboAction(_:))
         pathCombo.delegate = self
         pathCombo.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        // The address bar's ComboBoxEx draws no focus ring on Windows; the caret and the selected
+        // text are the only focus cue (listfeel.md §9). The keyboard focus itself is unchanged.
+        pathCombo.focusRingType = .none
 
         let header = NSStackView(views: [upButton, folderIcon, pathCombo])
         header.orientation = .horizontal
         header.spacing = 6
-        header.edgeInsets = NSEdgeInsets(top: 5, left: 6, bottom: 5, right: 6)
+        header.edgeInsets = NSEdgeInsets(top: 1, left: 2, bottom: 1, right: 2)   // ReBar: 24 px band (listfeel §9)
         header.translatesAutoresizingMaskIntoConstraints = false
         pathBar.translatesAutoresizingMaskIntoConstraints = false
         pathBar.addSubview(header)
@@ -202,14 +210,16 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.gridStyleMask = Settings.showGrid ? [.solidHorizontalGridLineMask, .solidVerticalGridLineMask] : []
         tableView.gridColor = PanelSelectionStyle.grid               // LVS_EX_GRIDLINES (240,240,240)
-        tableView.rowHeight = 20
-        tableView.intercellSpacing = NSSize(width: 6, height: 2)
+        // 7zFM 26.03's list: 19 px rows with no gap, the cells draw their own margins, a 24 px
+        // header (PanelMetrics, listfeel.md §2).
+        tableView.rowHeight = PanelMetrics.rowHeight
+        tableView.intercellSpacing = .zero
         tableView.style = .plain
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
         tableView.target = self
         tableView.doubleAction = #selector(doubleClicked(_:))
         tableView.action = #selector(singleClicked(_:))
-        tableView.headerView = PanelTableHeaderView()
+        tableView.headerView = PanelTableHeaderView(frame: NSRect(x: 0, y: 0, width: 600, height: PanelMetrics.headerHeight))
         tableView.registerForDraggedTypes(PanelDragDrop.acceptedTypes)
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
         tableView.setDraggingSourceOperationMask([.copy], forLocal: false)
@@ -646,15 +656,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     private func rebuildColumns() {
         for column in tableView.tableColumns { tableView.removeTableColumn(column) }
-        for info in columnsModel.visibleColumns {
-            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(String(info.propID.rawValue)))
-            column.title = info.title
-            column.width = CGFloat(info.width)
-            column.minWidth = 24
-            column.maxWidth = 2000
-            column.headerCell.alignment = PanelFormat.alignment(for: info.varType, propID: info.propID)
-            tableView.addTableColumn(column)
-        }
+        for info in columnsModel.visibleColumns { tableView.addTableColumn(Self.makeTableColumn(info)) }
     }
 
     /// SaveListViewInfo (PanelItems.cpp:1322): order, width, visibility, sort per folder type.
@@ -725,18 +727,12 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         restoreSelection(names: names, focusName: focus)
     }
 
+    /// 7zFM draws no sort arrow and no highlighted column in the header: CPanel never sets
+    /// HDF_SORTUP / HDF_SORTDOWN (no use anywhere in CPP/7zip/UI/FileManager; the fresh-default
+    /// capture shows a plain "Name" header). The port used to show the AppKit triangle.
     private func updateSortIndicator() {
-        for column in tableView.tableColumns {
-            let pid = Self.propID(of: column)
-            if pid == columnsModel.sortID && columnsModel.sortID != .noProperty {
-                tableView.setIndicatorImage(NSImage(named: columnsModel.ascending ? "NSAscendingSortIndicator"
-                                                                                  : "NSDescendingSortIndicator"), in: column)
-                tableView.highlightedTableColumn = column
-            } else {
-                tableView.setIndicatorImage(nil, in: column)
-            }
-        }
-        if columnsModel.sortID == .noProperty { tableView.highlightedTableColumn = nil }
+        for column in tableView.tableColumns { tableView.setIndicatorImage(nil, in: column) }
+        tableView.highlightedTableColumn = nil
     }
 
     // MARK: - View modes (SetListViewMode, Panel.cpp:871-892)
@@ -1150,6 +1146,14 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     }
 
     @objc private func pathComboAction(_ sender: Any?) {
+        // Return on an entry chosen in the drop-down with the arrow keys binds that entry's path,
+        // not its (indented) name (CBN_SELENDOK).
+        let index = pathCombo.indexOfSelectedItem
+        if index >= 0, index < addressDropdownPaths.count,
+           (pathCombo.itemObjectValue(at: index) as? String) == pathCombo.stringValue {
+            commitAddressDropdownEntry(at: index)
+            return
+        }
         let text = pathCombo.stringValue.trimmingCharacters(in: .whitespaces)
         navigate(to: text, fallbackToRoot: false, focusListOnSuccess: true)
     }
@@ -1158,10 +1162,9 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     private func noteFolderVisited(_ path: String, previous: String?) {
         Settings.addToFolderHistory(path)                    // CFolderHistory (01 §3.5)
-        if !pathCombo.objectValues.contains(where: { ($0 as? String) == path }) {
-            pathCombo.insertItem(withObjectValue: path, at: 0)
-            while pathCombo.numberOfItems > 100 { pathCombo.removeItem(at: pathCombo.numberOfItems - 1) }
-        }
+        // The drop-down holds only what CBN_DROPDOWN builds (the path's components, Documents,
+        // Computer, the volumes), never the history: 7zFM keeps that in the Folders History
+        // dialog (Alt+F12) and the port did too, besides (listfeel.md §9).
         guard !suppressHistory, let previous, previous != path else { return }
         backStack.append(previous)
         if backStack.count > 100 { backStack.removeFirst() }

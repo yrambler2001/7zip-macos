@@ -41,10 +41,14 @@ using namespace NFind;
 
 namespace NMacFolders {
 
-// Column order as 7zFM shows them for FSFolder (FSFolder.cpp kProps, 01 section 3.2).
-// kpidPosixAttrib / kpidUser / kpidGroup / kpidNtReparse take the place of the Windows
-// security and reparse columns (01 section 9 #7, #8); kpidPrefix must stay last because
-// GetNumberOfProperties() drops it outside flat mode, exactly like Windows.
+// Column order as 7zFM shows them for FSFolder (FSFolder.cpp kProps, 01 section 3.2), which is
+// also the order of the header's column menu (ShowColumnsContextMenu lists `_columns`). 7zFM 26.03
+// with FS_SHOW_LINKS_INFO lists "Name, Size, Modified, Created, Accessed, Metadata Changed,
+// Attributes, Packed Size, iNode, Links, Comment, Folders, Files, Link" -- Link being the
+// kpidNtReparse raw property, which comes after the regular ones (listfeel.md section 5). The
+// macOS-only kpidPosixAttrib / kpidUser / kpidGroup (in place of the Windows security column,
+// 01 section 9 #7, #8) follow Link. kpidPrefix must stay last because GetNumberOfProperties()
+// drops it outside flat mode, exactly like Windows.
 static const Byte kProps[] =
 {
   kpidName,          //  4
@@ -55,15 +59,15 @@ static const Byte kProps[] =
   kpidChangeTime,    // 98  (st_ctimespec, "Metadata Changed")
   kpidAttrib,        //  9
   kpidPackSize,      //  8  (physical size on disk)
-  kpidPosixAttrib,   // 53  ("Mode")
-  kpidUser,          // 25
-  kpidGroup,         // 26
-  kpidNtReparse,     // 89  ("Link": the symlink target)
   kpidINode,         // 91
   kpidLinks,         // 37
   kpidComment,       // 28  (descript.ion)
   kpidNumSubDirs,    // 31  (after CalcItemFullSize)
   kpidNumSubFiles,   // 32
+  kpidNtReparse,     // 89  ("Link": the symlink target)
+  kpidPosixAttrib,   // 53  ("Mode")
+  kpidUser,          // 25
+  kpidGroup,         // 26
   kpidPrefix         // 30  (flat mode only)
 };
 

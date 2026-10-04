@@ -236,8 +236,16 @@ final class InfoHangTests: AppHostTestCase {
         let info = { self.clickToolbar("sz.info", controller) }
         var failures = runMatrix(controller, location: "fs", picks: [
             ("a.txt", .name("a.txt")), ("sub", .name("sub")), ("test.7z", .name("test.7z")),
-            ("a.txt+sub", .names(["a.txt", "sub"])), ("nothing", .nothing), ("..", .parentRow),
+            ("a.txt+sub", .names(["a.txt", "sub"])),
         ], ways: closeWays, open: info)
+        // Nothing operated on the file system: InvokeSystemCommand returns without a window
+        // (PanelMenu.cpp:58-66; listfeel.md §4), so there is nothing to close.
+        for (label, p) in [("nothing", Pick.nothing), ("..", Pick.parentRow)] {
+            XCTAssertTrue(pick(p, in: controller.focusedPanel))
+            info()
+            XCTAssertEqual(controller.focusedPanel.lastPropertiesRoute, .nothing, "fs \(label)")
+            XCTAssertNil(NSApp.modalWindow, "fs \(label): 7zFM opens no window")
+        }
 
         var done = false
         controller.focusedPanel.navigate(to: scratch + "/test.7z") { _ in done = true }

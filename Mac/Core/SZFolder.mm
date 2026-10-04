@@ -61,6 +61,30 @@ static_assert((int)SZTimestampLevelMin == kTimestampPrintLevel_MIN && (int)SZTim
 @end
 
 // ---------------------------------------------------------------------------
+// GetOpenArcErrorMessage (FileManager/ExtractCallback.cpp:474-509), defined in SZArchiveOpener.mm.
+UString SZOpenArcErrorFlagsMessage(UInt32 errorFlags);
+
+/// AddPropertyString's value (PanelMenu.cpp:110-148) without the size grouping, which the Swift
+/// side applies (PanelProperties.sizeGrouped): error / warning flags as their message, nothing for
+/// no flag, everything else at level 9.
+static NSString *SZPropertiesDialogString(const NWindows::NCOM::CPropVariant &prop, PROPID propID)
+{
+  if (prop.vt == VT_EMPTY)
+    return @"";
+  UString val;
+  if (propID == kpidErrorFlags || propID == kpidWarningFlags)
+  {
+    const UInt32 flags = GetOpenArcErrorFlags(prop);
+    if (flags == 0)
+      return @"";
+    val = SZOpenArcErrorFlagsMessage(flags);
+  }
+  if (val.IsEmpty())
+    ConvertPropertyToString2(val, prop, propID, 9);   // "we send 9 - is ns precision"
+  return SZStringFromUString(val);
+}
+
+// ---------------------------------------------------------------------------
 static NSArray<SZPropertyInfo *> *SZReadPropertyInfos(UInt32 count, HRESULT (^getInfo)(UInt32, BSTR *, PROPID *, VARTYPE *))
 {
   NSMutableArray *result = [NSMutableArray arrayWithCapacity:count];
@@ -163,6 +187,30 @@ static NSString *SZRawPropertyString(const void *data, UInt32 dataSize, PROPID p
   if (_props->GetArcProp((UInt32)level, (PROPID)propID, &prop) != S_OK)
     return @"";
   return SZDisplayStringFromPropVariant(prop, (PROPID)propID, kTimestampPrintLevel_SEC);
+}
+
+- (NSString *)propertiesDialogStringAtLevel:(NSInteger)level propID:(SZPropID)propID answered:(BOOL *)answered
+{
+  if (answered)
+    *answered = NO;
+  if (level < 0 || level > self.levelCount)        // CAgent: E_INVALIDARG past the NonOpen level
+    return @"";
+  NWindows::NCOM::CPropVariant prop;
+  if (_props->GetArcProp((UInt32)level, (PROPID)propID, &prop) != S_OK)
+    return @"";
+  if (answered)
+    *answered = YES;
+  return SZPropertiesDialogString(prop, (PROPID)propID);
+}
+
+- (NSString *)propertiesDialogString2AtLevel:(NSInteger)level propID:(SZPropID)propID
+{
+  if (level < 1 || level >= self.levelCount)
+    return @"";
+  NWindows::NCOM::CPropVariant prop;
+  if (_props->GetArcProp2((UInt32)level, (PROPID)propID, &prop) != S_OK)
+    return @"";
+  return SZPropertiesDialogString(prop, (PROPID)propID);
 }
 
 - (NSArray<SZPropertyInfo *> *)properties2AtLevel:(NSInteger)level
@@ -543,6 +591,29 @@ bool MacPath_IsOnRemovableVolume(const FString &path);
   if (_folder->GetFolderProperty((PROPID)propID, &prop) != S_OK)
     return nil;
   return SZObjectFromPropVariant(prop);
+}
+
+- (NSArray<SZPropertyInfo *> *)folderPropertyInfos
+{
+  CMyComPtr<IFolderProperties> folderProperties;
+  _folder.QueryInterface(IID_IFolderProperties, &folderProperties);
+  if (!folderProperties)
+    return @[];
+  UInt32 n = 0;
+  if (folderProperties->GetNumberOfFolderProperties(&n) != S_OK)
+    return @[];
+  IFolderProperties *p = folderProperties;
+  return SZReadPropertyInfos(n, ^HRESULT(UInt32 i, BSTR *name, PROPID *propID, VARTYPE *vt) {
+    return p->GetFolderPropertyInfo(i, name, propID, vt);
+  });
+}
+
+- (NSString *)propertiesDialogStringForFolderPropertyID:(SZPropID)propID
+{
+  NWindows::NCOM::CPropVariant prop;
+  if (_folder->GetFolderProperty((PROPID)propID, &prop) != S_OK)
+    return @"";
+  return SZPropertiesDialogString(prop, (PROPID)propID);
 }
 
 - (NSString *)folderType

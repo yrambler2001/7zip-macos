@@ -98,6 +98,7 @@ extension PanelViewController {
         guard let cell = tableView.view(atColumn: column, row: index, makeIfNecessary: true) as? NSTableCellView,
               let field = cell.textField else { renameWithDialog(index); return }
         renamingRow = index
+        (cell as? PanelCellView)?.editingConstraint?.isActive = true
         field.stringValue = rows[index].name
         field.isEditable = true
         field.isSelectable = true
@@ -238,22 +239,7 @@ extension PanelViewController {
         refreshAfterOperation(selectNames: names)
     }
 
-    // MARK: - Properties (PanelMenu.cpp:172-423, Alt+Enter / toolbar Info)
-
-    func showProperties() {
-        guard let snap = snapshot else { return }
-        let indices = operatedRowIndices()
-        let engineIndices = indices.map { rows[$0].engineIndex }
-        let level = timestampLevel
-        runOnQueue { [self] in
-            guard let folder = self.folder else { return }
-            let lines = PanelProperties.build(folder: folder, itemIndices: engineIndices,
-                                              snapshot: snap, level: level)
-            DispatchQueue.main.async {
-                PropertiesDialog.show(lines: lines, parent: self.view.window)
-            }
-        }
-    }
+    // MARK: - Properties (PanelMenu.cpp:172-423, Alt+Enter / toolbar Info): PanelFinderInfo.swift
 
     // MARK: - Copy / move (PanelCopy.cpp:182-450)
 

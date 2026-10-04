@@ -255,7 +255,8 @@ static UString SZFormatLangOpen(UInt32 langID, const UString &argument)
 }
 
 /// GetOpenArcErrorMessage (FileManager/ExtractCallback.cpp:474-509).
-static UString SZOpenArcErrorFlagsMessage(UInt32 errorFlags)
+UString SZOpenArcErrorFlagsMessage(UInt32 errorFlags);   // also used by SZFolder.mm (Properties)
+UString SZOpenArcErrorFlagsMessage(UInt32 errorFlags)
 {
   UString s;
   for (unsigned i = 0; i < Z7_ARRAY_SIZE(k_OpenErrorFlagsLangIDs); i++)

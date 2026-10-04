@@ -40,6 +40,8 @@ final class FMToolbarView: NSView {
     static let topInset: CGFloat = 2
     static let bottomInset: CGFloat = 4
     static let labelFont = NSFont.systemFont(ofSize: 11)
+    /// How far the bitmap and the label move while a button is pressed (listfeel.md §7).
+    static let pressedOffset = NSSize(width: 1, height: 0)
 
     private(set) var buttons: [FMToolbarButton] = []
     private(set) var showsText = true
@@ -190,7 +192,12 @@ final class FMToolbarButton: NSButton {
         }
         // The bitmap, 3 px from the top, centred; nearest-neighbour so the 96 dpi art stays crisp
         // on a Retina screen (each bitmap pixel becomes a 2 x 2 block, as at 200 % on Windows).
-        let imageRect = NSRect(x: floor((bounds.width - imageSize.width) / 2), y: FMToolbarView.paddingY / 2,
+        // While pressed the bitmap and the label move 1 px to the right (comctl32 v6's pressed
+        // offset on Windows 11, measured with a real mouse-down on 7zFM 26.03's Info button:
+        // every pixel column moves by +1 and no row moves, listfeel.md §7).
+        let shift = pressed ? FMToolbarView.pressedOffset : .zero
+        let imageRect = NSRect(x: floor((bounds.width - imageSize.width) / 2) + shift.width,
+                               y: FMToolbarView.paddingY / 2 + shift.height,
                                width: imageSize.width, height: imageSize.height)
         if let bitmap {
             NSGraphicsContext.current?.imageInterpolation = .none
@@ -204,7 +211,7 @@ final class FMToolbarButton: NSButton {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: FMToolbarView.labelFont, .foregroundColor: NSColor.labelColor, .paragraphStyle: style,
         ]
-        let textRect = NSRect(x: 0, y: imageRect.maxY + 1, width: bounds.width, height: FMToolbarView.textHeight)
+        let textRect = NSRect(x: shift.width, y: imageRect.maxY + 1, width: bounds.width, height: FMToolbarView.textHeight)
         (title as NSString).draw(in: textRect, withAttributes: attributes)
     }
 }

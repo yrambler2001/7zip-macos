@@ -383,41 +383,22 @@ extension PanelViewController {
     /// CBN_DROPDOWN (OnComboBoxCommand, PanelFolderChange.cpp:627-837): one entry per path
     /// component with the current path first, then Documents and Computer with the volumes.
     func rebuildAddressDropdown() {
-        // (indent, path): the indent mirrors AddComboBoxItem's per-level indentation. The icons
-        // Windows draws next to each entry have no NSComboBox equivalent (a plain string list).
-        var entries: [(Int, String)] = []
-        let current = currentPath
-        if !current.isEmpty {
-            var chain: [String] = [current]
-            var path = current
-            if path.hasSuffix("/") { path.removeLast() }
-            while !path.isEmpty, path != "/" {
-                path = (path as NSString).deletingLastPathComponent
-                if path.isEmpty { break }
-                chain.append(path == "/" ? "/" : path + "/")
-                if path == "/" { break }
-            }
-            // the current path first, then its parents, indentation growing with the level
-            let deepest = chain.count - 1
-            entries.append((deepest, chain[0]))
-            for (level, ancestor) in chain.dropFirst().enumerated().reversed() {
-                entries.append((deepest - level - 1, ancestor))
-            }
-        }
-        entries.append((0, NSHomeDirectory() + "/Documents/"))       // IDS_DOCUMENTS 7102
-        entries.append((0, "/"))                                    // IDS_COMPUTER 7100
-        for url in FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil,
-                                                        options: [.skipHiddenVolumes]) ?? [] {
-            entries.append((1, url.path.hasSuffix("/") ? url.path : url.path + "/"))
-        }
-        for path in Settings.folderHistory.prefix(20) where !entries.contains(where: { $0.1 == path }) {
-            entries.append((0, path))
-        }
+        let entries = AddressDropdown.entries(currentPath: currentPath,
+                                              documents: NSHomeDirectory() + "/Documents/",
+                                              volumes: FileManager.default.mountedVolumeURLs(
+                                                includingResourceValuesForKeys: nil,
+                                                options: [.skipHiddenVolumes])?.map { $0.path } ?? [])
+        addressDropdownPaths = entries.map { $0.path }
         pathCombo.removeAllItems()
-        var seen = Set<String>()
-        for (indent, path) in entries where !path.isEmpty && seen.insert(path).inserted {
-            pathCombo.addItem(withObjectValue: String(repeating: "   ", count: max(0, indent)) + path)
-        }
+        for entry in entries { pathCombo.addItem(withObjectValue: entry.title) }
+    }
+
+    /// CBN_SELENDOK: bind the entry's path (ComboBoxPaths[index]) and focus the list.
+    func commitAddressDropdownEntry(at index: Int) {
+        guard index >= 0, index < addressDropdownPaths.count else { return }
+        let path = addressDropdownPaths[index]
+        pathCombo.deselectItem(at: index)                   // _headerComboBox.SetCurSel(-1)
+        navigate(to: path, fallbackToRoot: false, focusListOnSuccess: true)
     }
 
     // MARK: - Folders history and favorites (01 §3.5)

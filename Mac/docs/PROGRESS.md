@@ -203,6 +203,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] View modes 0 Large Icons / 1 Small Icons / 2 List / 3 Details (`IDM_VIEW_LARGE_ICONS 700` … `IDM_VIEW_DETAILS 703`, Ctrl+1..4), default Details, items and selection preserved on switch; only Details shows columns; icon modes use `NSCollectionView` with large / small icons (01 §3.1, §9 #14)
 - [x] `ListMode` persisted per panel (01 §3.1, 01b §5.2)
 - [x] `InitColumns`: folder property list (Name first, `kpidIsDir` skipped) + raw properties + persisted `CListViewInfo` per folder type ID (`FSFolder`, `FSDrives`, `RootFolder`, `7-Zip.<type>`): order, visibility, width, sort ID, direction (01 §3.2, 01b §5.3)
+  - **[listfeel]** default widths Name 160 / everything else 100 (GetColumnWidth), header menu in property order, 19 pt rows, 24 pt header, Segoe UI 9 metrics (Helvetica Neue 11), no sort arrow (`reports/listfeel.md` §2, §5)
 - [x] Default visibility: FS folders hide `kpidATime`, `kpidChangeTime`, `kpidAttrib`, `kpidPackSize`, `kpidINode`, `kpidLinks`, `kpidNtReparse`; widths Name 160, others 100; alignment strings left, numbers right, times left, booleans centre (01 §3.2)
 - [x] Columns per folder type: RootFolder `kpidName`; volumes `kpidName/OutName/TotalSize/FreeSpace/Type/VolumeName/FileSystem/ClusterSize`; FSFolder table of 01 §3.2; archives = handler properties + `NumSubDirs` / `NumSubFiles` / `Prefix` + raw props (01 §3.2)
 - [x] Column names from lang IDs `1000 + kpid` (`GetNameOfProperty`: lang string, else handler name, else number) (01 §7.2, 01b §4.18)
@@ -272,6 +273,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] Enter / item activation: Alt alone → `Properties`; otherwise `OpenSelectedItems(tryInternal = !Shift ‖ Alt ‖ Ctrl)` so Shift+Enter = open outside; Alt+Enter beep suppressed (01 §3.7)
 - [x] Address edit: Esc restores `_currentFolderPrefix` and focuses the list; Enter → `BindToPathAndRefresh(text)` (focus back to the list on success, error box and old folder on failure); Tab → list; F9, Ctrl+W, Alt+F1 / F2 behave as in the list (01 §3.7)
 - [x] Mouse: single / double click activation per `SingleClick`; Alt+double-click → Properties; Shift+double-click → open outside; right-click → context menu; left drag → `OnDrag(false)` (01 §3.7)
+  - **[listfeel]** rubber band as 7zFM 26.03 (measured): with FullRow off a drag from anywhere but the icon / label text draws the dotted band and selects by icon + label, with FullRow only from outside the rows; a click on the background clears the selection (`reports/listfeel.md` §6)
 - [x] Menu accelerator texts are informational; the panel key handler is authoritative (01 §2, §3.7)
 
 ### 3.7 Navigation and address bar
@@ -286,6 +288,7 @@ States: `not started`, `in progress`, `review` (branch pushed, orchestrator merg
 - [x] `OnSetSameFolder` (Alt+Up): other panel binds to the same path; `OnSetSubFolder` (Alt+Left / Right): other panel binds to the focused sub-folder or archive (01 §3.8)
 - [x] Address bar text = `_currentFolderPrefix` (e.g. `/a/b.7z/dir/`) with the folder icon: root → Computer icon, volume → volume icon, archive → the archive file's icon (01 §3.9)
 - [x] Address dropdown built on open: one entry per path component (indented per level, icons, current path first), then `IDS_DOCUMENTS 7102`, `IDS_COMPUTER 7100` with each volume indented by 1; selecting an entry binds; typing any path + Enter binds (01 §3.9)
+  - **[listfeel]** entries are the components' names (no history), and a mouse pick binds at once (CBN_SELENDOK); no focus ring on the address bar (`reports/listfeel.md` §8)
 - [x] Window title follows the focused panel's path; `RefreshTitleAlways` after Link (01 §1.1, 01b §4.10)
 
 ### 3.8 Copy / Move (F5 / F6, `CApp::OnCopy`)
