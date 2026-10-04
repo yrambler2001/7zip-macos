@@ -156,3 +156,29 @@ selection) is unverified.
 | tests | `Mac/Tests/AppTests/RecheckTests.swift`, `RecheckProbeTests.swift`, `RecheckDialogKeysProbe.swift` | harness |
 
 Nothing outside `Mac/` was touched.
+
+## 10. The Windows machine
+
+`HKCU\Software\7-Zip` was exported to `%TEMP%\szcmp\reg-backup.reg` before the first step (a copy
+kept in the session scratchpad, not committed: it holds the user's history), deleted before each
+step, and at the end deleted and re-imported from the backup (same 30 lines as before). Every 7zFM /
+7zG window was closed by the steps (`StopFM`); the SHA-512 run was cancelled with its own Yes. The
+scheduled task `sz_cmp` and `%TEMP%\szcmp` (fixtures, the 6 GB `big.bin`, the 121-file folder) were
+deleted. Nothing was moved to the Recycle Bin: the only deletion was the empty "New Folder" the step
+created, with Shift+Delete.
+
+## 11. Verification
+
+All runs with `DEVELOPER_DIR=/Applications/Xcode.app`.
+
+| run | result |
+|---|---|
+| `Mac/scripts/test.sh -u` (input shard + both probes), after the chrome, progress, keys, dialog and colour commits | **64 passed, 0 failed** (52 + 6 + 6) |
+| `Mac/scripts/test.sh -H` during the work | 201 → 206 → 210 passed, 0 failed |
+| final `build.sh` | exit 0, no warnings in `Mac/` |
+| final `test.sh` (unit) | **388 passed, 0 failed** |
+| final `test.sh -H` | **206 passed, 0 failed** (RecheckTests 10; the probes skip without `Mac/build/recheck/PROBE`). One earlier full run failed `RecheckTests.testListKeysMoveLikeTheListControl` and, as a knock-on, `SelColorsTests.testDropTargetRowIsHighlightedAndReadable`: an earlier test had left panel 0 in an icon mode; the test now pins and restores Details |
+
+Paired captures (1x, light): `screenshots/wincompare-recheck-main-top-{win,mac}.png` (760×220 from
+the client's top-left), `-statusbar-` (the bottom 56 px), `-splitter-` (two panels around the
+splitter).

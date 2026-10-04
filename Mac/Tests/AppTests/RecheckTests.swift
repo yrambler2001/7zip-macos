@@ -15,12 +15,14 @@ final class RecheckTests: AppHostTestCase {
     private var savedAppearance: NSAppearance?
     private var savedNumPanels = 1
     private var savedPanelPath: String?
+    private var savedListModes: [Int] = [3, 3]
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         savedAppearance = NSApp.appearance
         savedNumPanels = Settings.numPanels
         savedPanelPath = Settings.panelPath(0)
+        savedListModes = [Settings.listMode(0), Settings.listMode(1)]
         NSApp.appearance = NSAppearance(named: .aqua)
     }
 
@@ -32,6 +34,7 @@ final class RecheckTests: AppHostTestCase {
         windows = []
         Settings.numPanels = savedNumPanels
         Settings.setPanelPath(savedPanelPath, 0)
+        for (i, mode) in savedListModes.enumerated() { Settings.setListMode(mode, i) }
         NSApp.appearance = savedAppearance
         super.tearDown()
     }
@@ -66,6 +69,8 @@ final class RecheckTests: AppHostTestCase {
     private func mainWindow(panels: Int = 1) -> MainWindowController {
         Settings.numPanels = panels
         Settings.setPanelPath(NSTemporaryDirectory(), 0)
+        Settings.setListMode(3, 0)                    // Details, whatever an earlier test left
+        Settings.setListMode(3, 1)
         let c = MainWindowController()
         controllers.append(c)
         c.window?.setContentSize(NSSize(width: 900, height: 500))
@@ -214,6 +219,9 @@ final class RecheckTests: AppHostTestCase {
         var done = false
         p.navigate(to: path) { _ in done = true }
         XCTAssertTrue(wait(for: "bound") { done })
+        // Let the file-system watcher's late notice for the files just created land first: an
+        // auto-refresh in the middle of the key sequence restores the old focus.
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         window.contentView?.layoutSubtreeIfNeeded()
         window.makeFirstResponder(p.tableView)
         return (window, p)
