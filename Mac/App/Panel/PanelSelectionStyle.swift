@@ -84,6 +84,8 @@ final class PanelCellView: NSTableCellView {
 
     var isDeleted = false
     var isNameCell = false
+    /// Name cells: makes the text field span the column while it is edited in place.
+    var editingConstraint: NSLayoutConstraint?
     /// The unblended icon; `imageView.image` is this or its ILD_BLEND50 form.
     var baseImage: NSImage?
     private(set) var isHighlighted = false

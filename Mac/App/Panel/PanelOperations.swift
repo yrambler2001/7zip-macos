@@ -98,6 +98,7 @@ extension PanelViewController {
         guard let cell = tableView.view(atColumn: column, row: index, makeIfNecessary: true) as? NSTableCellView,
               let field = cell.textField else { renameWithDialog(index); return }
         renamingRow = index
+        (cell as? PanelCellView)?.editingConstraint?.isActive = true
         field.stringValue = rows[index].name
         field.isEditable = true
         field.isSelectable = true

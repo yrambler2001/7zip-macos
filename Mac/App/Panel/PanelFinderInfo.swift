@@ -54,7 +54,8 @@ enum FinderInfo {
     static var sender: ([URL], @escaping (Outcome) -> Void) -> Void = defaultSender
 
     static var sendsRealEvents: Bool {
-        !TestSupport.isEnabled && ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
+        let env = ProcessInfo.processInfo.environment
+        return !TestSupport.isEnabled && env["XCTestConfigurationFilePath"] == nil && env["SEVENZIP_UITEST"] == nil
     }
 
     private static let defaultSender: ([URL], @escaping (Outcome) -> Void) -> Void = { urls, done in

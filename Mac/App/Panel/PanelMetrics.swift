@@ -57,3 +57,39 @@ enum PanelMetrics {
         return (start, max(start, end))
     }
 }
+
+/// A header item (SysHeader32 with the list's font): its text 6 px from the edge it is aligned to,
+/// as 7zFM's header draws it ("Name" from x 6, "Size" ending 6 px before the divider); AppKit's
+/// header cell keeps only 3 pt (listfeel.md §2).
+final class PanelHeaderCell: NSTableHeaderCell {
+    static let extraInset: CGFloat = 3
+
+    override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
+        var frame = cellFrame
+        switch alignment {
+        case .right: frame.size.width -= Self.extraInset
+        case .center: break
+        default:
+            frame.origin.x += Self.extraInset
+            frame.size.width -= Self.extraInset
+        }
+        super.drawInterior(withFrame: frame, in: controlView)
+    }
+}
+
+extension PanelViewController {
+
+    /// One Details column (InitColumns / AddColumn): the property's title, width and alignment.
+    static func makeTableColumn(_ info: PanelColumn) -> NSTableColumn {
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(String(info.propID.rawValue)))
+        let header = PanelHeaderCell(textCell: info.title)
+        header.alignment = PanelFormat.alignment(for: info.varType, propID: info.propID)
+        header.font = PanelMetrics.listFont                       // SysHeader32: the list's font
+        column.headerCell = header
+        column.title = info.title
+        column.width = CGFloat(info.width)
+        column.minWidth = 24
+        column.maxWidth = 2000
+        return column
+    }
+}

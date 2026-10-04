@@ -43,6 +43,7 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.textField?.alignment = .left
             cell.baseImage = icon(for: item)
             cell.textField?.isEditable = false                    // label editing starts on F2 only
+            cell.editingConstraint?.isActive = false
         } else {
             cell.textField?.stringValue = item.cells[pid] ?? ""
             cell.textField?.alignment = alignment
@@ -110,8 +111,15 @@ extension PanelViewController {
                 image.heightAnchor.constraint(equalToConstant: PanelMetrics.iconSize),
                 text.leadingAnchor.constraint(equalTo: cell.leadingAnchor,
                                               constant: PanelMetrics.labelX + PanelMetrics.labelTextInset - inset),
-                text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -inset),
+                // The name's field is as wide as its text (cut at the column's end): the item is
+                // the icon and the text, not the whole column (LVHT_ONITEM, the rubber band), and
+                // a click on the field -- VoiceOver's or XCUITest's, at its centre -- is on the item.
+                text.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -inset),
             ]
+            text.setContentHuggingPriority(.required, for: .horizontal)
+            text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            // While the name is edited in place (F2) the field spans the column.
+            cell.editingConstraint = text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -inset)
         } else {
             // The full margin on the aligned side; on the other side the text may run up to the
             // column's edge before it is cut, as a date in a 100 px column does on Windows.

@@ -656,16 +656,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     private func rebuildColumns() {
         for column in tableView.tableColumns { tableView.removeTableColumn(column) }
-        for info in columnsModel.visibleColumns {
-            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(String(info.propID.rawValue)))
-            column.title = info.title
-            column.width = CGFloat(info.width)
-            column.minWidth = 24
-            column.maxWidth = 2000
-            column.headerCell.alignment = PanelFormat.alignment(for: info.varType, propID: info.propID)
-            column.headerCell.font = PanelMetrics.listFont               // SysHeader32: the list's font
-            tableView.addTableColumn(column)
-        }
+        for info in columnsModel.visibleColumns { tableView.addTableColumn(Self.makeTableColumn(info)) }
     }
 
     /// SaveListViewInfo (PanelItems.cpp:1322): order, width, visibility, sort per folder type.
