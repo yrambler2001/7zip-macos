@@ -1,7 +1,7 @@
 // RecheckProbeTests.swift -- the Mac half of the `recheck` measurements (Mac/docs/reports/recheck.md):
 // the whole main window on a fresh default, rendered at 1x with its frame, plus a view-tree dump
 // and the menu bar with key equivalents, written to Mac/build/recheck/out. Runs only when
-// Mac/build/recheck/PROBE and the fixture folder Mac/build/wincompare/cmp exist, so normal runs skip it.
+// Mac/build/recheck/PROBE and the fixture folder Mac/build/recheck/cmp exist, so normal runs skip it.
 
 import AppKit
 import XCTest
@@ -21,7 +21,7 @@ final class RecheckProbeTests: AppHostTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
         try XCTSkipUnless(FileManager.default.fileExists(atPath: base + "/recheck/PROBE")
-                          && FileManager.default.fileExists(atPath: base + "/wincompare/cmp"),
+                          && FileManager.default.fileExists(atPath: base + "/recheck/cmp"),
                           "recheck probe not requested")
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
         savedAppearance = NSApp.appearance
@@ -73,7 +73,7 @@ final class RecheckProbeTests: AppHostTestCase {
     }
 
     func testProbeMainWindow() {
-        let cmp = base + "/wincompare/cmp"
+        let cmp = base + "/recheck/cmp"
         let c = freshWindow(panels: 1)
         guard let window = c.window else { return XCTFail("no window") }
         let screen = window.screen ?? NSScreen.main

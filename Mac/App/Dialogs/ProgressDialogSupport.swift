@@ -159,6 +159,15 @@ enum ProgressFormatting {
         return "\(UInt64(kbps / 1024)) MB/s"
     }
 
+    /// ConvertSizeToString (ProgressDialog2.cpp:623-638): plain digits, then KB / MB / GB from
+    /// 100000 of the smaller unit -- "67584 KB", "340 MB", "5722 MB" (recheck §5, measured).
+    static func size(_ v: UInt64) -> String {
+        if v >= UInt64(100000) << 20 { return "\(v >> 30) GB" }
+        if v >= UInt64(100000) << 10 { return "\(v >> 20) MB" }
+        if v >= 100000 { return "\(v >> 10) KB" }
+        return "\(v)"
+    }
+
     /// Set_Ratio (ProgressDialog2.cpp:176): out * 100 / in, as a percentage.
     static func ratio(inSize: UInt64?, outSize: UInt64?) -> String {
         guard let inSize, let outSize, inSize > 0 else { return "" }
