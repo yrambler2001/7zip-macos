@@ -172,16 +172,38 @@ enum SuspiciousName {
         return false
     }
 
-    /// IDS_VIRUS 3012 confirmation. Returns true when the user wants to continue.
+    /// IsVirus_Message (PanelItemOpen.cpp:944-967): 7zFM 26.03 does not ask -- it shows IDS_VIRUS
+    /// 3012 with MessageBox_Error ("7-Zip", MB_ICONSTOP), the cleaned-up name and the name, and
+    /// does not open the file. Always false (the caller stops); kept as "confirm" for its callers.
     static func confirm(_ name: String, parent: NSWindow?) -> Bool {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "7-Zip"
-        alert.informativeText = Lang.format(
-            Lang.text(3012, "The file '{0}' looks like a dangerous file. Do you want to open it?"), name)
-        alert.addButton(withTitle: Lang.text(406, "Yes"))    // IDYES, lang 406
-        alert.addButton(withTitle: Lang.text(407, "No"))     // IDNO, lang 407
-        return alert.runModal() == .alertFirstButtonReturn
+        WinMessageBox.run(message(for: name), icon: .error, owner: parent)
+        return false
+    }
+
+    /// The text of that box: without the "(...)" reason unless the name has 5+ spaces in a row,
+    /// then name2 (runs of spaces cut to one, RLO shown as "[RLO]", trailing dots and spaces as
+    /// "_") and the name itself.
+    static func message(for name: String) -> String {
+        var s = Lang.text(3012, "The file looks like a virus (the file name contains long spaces in name).")
+        let isSpaceError = name.contains("     ")
+        if !isSpaceError, let open = s.firstIndex(of: "("), let close = s[open...].firstIndex(of: ")") {
+            var start = open
+            if start > s.startIndex, s[s.index(before: start)] == " " { start = s.index(before: start) }
+            s.removeSubrange(start...close)
+        }
+        var name2 = ""
+        var spaces = 0
+        for c in name {
+            spaces = c == " " ? spaces + 1 : 0
+            if spaces <= 1 { name2.append(c) }
+        }
+        name2 = name2.replacingOccurrences(of: "\u{202E}", with: "[RLO]")
+        var chars = Array(name2)
+        var i = chars.count
+        while i > 0, chars[i - 1] == "." || chars[i - 1] == " " { i -= 1; chars[i] = "_" }
+        name2 = String(chars)
+        let name3 = name.replacingOccurrences(of: "\n", with: "_")
+        return s + "\n" + name2.replacingOccurrences(of: "\n", with: "_") + "\n" + name3
     }
 }
 
@@ -277,15 +299,11 @@ final class TempOpenSession: NSObject {
             if finishAfterwards { finish() }
             return
         }
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "7-Zip"
-        alert.informativeText = Lang.format(
+        // PanelItemOpen.cpp:1282: "7-Zip", MB_YESNOCANCEL | MB_ICONQUESTION; only Yes updates.
+        let question = Lang.format(
             Lang.text(3009, "File '{0}' was modified.\nDo you want to update it in the archive?"),
             tempFile.itemName)
-        alert.addButton(withTitle: Lang.text(406, "Yes"))    // IDYES, lang 406
-        alert.addButton(withTitle: Lang.text(407, "No"))     // IDNO, lang 407
-        guard alert.runModal() == .alertFirstButtonReturn else {
+        guard WinMessageBox.run(question, buttons: .yesNoCancel, icon: .question, owner: window) == .yes else {
             if finishAfterwards { finish() }
             return
         }
@@ -345,13 +363,9 @@ final class TempOpenSession: NSObject {
         }
     }
 
+    /// "7-Zip", MB_OK | MB_ICONSTOP (PanelItemOpen.cpp:1277).
     private func showError(_ text: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        WinMessageBox.run(text, icon: .error, owner: window)
     }
 }
 

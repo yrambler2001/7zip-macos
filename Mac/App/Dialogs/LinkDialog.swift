@@ -247,12 +247,7 @@ final class LinkDialog: NSObject {
 
     /// MessageBoxW(MyFormatMessage(GetLastError()), "7-Zip", MB_ICONERROR)
     private func showError(_ text: String) {
-        let alert = NSAlert()
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.beginSheetModal(for: window)
+        WinMessageBox.run(text, icon: .error, owner: window)
     }
 
     /// Returns true when a link was created (the caller then refreshes the panel).

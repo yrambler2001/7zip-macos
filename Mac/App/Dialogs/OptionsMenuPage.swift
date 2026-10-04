@@ -221,19 +221,13 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
                 }
                 self.show(state)
                 if failed {
-                    let alert = NSAlert()
-                    alert.alertStyle = .critical
-                    alert.messageText = "7-Zip"
-                    alert.informativeText = (wanted
+                    // MenuPage.cpp:293: MessageBoxW(hwnd, m, "7-Zip", MB_ICONERROR).
+                    let text = (wanted
                         ? "The Finder extension could not be turned on."
                         : "The Finder extension could not be turned off.")
                         + " Use System Settings > General > Login Items & Extensions > Finder.\n\n"
                         + FinderExtensionControl.describe(state)
-                    alert.addButton(withTitle: Lang.text(401, "OK"))
-                    if let window = self.view.window {
-                        alert.beginSheetModal(for: window) { _ in FinderExtensionControl.showManagementInterface() }
-                    } else {
-                        alert.runModal()
+                    WinMessageBox.show(text, icon: .error, owner: self.view.window ?? NSApp.mainWindow) { _ in
                         FinderExtensionControl.showManagementInterface()
                     }
                 }

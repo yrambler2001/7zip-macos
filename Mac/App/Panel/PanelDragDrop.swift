@@ -265,7 +265,7 @@ extension PanelViewController {
         if let session = PanelDragDrop.current, let source = session.panel, source !== self || targetRow >= 0 {
             if snap.isArchive {
                 // into an archive: confirm, then CopyFrom on this panel
-                guard confirmCopyToArchive() else { return false }
+                guard confirmCopyToArchive(move: move) else { return false }
                 let paths = session.rowIndices.compactMap { index -> String? in
                     let row = source.rows[index]
                     return row.fullPath.isEmpty ? nil : row.fullPath
@@ -296,21 +296,22 @@ extension PanelViewController {
         let paths = urls.map { $0.path }
         guard !paths.isEmpty else { return false }
         if snap.isArchive {
-            guard confirmCopyToArchive() else { return false }
+            guard confirmCopyToArchive(move: move) else { return false }
             return copyItemsIn(paths: paths, move: move)
         }
         return copyFileSystemItems(paths: paths, toDirectory: targetPath, move: move)
     }
 
-    /// IDS_CONFIRM_FILE_COPY 6010 / IDS_WANT_TO_COPY_FILES 6011.
-    private func confirmCopyToArchive() -> Bool {
-        let alert = NSAlert()
-        alert.messageText = Lang.text(6010, "Confirm File Copy")
-        alert.informativeText = Lang.text(6011, "Are you sure you want to copy files to archive")
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: Lang.text(406, "Yes"))
-        alert.addButton(withTitle: Lang.text(407, "No"))
-        return alert.runModal() == .alertFirstButtonReturn
+    /// PanelDrag.cpp:2611-2625: caption IDS_CONFIRM_FILE_COPY 6010, the text "Copy to:" (6002) or
+    /// "Move to:" (6003), the folder, IDS_WANT_TO_COPY_FILES 6011 + " ?", MB_YESNOCANCEL |
+    /// MB_ICONQUESTION; only Yes copies.
+    private func confirmCopyToArchive(move: Bool) -> Bool {
+        var prefix = currentPath
+        if !prefix.isEmpty, !prefix.hasSuffix("/") { prefix += "/" }
+        let text = (move ? Lang.text(6003, "Move to:") : Lang.text(6002, "Copy to:")) + "\n" + prefix + "\n"
+            + Lang.text(6011, "Are you sure you want to copy files to archive") + " ?"
+        return WinMessageBox.run(text, caption: Lang.text(6010, "Confirm File Copy"), buttons: .yesNoCancel,
+                                 icon: .question, owner: hostWindow) == .yes
     }
 }
 
@@ -462,7 +463,7 @@ extension PanelViewController {
         guard !paths.isEmpty else { return }
         let move = NSPasteboard.general.string(forType: PanelDragDrop.cutMarkerType) == "1"
         if snap.isArchive {
-            guard confirmCopyToArchive() else { return }
+            guard confirmCopyToArchive(move: move) else { return }
             _ = copyItemsIn(paths: paths, move: move)
         } else {
             _ = copyFileSystemItems(paths: paths, toDirectory: snap.fullPath, move: move)

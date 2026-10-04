@@ -72,14 +72,9 @@ final class OptionsLanguagePage: OptionsPageBase {
     func reportLoadErrors(_ files: [String]) {
         reportedLoadErrors = files
         guard !files.isEmpty else { return }
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "Error in Lang file"
-        alert.informativeText = files.joined(separator: " ")
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        DispatchQueue.main.async { [weak self] in
-            ErrorAlert.present(alert, on: self?.view.window ?? NSApp.mainWindow)
-        }
+        // MessageBoxW(NULL, error, "Error in Lang file", MB_ICONERROR).
+        WinMessageBox.show(files.joined(separator: " "), caption: "Error in Lang file", icon: .error,
+                           owner: view.window ?? NSApp.mainWindow)
     }
 
     private func buildEntries() {
@@ -199,11 +194,8 @@ final class OptionsLanguagePage: OptionsPageBase {
         do {
             try SZLang.shared.loadLanguage(code: code)
         } catch {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Error in Lang file"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
+            WinMessageBox.run(error.localizedDescription, caption: "Error in Lang file", icon: .error,
+                              owner: view.window)
             return true
         }
         owner?.languageDidChange()

@@ -1073,7 +1073,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     /// to the main window, which `hostWindow` asks the delegate for, so there is a sheet parent even
     /// then; with no window anywhere the message goes to the log.
     func showError(message: String) {
-        ErrorAlert.present(ErrorAlert.make(message: message), on: hostWindow)
+        ErrorAlert.present(message, on: hostWindow)
     }
 
     /// MessageBox_Error_UnsupportOperation (01 §2.8): lang 6008.

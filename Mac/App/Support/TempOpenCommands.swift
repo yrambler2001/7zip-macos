@@ -123,12 +123,8 @@ enum ItemOpenCommands {
                                           editMode: Bool, useSystemDefault: Bool = false) {
         // Step 3: a read-only archive cannot take an edit back, so warn before starting.
         if editMode, context.folder.isReadOnly {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "7-Zip"
-            alert.informativeText = Lang.format(Lang.text(3010, "Cannot update file '{0}'"), name)
-            alert.addButton(withTitle: Lang.text(401, "OK"))
-            alert.runModal()
+            WinMessageBox.run(Lang.format(Lang.text(3010, "Cannot update file '{0}'"), name),
+                              icon: .error, owner: context.window)
         }
         guard let file = extractToTemp(context: context, index: index, editMode: editMode) else { return }
 
@@ -217,13 +213,9 @@ enum ItemOpenCommands {
         showError(Lang.text(3011, "Cannot start editor"), parent: parent)
     }
 
+    /// IDS_CANNOT_START_EDITOR: "7-Zip", MB_OK | MB_ICONSTOP (PanelItemOpen.cpp:742).
     private static func showError(_ text: String, parent: NSWindow?) {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        WinMessageBox.run(text, icon: .error, owner: parent)
     }
 }
 

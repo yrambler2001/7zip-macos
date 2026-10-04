@@ -431,12 +431,7 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
 
     private func showError(_ text: String) {
         errorMessage.stringValue = text
-        let alert = NSAlert()
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        WinMessageBox.run(text, icon: .error, owner: window)    // BenchmarkDialog.cpp:370, MB_ICONERROR
     }
 
     // MARK: actions

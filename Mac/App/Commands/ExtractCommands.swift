@@ -373,24 +373,16 @@ enum ExtractCommands {
         return lines
     }
 
+    /// MessageBox_Error: "7-Zip", OK, MB_ICONSTOP (WinMessageBox, recheck2).
     private static func showError(_ text: String, parent: NSWindow?) {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        if let parent { alert.beginSheetModal(for: parent, completionHandler: nil) } else { alert.runModal() }
+        WinMessageBox.run(text, icon: .error, owner: parent)
     }
 
     /// MessageBoxW(OkMessage.Message, OkMessage.Title): an empty title is "7-Zip"
     /// (ProgressDialog2.cpp:1029-1034), which is what the in-archive test (Panel.cpp:1083) gets.
+    /// MB_OK with no icon (ProgressDialog2.cpp:1034).
     private static func showInfo(_ text: String, title: String = "7-Zip", parent: NSWindow?) {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = title
-        alert.informativeText = text
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        WinMessageBox.run(text, caption: title.isEmpty ? "7-Zip" : title, owner: parent)
     }
 }
 

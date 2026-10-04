@@ -753,11 +753,11 @@ enum CommandExecutor {
     /// flow is unchanged.
     static func showError(_ text: String, parent: NSWindow?) {
         guard !suppressMessages else { return }
-        ErrorAlert.run(ErrorAlert.make(message: text, style: .critical), on: parent)
+        ErrorAlert.run(text, on: parent)                                  // MB_ICONERROR
     }
 
     static func showInfo(_ text: String, parent: NSWindow?) {
         guard !suppressMessages else { return }
-        ErrorAlert.run(ErrorAlert.make(message: text, style: .informational), on: parent)
+        ErrorAlert.run(text, icon: .none, on: parent)                     // MB_OK
     }
 }

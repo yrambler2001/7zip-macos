@@ -400,14 +400,9 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
             if selection.count > 10 { text += "\n..." }
             message = text
         }
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Lang.text(406, "Yes"))
-        alert.addButton(withTitle: Lang.text(407, "No"))
-        alert.addButton(withTitle: Lang.text(402, "Cancel"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // BrowseDialog2.cpp:949-951: LangString(titleID), MB_YESNOCANCEL | MB_ICONQUESTION.
+        guard WinMessageBox.run(message, caption: title, buttons: .yesNoCancel, icon: .question,
+                                owner: window) == .yes else { return }
 
         var failures: [String] = []
         for entry in selection {
@@ -480,13 +475,9 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         showInfo(lines.joined(separator: "\n"))
     }
 
+    /// BrowseDialog2.cpp:885: MessageBoxW(s, LangString(IDS_PROPERTIES 6600), MB_OK).
     private func showInfo(_ text: String) {
-        let alert = NSAlert()
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        alert.runModal()
+        WinMessageBox.run(text, caption: Lang.text(6600, "Properties"), owner: window)
     }
 
     /// The context menu of the list (:1200-1235).

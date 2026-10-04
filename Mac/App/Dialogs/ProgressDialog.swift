@@ -386,16 +386,12 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
         let wasPaused = isPaused
         if !wasPaused { setPaused(true) }
 
-        let alert = NSAlert()
-        alert.messageText = operationTitle.isEmpty ? mainTitle : operationTitle   // MessageBoxW(..., _title, ...)
-        alert.informativeText = Lang.text(448, "Are you sure you want to cancel?")   // IDS_PROGRESS_ASK_CANCEL 448
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Lang.text(406, "Yes"))      // MY_IDYES 406
-        alert.addButton(withTitle: Lang.text(407, "No"))       // MY_IDNO 407
-        alert.addButton(withTitle: Lang.text(402, "Cancel"))   // IDCANCEL
-        let response = alert.runModal()
+        // MessageBoxW(*this, IDS_PROGRESS_ASK_CANCEL 448, _title, MB_YESNOCANCEL): no icon.
+        let response = WinMessageBox.run(Lang.text(448, "Are you sure you want to cancel?"),
+                                         caption: operationTitle.isEmpty ? mainTitle : operationTitle,
+                                         buttons: .yesNoCancel, owner: window)
 
-        if response == .alertFirstButtonReturn {
+        if response == .yes {
             if !wasPaused { setPaused(false) }     // undo the automatic pause, then abort
             delegate?.progressDialogDidConfirmCancel(self)
         } else if !wasPaused {

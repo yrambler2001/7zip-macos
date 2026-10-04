@@ -164,12 +164,9 @@ final class OptionsSettingsPage: OptionsPageBase {
                 // ConvertStringToUInt32, <= 2^30, else E_INVALIDARG and the page stays invalid.
                 guard let value = UInt32(memField.stringValue.trimmingCharacters(in: .whitespaces)),
                       value >= 1, value <= (1 << 30) else {
-                    let alert = NSAlert()
-                    alert.alertStyle = .critical
-                    alert.messageText = "7-Zip"
                     // ShowErrorMessage(MyFormatMessage(E_INVALIDARG)) -- not a lang string
-                    alert.informativeText = SZErrors.message(forHRESULT: 0x8007_0057)
-                    alert.runModal()
+                    WinMessageBox.run(SZErrors.message(forHRESULT: 0x8007_0057), icon: .error,
+                                      owner: view.window)
                     return false
                 }
                 Settings.extractMemLimitGB = Int(value)

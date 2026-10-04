@@ -98,28 +98,12 @@ enum ToolsAlerts {
 
     /// MessageBox_Error_LangID
     static func error(_ text: String, _ window: NSWindow?) {
-        let alert = NSAlert()
-        alert.messageText = "7-Zip"
-        alert.informativeText = text
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: Lang.text(401, "OK"))
-        if let window {
-            alert.beginSheetModal(for: window)
-        } else {
-            alert.runModal()
-        }
+        WinMessageBox.run(text, icon: .error, owner: window)          // MB_OK | MB_ICONSTOP
     }
 
-    /// MB_YESNOCANCEL question; true only on Yes.
+    /// MB_YESNOCANCEL | MB_ICONQUESTION question with `title` as the caption; true only on Yes.
     static func confirm(title: String, message: String, _ window: NSWindow?) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Lang.text(406, "Yes"))
-        alert.addButton(withTitle: Lang.text(407, "No"))
-        alert.addButton(withTitle: Lang.text(402, "Cancel"))
-        return alert.runModal() == .alertFirstButtonReturn
+        WinMessageBox.run(message, caption: title, buttons: .yesNoCancel, icon: .question, owner: window) == .yes
     }
 }
 

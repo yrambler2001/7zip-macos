@@ -134,7 +134,11 @@ final class TestResetSettleTests: AppHostTestCase {
         }
         for mode in [RunLoop.Mode.common, .modalPanel] { RunLoop.main.add(sender, forMode: mode) }
 
-        let alert = ErrorAlert.make(message: "modalfix: an app-modal alert owned by no window")
+        // A raw NSAlert: the app no longer makes one (every box is a WinMessageBox since recheck2),
+        // but the reset must still settle past the worst case.
+        let alert = NSAlert()
+        alert.messageText = "7-Zip"
+        alert.informativeText = "modalfix: an app-modal alert owned by no window"
         _ = alert.runModal()                 // returns only because the reset ended the session
         sender.invalidate()
 
