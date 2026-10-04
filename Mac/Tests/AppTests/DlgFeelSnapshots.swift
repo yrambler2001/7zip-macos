@@ -155,19 +155,26 @@ final class DlgFeelSnapshots: AppHostTestCase {
         snap("extract") { _ = ExtractDialog.run(extract) }
     }
 
-    func testCompress() {
+    func testCompress() throws {
+        try SZCodecs.loadCodecs()
         var input = CompressDialogInput()
         input.directoryPrefix = fixtures + "/"
         input.archiveBaseName = "a"
         input.itemPaths = [archive]
         snap("compress", timeout: 60) { _ = CompressDialogController.run(input) }
-        var state = CompressOptionsSheet.State(
-            formatName: "7z", formatTimeFlags: 0, formatFlags: 0,
-            supportsMTime: true, supportsCTime: true, supportsATime: true,
-            supportsSymLinks: true, supportsHardLinks: false, supportsAltStreams: false,
-            supportsNtSecurity: false, isTar: false, isZip: false, isGZip: false,
-            isKeepName: false, tarMethodName: "")
-        snap("compress-options") { _ = CompressOptionsSheet.run(&state, parent: nil) }
+        for name in ["7z", "zip"] {
+            guard let f = SZCodecs.format(named: name) else { return XCTFail("no \(name) format") }
+            var state = CompressOptionsSheet.State(
+                formatName: f.name, formatTimeFlags: f.timeFlags, formatFlags: f.flags,
+                supportsMTime: f.supportsMTime, supportsCTime: f.supportsCTime, supportsATime: f.supportsATime,
+                supportsSymLinks: f.supportsSymLinks, supportsHardLinks: f.supportsHardLinks,
+                supportsAltStreams: f.supportsAltStreams, supportsNtSecurity: f.supportsNtSecurity,
+                isTar: false, isZip: name == "zip", isGZip: false,
+                isKeepName: f.keepName, tarMethodName: "")
+            snap(name == "7z" ? "compress-options" : "compress-options-zip") {
+                _ = CompressOptionsSheet.run(&state, parent: nil)
+            }
+        }
     }
 
     func testOperations() {

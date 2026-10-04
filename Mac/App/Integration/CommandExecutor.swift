@@ -553,7 +553,11 @@ enum CommandExecutor {
         // The censor entries go to the engine unexpanded, so `a arc.7z -ir!src/*.c` stores
         // `sub/x.c` rather than `x.c`: `UpdateArchive` calls `AddPathsToCensor` + `EnumerateItems`
         // itself (Update.cpp:1159-1161).
-        let bridgeSpecs = itemSpecs.map(bridgeSpec)
+        // "Exclude Mac resource forks" from the -ad dialog (dlgfeel); without the dialog the same
+        // excludes are the switches -xr!._* -xr!.DS_Store -xr!__MACOSX.
+        CompressMacMetadata.apply(to: updateOptions, exclude: result.excludeMacResourceForks)
+        let bridgeSpecs = CompressMacMetadata.pathSpecs(items: itemSpecs.map(bridgeSpec),
+                                                        exclude: result.excludeMacResourceForks)
         let outcome = OperationRunner.run(runnerOptions) { runner -> SZUpdateResult in
             try SZUpdater.update(with: updateOptions, pathSpecs: bridgeSpecs, progress: runner)
         }

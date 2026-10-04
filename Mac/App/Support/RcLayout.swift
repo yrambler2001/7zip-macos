@@ -130,6 +130,11 @@ final class WinGroupBox: NSView {
         set { titleField.stringValue = newValue; needsLayout = true; needsDisplay = true }
     }
 
+    /// EnableItem on a group box greys its title.
+    var isEnabled = true {
+        didSet { titleField.textColor = isEnabled ? .labelColor : .disabledControlTextColor }
+    }
+
     init(title: String) {
         titleField = RcPlace.makeLabel(title)
         super.init(frame: .zero)
@@ -146,7 +151,7 @@ final class WinGroupBox: NSView {
     override func layout() {
         super.layout()
         let w = min(ceil(titleField.attributedStringValue.size().width), max(0, bounds.width - 16))
-        titleField.frame = RcPlace.labelFrame(NSRect(x: 8, y: 0, width: w, height: 13))
+        RcPlace.label(titleField, NSRect(x: 8, y: 0, width: w, height: 13))
         setAccessibilityLabel(titleField.stringValue)
     }
 
@@ -195,15 +200,24 @@ enum RcPlace {
         return f
     }
 
+    /// A one-line static is 13 px; its frame is 14 high so the first line's descenders show and
+    /// nothing of a wrapped second line does. A taller static keeps its height.
     static func labelFrame(_ r: NSRect) -> NSRect {
-        NSRect(x: r.minX - labelInset, y: r.minY + labelTop, width: r.width + 2 * labelInset, height: max(r.height, 16))
+        NSRect(x: r.minX - labelInset, y: r.minY + labelTop, width: r.width + 2 * labelInset,
+               height: r.height <= 13 ? 14 : r.height)
     }
 
+    /// LTEXT / RTEXT / CTEXT (SS_LEFT ...): Windows breaks the text at word boundaries inside the
+    /// rect and shows only the lines that fit -- a one-line static whose text is too long shows
+    /// the words that fit on its first line, never an ellipsis.
     static func label(_ f: NSTextField, _ r: NSRect) {
-        if f.font == nil || f.font == NSFont.systemFont(ofSize: NSFont.systemFontSize) { f.font = DialogMetrics.font }
-        if f.maximumNumberOfLines != 1, f.lineBreakMode == .byWordWrapping || f.cell?.wraps == true {
-            f.preferredMaxLayoutWidth = r.width
-        }
+        let bold = f.font?.fontDescriptor.symbolicTraits.contains(.bold) ?? false
+        f.font = bold ? DialogMetrics.boldFont : DialogMetrics.font
+        f.cell?.wraps = true
+        f.cell?.truncatesLastVisibleLine = false
+        f.lineBreakMode = .byWordWrapping
+        f.maximumNumberOfLines = 0
+        f.preferredMaxLayoutWidth = r.width
         f.frame = labelFrame(r)
     }
 
@@ -222,6 +236,7 @@ enum RcPlace {
     static let comboHeight: CGFloat = 21
 
     static func popup(_ p: NSPopUpButton, _ r: NSRect) {
+        WinPopUpButtonCell.adopt(p)
         p.font = DialogMetrics.font
         p.controlSize = .small
         p.frame = NSRect(x: r.minX, y: r.minY, width: r.width, height: comboHeight)
@@ -303,5 +318,52 @@ extension RcPlace {
             window.contentMaxSize = size
         }
         DialogKit.center(window, over: parent)
+    }
+}
+
+/// A drop-down list's text area as Windows has it: the text 4 px from the left edge and up to the
+/// 17 px button, so an item that fits the Windows combo ("100 ns : Windows" in 114 px) is not cut
+/// to "100 ns : Wind..." by the wider AppKit insets. The native bezel and menu stay.
+final class WinPopUpButtonCell: NSPopUpButtonCell {
+
+    static let textInset: CGFloat = 4
+    static let buttonWidth: CGFloat = 17
+
+    override func titleRect(forBounds rect: NSRect) -> NSRect {
+        var r = super.titleRect(forBounds: rect)
+        let left = rect.minX + Self.textInset
+        let right = rect.maxX - Self.buttonWidth
+        if right - left > r.width {
+            r.size.width = right - left
+            r.origin.x = left
+        }
+        return r
+    }
+
+    override func drawTitle(_ title: NSAttributedString, withFrame frame: NSRect, in controlView: NSView) -> NSRect {
+        let r = titleRect(forBounds: controlView.bounds)
+        var f = frame
+        f.origin.x = r.minX
+        f.size.width = r.width
+        return super.drawTitle(title, withFrame: f, in: controlView)
+    }
+
+    /// Gives `popup` this cell, keeping its menu, selection, target / action and state.
+    static func adopt(_ popup: NSPopUpButton) {
+        guard let old = popup.cell as? NSPopUpButtonCell, !(old is WinPopUpButtonCell) else { return }
+        let cell = WinPopUpButtonCell(textCell: "", pullsDown: old.pullsDown)
+        let menu = old.menu
+        let selected = old.indexOfSelectedItem
+        cell.menu = menu
+        cell.target = old.target
+        cell.action = old.action
+        cell.isEnabled = old.isEnabled
+        cell.font = old.font
+        cell.controlSize = old.controlSize
+        cell.arrowPosition = old.arrowPosition
+        cell.autoenablesItems = old.autoenablesItems
+        cell.tag = old.tag
+        popup.cell = cell
+        if selected >= 0, selected < cell.numberOfItems { cell.selectItem(at: selected) }
     }
 }
