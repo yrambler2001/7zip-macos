@@ -64,6 +64,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
                               backing: .buffered, defer: false)
         window.title = "7-Zip"
         window.minSize = NSSize(width: 360, height: 240)
+        window.backgroundColor = WinChrome.face          // COLOR_BTNFACE (recheck §2)
         window.tabbingMode = .disallowed
         // The controller owns the window; with several windows opening and closing
         // (`MainWindows`), AppKit's extra release on close would free it under the controller.
@@ -711,11 +712,12 @@ extension NSToolbarItem.Identifier {
 }
 
 /// The two-panel splitter: kSplitterWidth = 4 (FM.cpp, 01 §1.2) instead of AppKit's 9 pt thick
-/// divider, drawn as a plain separator line in its middle.
+/// divider. 7zFM draws nothing there: the 4 px between the panels show the window's
+/// COLOR_BTNFACE (recheck §2, two-screen.png x 719-722).
 final class PanelSplitView: NSSplitView {
     override var dividerThickness: CGFloat { 4 }
     override func drawDivider(in rect: NSRect) {
-        NSColor.separatorColor.setFill()
-        NSRect(x: rect.midX - 0.5, y: rect.minY, width: 1, height: rect.height).fill()
+        WinChrome.face.setFill()
+        rect.fill()
     }
 }

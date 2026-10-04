@@ -408,6 +408,7 @@ enum DialogKit {
         let window = DialogWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 200),
                                   styleMask: style, backing: .buffered, defer: false)
         window.title = title
+        window.backgroundColor = WinChrome.face          // COLOR_BTNFACE (recheck §2)
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
         // SZ_DISABLE_ANIMATIONS: every dialog this app builds goes through here, so one call
