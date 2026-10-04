@@ -63,7 +63,7 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
     func tableViewSelectionDidChange(_ notification: Notification) {
         if !usesAlternativeSelection {
             let selected = tableView.selectedRowIndexes
-            if let last = selected.last, !selected.contains(focusedIndex) { focusedIndex = last }
+            if !isSettingSelection, let last = selected.last, !selected.contains(focusedIndex) { focusedIndex = last }
             iconView.setSelectionIndexes(selected)
         } else if tableView.selectedRow >= 0 {
             focusedIndex = tableView.selectedRow

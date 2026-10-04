@@ -63,6 +63,14 @@ final class PanelTableView: NSTableView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    /// SPI_GETWHEELSCROLLLINES = 3 on the reference PC: one wheel notch scrolls 3 rows there
+    /// (LVM_GETTOPINDEX 0 -> 3 -> 6, recheck §3); NSTableView makes it one row.
+    override func tile() {
+        super.tile()
+        let step = rowHeight * 3
+        if let scroll = enclosingScrollView, scroll.verticalLineScroll != step { scroll.verticalLineScroll = step }
+    }
+
     override func keyDown(with event: NSEvent) {
         if panel?.handleListKeyDown(event) == true { return }
         super.keyDown(with: event)

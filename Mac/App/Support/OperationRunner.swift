@@ -143,6 +143,8 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         let progressDialog = ProgressDialog(title: options.title, mainTitle: options.mainTitle,
                                             showCompressionInfo: options.showCompressionInfo)
         progressDialog.delegate = self
+        progressDialog.mainWindow = options.parentWindow.flatMap { $0.windowController is MainWindowController ? $0 : nil }
+            ?? NSApp.windows.first { $0.isMainWindow && $0.windowController is MainWindowController }
         dialog = progressDialog
         ProgressDockTile.shared.begin(self)          // the taskbar button's progress (01b §4.17)
         update()
@@ -183,6 +185,7 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         while !sync.isFinished {
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
+        dialog?.restoreMainWindowTitle()
         dialog = nil
         restoreForegroundPriority()
         return finish(outcome: outcome, showedDialog: true)
@@ -307,6 +310,7 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         sync.setPaused(false)               // a worker parked in checkBreak has to be let go first
         sync.setStopped(true)               // -> E_ABORT, exactly as progressDialogDidConfirmCancel
         if isModal { NSApp.stopModal() }
+        dialog?.restoreMainWindowTitle()
         dialog?.window.orderOut(nil)
     }
 

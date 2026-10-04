@@ -39,7 +39,9 @@ final class FMToolbarView: NSView {
     /// The etched divider on top and the margin under the buttons.
     static let topInset: CGFloat = 2
     static let bottomInset: CGFloat = 4
-    static let labelFont = NSFont.systemFont(ofSize: 11)
+    /// The label font: the window's GUI font, Segoe UI 9 on Windows, which Helvetica Neue 11 matches
+    /// in advance widths (listfeel.md §2). With it the text buttons are 42 x 46, as measured (recheck §2).
+    static let labelFont = PanelMetrics.listFont
     /// How far the bitmap and the label move while a button is pressed (listfeel.md §7).
     static let pressedOffset = NSSize(width: 1, height: 0)
 
@@ -119,7 +121,7 @@ final class FMToolbarView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
+        WinChrome.face.setFill()                      // COLOR_BTNFACE (240,240,240), recheck §2
         bounds.fill()
         // The etched divider at the top of a toolbar without CCS_NODIVIDER: shadow, then highlight.
         FMToolbarColors.dividerShadow.setFill()
@@ -209,9 +211,11 @@ final class FMToolbarButton: NSButton {
         style.alignment = .center
         style.lineBreakMode = .byClipping
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: FMToolbarView.labelFont, .foregroundColor: NSColor.labelColor, .paragraphStyle: style,
+            .font: FMToolbarView.labelFont, .foregroundColor: WinChrome.text, .paragraphStyle: style,
         ]
-        let textRect = NSRect(x: shift.width, y: imageRect.maxY + 1, width: bounds.width, height: FMToolbarView.textHeight)
+        // The label's baseline 12 px under the bitmap, as Segoe UI 9 sits in its 16 px line (ink of
+        // "Add" rows 31..39 of a 46 px button; recheck §2).
+        let textRect = NSRect(x: shift.width, y: imageRect.maxY + 3, width: bounds.width, height: FMToolbarView.textHeight)
         (title as NSString).draw(in: textRect, withAttributes: attributes)
     }
 }

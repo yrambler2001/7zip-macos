@@ -211,6 +211,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
                               styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
         window.title = Lang.text(2100, "Options")     // IDS_OPTIONS 2100
+        window.backgroundColor = WinChrome.face          // COLOR_BTNFACE (recheck §2)
         window.tabbingMode = .disallowed
         TestAnimations.apply(to: window)
         window.isReleasedWhenClosed = false          // the controller reuses it on every open

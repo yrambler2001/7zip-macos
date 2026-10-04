@@ -64,6 +64,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
                               backing: .buffered, defer: false)
         window.title = "7-Zip"
         window.minSize = NSSize(width: 360, height: 240)
+        window.backgroundColor = WinChrome.face          // COLOR_BTNFACE (recheck §2)
         window.tabbingMode = .disallowed
         // The controller owns the window; with several windows opening and closing
         // (`MainWindows`), AppKit's extra release on close would free it under the controller.
@@ -160,7 +161,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         if let frame = Settings.windowFrame, !frame.isEmpty {
             window.setFrame(NSRectFromString(frame), display: false)
         } else {
-            window.center()
+            let area = (window.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            window.setFrame(Self.defaultFrame(in: area), display: false)
         }
         numPanels = Settings.numPanels
         focusedPanelIndex = min(Settings.currentPanel, numPanels - 1)
@@ -209,6 +211,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
             full = (full as NSString).deletingLastPathComponent
         }
         panels[0].navigate(to: full.isEmpty ? "/" : full, formatHint: formatHint)
+    }
+
+    /// No saved position: FM.cpp creates the window with CW_USEDEFAULT for position and size, and
+    /// Windows makes it 3/4 of the work area wide and about 73 % of it high, at a cascade slot near
+    /// the top-left (1440 x 753 at 78,78 in a 1920 x 1032 work area, recheck §2) -- not centred.
+    static func defaultFrame(in area: NSRect) -> NSRect {
+        let size = NSSize(width: (area.width * 0.75).rounded(), height: (area.height * 753 / 1032).rounded())
+        let inset: CGFloat = 26                                    // one cascade step (SM_CYCAPTION + frame)
+        return NSRect(x: area.minX + inset, y: area.maxY - inset - size.height, width: size.width, height: size.height)
     }
 
     func saveState() {
@@ -711,11 +722,12 @@ extension NSToolbarItem.Identifier {
 }
 
 /// The two-panel splitter: kSplitterWidth = 4 (FM.cpp, 01 §1.2) instead of AppKit's 9 pt thick
-/// divider, drawn as a plain separator line in its middle.
+/// divider. 7zFM draws nothing there: the 4 px between the panels show the window's
+/// COLOR_BTNFACE (recheck §2, two-screen.png x 719-722).
 final class PanelSplitView: NSSplitView {
     override var dividerThickness: CGFloat { 4 }
     override func drawDivider(in rect: NSRect) {
-        NSColor.separatorColor.setFill()
-        NSRect(x: rect.midX - 0.5, y: rect.minY, width: 1, height: rect.height).fill()
+        WinChrome.face.setFill()
+        rect.fill()
     }
 }

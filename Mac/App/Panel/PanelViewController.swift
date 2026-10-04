@@ -91,6 +91,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     var listFocusOverride: Bool? { didSet { if isViewLoaded { refreshSelectionAppearance() } } }
     /// Shift key-down anchor (_prevFocusedItem, 01 §3.7).
     var selectionAnchor = -1
+    /// True while `setSelectedIndexes` changes the selection (the focus is not moved then).
+    var isSettingSelection = false
     /// Per-panel navigation stack (macOS addition; 7zFM has no Back/Forward, 01 §9).
     private var backStack: [String] = []
     private var forwardStack: [String] = []
@@ -133,9 +135,10 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     // MARK: views
     let pathBar = PathBarView()
-    private let upButton = NSButton()
-    let pathCombo = NSComboBox()
-    private let folderIcon = NSImageView()
+    private let upButton = PanelUpButton()
+    let pathCombo = AddressComboBox()
+    /// The list's themed WS_EX_CLIENTEDGE (recheck §2): a 1 px line, 1 px of white, then the list.
+    private let listFrame = PanelListFrameView()
     private let listContainer = NSView()
     private let scrollView = NSScrollView()
     let tableView = PanelTableView()
@@ -168,16 +171,11 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         let root = NSView()
         root.translatesAutoresizingMaskIntoConstraints = false
 
-        upButton.bezelStyle = .texturedRounded
-        upButton.image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: Lang.text(735, "Up One Level"))
+        upButton.setAccessibilityLabel(Lang.text(735, "Up One Level"))
         upButton.toolTip = Lang.text(735, "Up One Level")   // kParentFolderID button
         upButton.target = self
         upButton.action = #selector(upButtonClicked(_:))
-        upButton.setContentHuggingPriority(.required, for: .horizontal)
-
-        folderIcon.imageScaling = .scaleProportionallyDown
-        folderIcon.setContentHuggingPriority(.required, for: .horizontal)
-        folderIcon.setAccessibilityElement(false)
+        upButton.translatesAutoresizingMaskIntoConstraints = false
 
         pathCombo.isEditable = true
         pathCombo.completes = true
@@ -186,18 +184,17 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         pathCombo.target = self
         pathCombo.action = #selector(pathComboAction(_:))
         pathCombo.delegate = self
-        pathCombo.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        pathCombo.font = PanelMetrics.listFont          // the GUI font, as the list (recheck §2)
+        pathCombo.isBordered = false
+        pathCombo.translatesAutoresizingMaskIntoConstraints = false
         // The address bar's ComboBoxEx draws no focus ring on Windows; the caret and the selected
         // text are the only focus cue (listfeel.md §9). The keyboard focus itself is unchanged.
         pathCombo.focusRingType = .none
 
-        let header = NSStackView(views: [upButton, folderIcon, pathCombo])
-        header.orientation = .horizontal
-        header.spacing = 6
-        header.edgeInsets = NSEdgeInsets(top: 1, left: 2, bottom: 1, right: 2)   // ReBar: 24 px band (listfeel §9)
-        header.translatesAutoresizingMaskIntoConstraints = false
+        // The band (PanelAddressBar.swift): the Up button @2,1 23 x 22, the combo from x 33, 24 px.
         pathBar.translatesAutoresizingMaskIntoConstraints = false
-        pathBar.addSubview(header)
+        pathBar.addSubview(upButton)
+        pathBar.addSubview(pathCombo)
 
         // details list
         tableView.keyHandler = self
@@ -239,8 +236,11 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         listContainer.addSubview(scrollView)
         listContainer.addSubview(iconView)
 
-        // status bar (each panel owns one, 01 §1.2)
-        statusLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        // status bar (each panel owns one, 01 §1.2), as msctls_statusbar32 draws it on Windows 11
+        // (recheck §2): 23 px with a 1 px (215) line on top, COLOR_BTNFACE, the GUI font in black,
+        // a part's text 2 px in, 1 px (215) dividers at a part's right edge - 1 on rows 2..21.
+        statusLabel.font = PanelMetrics.listFont
+        statusLabel.textColor = WinChrome.text
         statusLabel.lineBreakMode = .byTruncatingMiddle
         Bidi.makeLeftToRight(statusLabel)
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -250,60 +250,66 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         status.addSubview(statusLabel)
         // 01 §1.2 "Status bar": four parts with fixed right edges, a divider after each of the
         // first three; the last one takes the rest.
+        let textBaseline: CGFloat = 16       // ink rows 7..15 under the line: baseline 16 px down
         var statusConstraints: [NSLayoutConstraint] = []
         for (i, label) in statusSections.enumerated() {
             label.font = statusLabel.font
+            label.textColor = WinChrome.text
             label.lineBreakMode = .byTruncatingTail
             Bidi.makeLeftToRight(label)
             label.translatesAutoresizingMaskIntoConstraints = false
             status.addSubview(label)
             let left = Self.statusSectionEdges[i]
-            statusConstraints.append(label.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: left + 8))
-            statusConstraints.append(label.centerYAnchor.constraint(equalTo: status.centerYAnchor))
+            statusConstraints.append(label.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: left + 1))
+            statusConstraints.append(label.firstBaselineAnchor.constraint(equalTo: status.topAnchor, constant: textBaseline))
             if i + 1 < statusSections.count {
                 statusConstraints.append(label.widthAnchor.constraint(lessThanOrEqualToConstant:
-                    Self.statusSectionEdges[i + 1] - left - 12))
+                    Self.statusSectionEdges[i + 1] - left - 2))
             } else {
-                statusConstraints.append(label.trailingAnchor.constraint(lessThanOrEqualTo: status.trailingAnchor, constant: -8))
+                statusConstraints.append(label.trailingAnchor.constraint(lessThanOrEqualTo: status.trailingAnchor, constant: -2))
             }
-            let divider = NSBox()
-            divider.boxType = .separator
-            divider.translatesAutoresizingMaskIntoConstraints = false
+            let divider = PanelColorView(WinChrome.statusLine)
             status.addSubview(divider)
             statusDividers.append(divider)
             statusConstraints += [
-                divider.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: left),
+                divider.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: left - 1),
                 divider.widthAnchor.constraint(equalToConstant: 1),
-                divider.topAnchor.constraint(equalTo: status.topAnchor, constant: 3),
-                divider.bottomAnchor.constraint(equalTo: status.bottomAnchor, constant: -3),
+                divider.topAnchor.constraint(equalTo: status.topAnchor, constant: 1),
+                divider.heightAnchor.constraint(equalToConstant: 20),
             ]
         }
 
-        let topLine = NSBox(); topLine.boxType = .separator; topLine.translatesAutoresizingMaskIntoConstraints = false
-        let statusLine = NSBox(); statusLine.boxType = .separator; statusLine.translatesAutoresizingMaskIntoConstraints = false
+        let statusLine = PanelColorView(WinChrome.statusLine)
+        listFrame.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(pathBar)
-        root.addSubview(topLine)
+        root.addSubview(listFrame)
         root.addSubview(listContainer)
         root.addSubview(statusLine)
         root.addSubview(status)
 
+        let inset = PanelListFrameView.inset
         NSLayoutConstraint.activate([
             pathBar.topAnchor.constraint(equalTo: root.topAnchor),
             pathBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             pathBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            header.topAnchor.constraint(equalTo: pathBar.topAnchor),
-            header.bottomAnchor.constraint(equalTo: pathBar.bottomAnchor),
-            header.leadingAnchor.constraint(equalTo: pathBar.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: pathBar.trailingAnchor),
-            folderIcon.widthAnchor.constraint(equalToConstant: 16),
-            folderIcon.heightAnchor.constraint(equalToConstant: 16),
-            topLine.topAnchor.constraint(equalTo: pathBar.bottomAnchor),
-            topLine.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            topLine.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            listContainer.topAnchor.constraint(equalTo: topLine.bottomAnchor),
-            listContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            listContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            pathBar.heightAnchor.constraint(equalToConstant: WinChrome.bandHeight),
+            upButton.leadingAnchor.constraint(equalTo: pathBar.leadingAnchor, constant: WinChrome.upButtonRect.minX),
+            upButton.topAnchor.constraint(equalTo: pathBar.topAnchor, constant: WinChrome.upButtonRect.minY),
+            upButton.widthAnchor.constraint(equalToConstant: WinChrome.upButtonRect.width),
+            upButton.heightAnchor.constraint(equalToConstant: WinChrome.upButtonRect.height),
+            pathCombo.leadingAnchor.constraint(equalTo: pathBar.leadingAnchor, constant: WinChrome.comboX),
+            pathCombo.trailingAnchor.constraint(equalTo: pathBar.trailingAnchor),
+            pathCombo.topAnchor.constraint(equalTo: pathBar.topAnchor),
+            pathCombo.heightAnchor.constraint(equalToConstant: WinChrome.bandHeight),
+            listFrame.topAnchor.constraint(equalTo: pathBar.bottomAnchor),
+            listFrame.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            listFrame.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            listFrame.bottomAnchor.constraint(equalTo: statusLine.topAnchor),
+            listContainer.topAnchor.constraint(equalTo: listFrame.topAnchor, constant: inset),
+            listContainer.leadingAnchor.constraint(equalTo: listFrame.leadingAnchor, constant: inset),
+            listContainer.trailingAnchor.constraint(equalTo: listFrame.trailingAnchor, constant: -inset),
+            listContainer.bottomAnchor.constraint(equalTo: listFrame.bottomAnchor, constant: -inset),
             scrollView.topAnchor.constraint(equalTo: listContainer.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor),
@@ -312,18 +318,18 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             iconView.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor),
             iconView.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor),
             iconView.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor),
-            statusLine.topAnchor.constraint(equalTo: listContainer.bottomAnchor),
             statusLine.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             statusLine.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            statusLine.heightAnchor.constraint(equalToConstant: 1),
             status.topAnchor.constraint(equalTo: statusLine.bottomAnchor),
             status.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             status.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             status.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            status.heightAnchor.constraint(equalToConstant: 22),
-            statusLabel.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: 8),
-            statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Self.statusSectionEdges[0] - 12),
-            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: status.trailingAnchor, constant: -8),
-            statusLabel.centerYAnchor.constraint(equalTo: status.centerYAnchor),
+            status.heightAnchor.constraint(equalToConstant: WinChrome.statusHeight - 1),
+            statusLabel.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: 1),
+            statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Self.statusSectionEdges[0] - 2),
+            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: status.trailingAnchor, constant: -2),
+            statusLabel.firstBaselineAnchor.constraint(equalTo: status.topAnchor, constant: textBaseline),
             root.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),   // kPanelSizeMin
         ])
         NSLayoutConstraint.activate(statusConstraints)
@@ -911,8 +917,12 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             refreshMySelectionHighlight()
             iconView.reloadData()
         } else {
+            // A selection command (Select All, Invert, a mask) leaves the focus where it is, as
+            // the list control does (Num * on 7zFM keeps the focused item, recheck §3).
+            isSettingSelection = true
             tableView.selectRowIndexes(indexes, byExtendingSelection: false)
             iconView.setSelectionIndexes(indexes)
+            isSettingSelection = false
         }
         refreshStatusBar()
     }
@@ -1101,7 +1111,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             copy.size = NSSize(width: 16, height: 16)
             return copy
         }
-        folderIcon.image = sized
+        pathCombo.addressCell?.icon = sized
+        pathCombo.needsDisplay = true
     }
 
     func focusList() {
@@ -1202,15 +1213,46 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
 // MARK: - Address bar background (active-panel highlight)
 
+/// The address band (ReBarWindow32): white, with the RBS_BANDBORDERS edge after the Up button
+/// (recheck §2). 7zFM draws nothing here for the active panel; only the keyboard focus tells.
 final class PathBarView: NSView {
-    var isActive = false { didSet { needsDisplay = true } }
+    var isActive = false
+
+    override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        (isActive ? NSColor.controlAccentColor.withAlphaComponent(0.18) : NSColor.windowBackgroundColor).setFill()
+        WinChrome.window.setFill()
         bounds.fill()
-        if isActive {
-            NSColor.controlAccentColor.setFill()
-            NSRect(x: 0, y: 0, width: bounds.width, height: 2).fill()
-        }
+        let x = WinChrome.comboX
+        WinChrome.bandBorderShadow.setFill()
+        NSRect(x: x - 2, y: 0, width: 1, height: bounds.height).fill()
+        WinChrome.bandBorderLight.setFill()
+        NSRect(x: x - 1, y: 0, width: 1, height: bounds.height).fill()
+        WinChrome.bandBottom.setFill()
+        NSRect(x: 0, y: bounds.height - 1, width: x - 2, height: 1).fill()
+    }
+}
+
+/// A plain filled rectangle (status-bar line and dividers).
+final class PanelColorView: NSView {
+    let color: NSColor
+    init(_ color: NSColor) {
+        self.color = color
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override func draw(_ dirtyRect: NSRect) { color.setFill(); bounds.fill() }
+}
+
+/// The list's themed client edge: a 1 px (130,135,144) line, then the window colour; the list
+/// sits `inset` inside (SysHeader32 @2,78 in a SysListView32 @0,76).
+final class PanelListFrameView: NSView {
+    static let inset: CGFloat = 2
+    override func draw(_ dirtyRect: NSRect) {
+        WinChrome.window.setFill()
+        bounds.fill()
+        WinChrome.listBorder.setFill()
+        bounds.frame(withWidth: 1)
     }
 }

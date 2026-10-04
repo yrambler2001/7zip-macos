@@ -159,6 +159,15 @@ enum ProgressFormatting {
         return "\(UInt64(kbps / 1024)) MB/s"
     }
 
+    /// ConvertSizeToString (ProgressDialog2.cpp:623-638): plain digits, then KB / MB / GB from
+    /// 100000 of the smaller unit -- "67584 KB", "340 MB", "5722 MB" (recheck §5, measured).
+    static func size(_ v: UInt64) -> String {
+        if v >= UInt64(100000) << 20 { return "\(v >> 30) GB" }
+        if v >= UInt64(100000) << 10 { return "\(v >> 20) MB" }
+        if v >= 100000 { return "\(v >> 10) KB" }
+        return "\(v)"
+    }
+
     /// Set_Ratio (ProgressDialog2.cpp:176): out * 100 / in, as a percentage.
     static func ratio(inSize: UInt64?, outSize: UInt64?) -> String {
         guard let inSize, let outSize, inSize > 0 else { return "" }
@@ -335,6 +344,22 @@ final class DialogWindow: NSWindow {
         return super.performKeyEquivalent(with: event)
     }
 
+    /// Esc in a dialog with no Cancel button (About): DefDlgProc still sends IDCANCEL, which
+    /// CModalDialog::OnCancel ends the dialog with -- measured, Esc closes 7zFM's About (recheck §6).
+    override func cancelOperation(_ sender: Any?) {
+        guard NSApp.modalWindow === self, Self.cancelButton(in: contentView) == nil else { return }
+        performClose(sender)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+           NSApp.modalWindow === self, Self.cancelButton(in: contentView) == nil {
+            performClose(nil)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     /// Whatever closed it, a dialog that is gone must not keep its modal session: once the window
     /// is off screen and the session is still its own on the next run-loop pass, end it.
     override func close() {
@@ -408,6 +433,7 @@ enum DialogKit {
         let window = DialogWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 200),
                                   styleMask: style, backing: .buffered, defer: false)
         window.title = title
+        window.backgroundColor = WinChrome.face          // COLOR_BTNFACE (recheck §2)
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
         // SZ_DISABLE_ANIMATIONS: every dialog this app builds goes through here, so one call

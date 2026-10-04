@@ -67,6 +67,15 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
 
     private var errorsRow: [NSView] = []
     private var lastPercent: Int = -1
+    private var lastElapsedSecond = -1
+    private var didShowStats = false
+    /// CProgressDialog::MainWindow / AddToTitle (ProgressDialog2.cpp:294-301): while the operation
+    /// runs, the main window's title is the progress prefix + the operation title + MainTitle
+    /// ("29% Checksum calculating... 7-Zip"); the old title comes back when the dialog ends.
+    weak var mainWindow: NSWindow? {
+        didSet { savedMainTitle = mainWindow?.title; updateTitle(percent: lastPercent >= 0 ? lastPercent : nil, fileName: lastTitleFileName) }
+    }
+    private var savedMainTitle: String?
     private var lastTitleFileName = ""
 
     /// kTitleFileNameSizeLimit (ProgressDialog2.cpp:31)
@@ -213,19 +222,34 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
     // MARK: updates (main thread, every kTimerElapse = 200 ms)
 
     func update(_ snapshot: ProgressSnapshot) {
-        elapsedValue.stringValue = ProgressFormatting.time(snapshot.elapsed)
-        remainingValue.stringValue = ProgressFormatting.remaining(elapsed: snapshot.elapsed,
-                                                                  total: snapshot.totalBytes,
-                                                                  completed: snapshot.completedBytes)
-        filesValue.stringValue = snapshot.currentFiles == 0 && snapshot.totalFiles == nil
-            ? "" : Formatting.size(snapshot.currentFiles)
-        filesTotalValue.stringValue = snapshot.totalFiles.map { "/ " + Formatting.size($0) } ?? ""
-        totalValue.stringValue = snapshot.totalBytes.map { Formatting.size($0) } ?? ""
-        processedValue.stringValue = Formatting.size(snapshot.completedBytes)
-        speedValue.stringValue = ProgressFormatting.speed(bytes: snapshot.completedBytes, elapsed: snapshot.elapsed)
-        if showCompressionInfo {
-            packedValue.stringValue = snapshot.outSize.map { Formatting.size($0) } ?? ""
-            ratioValue.stringValue = ProgressFormatting.ratio(inSize: snapshot.inSize, outSize: snapshot.outSize)
+        // UpdateStatInfo (ProgressDialog2.cpp:700-905): the total and the bar on every tick; the
+        // elapsed time when its second changes; everything else -- errors, remaining time, speed,
+        // the title's percentage, files, processed / compressed size, ratio -- only on those
+        // second changes (or for the final showAll). Measured on 7zFM 26.03: the title's percent
+        // changes once a second (recheck §5).
+        totalValue.stringValue = snapshot.totalBytes.map { ProgressFormatting.size($0) } ?? ""
+        let second = Int(max(0, snapshot.elapsed.rounded(.down)))
+        let secondChanged = second != lastElapsedSecond
+        if secondChanged {
+            lastElapsedSecond = second
+            elapsedValue.stringValue = ProgressFormatting.time(snapshot.elapsed)
+        }
+        let showAll = secondChanged || snapshot.finished || !didShowStats
+        if showAll {
+            didShowStats = true
+            if snapshot.completedBytes != 0 {
+                remainingValue.stringValue = ProgressFormatting.remaining(elapsed: snapshot.elapsed,
+                                                                          total: snapshot.totalBytes,
+                                                                          completed: snapshot.completedBytes)
+                speedValue.stringValue = ProgressFormatting.speed(bytes: snapshot.completedBytes, elapsed: snapshot.elapsed)
+            }
+            filesValue.stringValue = "\(snapshot.currentFiles)"                  // ConvertUInt64ToString
+            filesTotalValue.stringValue = snapshot.totalFiles.map { " / \($0)" } ?? ""
+            processedValue.stringValue = ProgressFormatting.size(snapshot.completedBytes)
+            if showCompressionInfo {
+                packedValue.stringValue = snapshot.outSize.map { ProgressFormatting.size($0) } ?? ""
+                ratioValue.stringValue = ProgressFormatting.ratio(inSize: snapshot.inSize, outSize: snapshot.outSize)
+            }
         }
 
         statusLabel.stringValue = snapshot.status == .none
@@ -242,7 +266,7 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
             progressBar.doubleValue = 0
         }
 
-        if !snapshot.messages.isEmpty {
+        if showAll, !snapshot.messages.isEmpty {
             setErrorsControlsVisible(true)
             errorsValue.stringValue = "\(snapshot.messages.count)"
             // ShowItem(IDL_PROGRESS_MESSAGES) in its place; the window keeps its size.
@@ -250,8 +274,10 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
             messageList.setMessages(snapshot.messages)
         }
 
-        let percent = ProgressFormatting.percent(completed: snapshot.completedBytes, total: snapshot.totalBytes)
-        if percent != lastPercent || snapshot.titleFileName != lastTitleFileName
+        let percent = showAll
+            ? ProgressFormatting.percent(completed: snapshot.completedBytes, total: snapshot.totalBytes)
+            : (lastPercent >= 0 ? lastPercent : nil)
+        if percent != (lastPercent >= 0 ? lastPercent : nil) || snapshot.titleFileName != lastTitleFileName
             || snapshot.paused != isPaused {
             lastPercent = percent ?? -1
             lastTitleFileName = snapshot.titleFileName
@@ -261,17 +287,30 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
     }
 
     /// SetTitleText (:1084-1127): "<Paused> <NN%> <Title> <Background> <fileName>".
+    /// SetTitleText (ProgressDialog2.cpp:1084-1122): "[Paused ]N%[ Background] <title>[ <file>]",
+    /// measured "Paused 29% Checksum calculating...", "47% Background Checksum calculating...".
     private func updateTitle(percent: Int?, fileName: String) {
-        var parts: [String] = []
-        if isPaused { parts.append(Lang.text(447, "Paused")) }          // IDS_PROGRESS_PAUSED 447
-        if let percent { parts.append("\(percent)%") }
+        var prefix: [String] = []
+        if isPaused { prefix.append(Lang.text(447, "Paused")) }          // IDS_PROGRESS_PAUSED 447
+        if let percent { prefix.append("\(percent)%") }
+        if isBackground { prefix.append(Lang.text(444, "Background")) }  // IDB_PROGRESS_BACKGROUND 444
+        var parts = prefix
         if !operationTitle.isEmpty { parts.append(operationTitle) }
-        if isBackground { parts.append(Lang.text(444, "Background")) }  // IDB_PROGRESS_BACKGROUND 444
         let name = (fileName as NSString).lastPathComponent
         if !name.isEmpty {
             parts.append(ProgressFormatting.reduce(name, limit: ProgressDialog.titleFileNameSizeLimit))
         }
         window.title = parts.isEmpty ? mainTitle : parts.joined(separator: " ")
+        if let mainWindow, !isFinished {
+            // AddToTitle(prefix + " " + MainAddTitle) + MainTitle
+            mainWindow.title = (prefix + (operationTitle.isEmpty ? [] : [operationTitle]) + [mainTitle]).joined(separator: " ")
+        }
+    }
+
+    /// ~CProgressDialog: AddToTitle(L"") -- the main window gets its own title back.
+    func restoreMainWindowTitle() {
+        if let mainWindow, let savedMainTitle { mainWindow.title = savedMainTitle }
+        savedMainTitle = nil
     }
 
     private static func fallbackStatus(_ status: SZProgressStatus) -> String {
@@ -348,7 +387,7 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
         if !wasPaused { setPaused(true) }
 
         let alert = NSAlert()
-        alert.messageText = window.title
+        alert.messageText = operationTitle.isEmpty ? mainTitle : operationTitle   // MessageBoxW(..., _title, ...)
         alert.informativeText = Lang.text(448, "Are you sure you want to cancel?")   // IDS_PROGRESS_ASK_CANCEL 448
         alert.alertStyle = .warning
         alert.addButton(withTitle: Lang.text(406, "Yes"))      // MY_IDYES 406

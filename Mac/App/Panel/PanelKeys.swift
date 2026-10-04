@@ -12,6 +12,7 @@ import SevenZipKit
 /// The raw key codes the panel switches on (ASCII and NSxxxFunctionKey).
 private enum PanelKey {
     static let tab = 0x09
+    static let backtab = 0x19
     static let enter = 0x03
     static let ret = 0x0D
     static let backspace = 0x7F
@@ -41,7 +42,9 @@ extension PanelViewController {
         if !shift { selectionAnchor = -1 }
 
         switch key {
-        case PanelKey.tab:                                          // Tab -> OnTab
+        case PanelKey.tab, PanelKey.backtab:                        // Tab / Shift+Tab -> OnTab
+            // 7zFM: Tab and Shift+Tab both go to the other list, and with one panel they stay in
+            // the list (measured, recheck §3) -- never to the address field.
             if !command {
                 delegate?.panelWantsNextPanel(self)
                 return true
@@ -95,15 +98,19 @@ extension PanelViewController {
             if option { delegate?.panel(self, setOtherPanelPath: currentPath); return true }   // Alt+Up
             if shift && usesAlternativeSelection { arrowWithShift(delta: -1); return true }
             if moveFromUnselectedFocus(delta: -1, mods: mods) { return true }
+            if arrowLikeListView(delta: -1, mods: mods) { return true }
         case NSDownArrowFunctionKey:
             if shift && usesAlternativeSelection { arrowWithShift(delta: 1); return true }
             if moveFromUnselectedFocus(delta: 1, mods: mods) { return true }
+            if arrowLikeListView(delta: 1, mods: mods) { return true }
         case NSLeftArrowFunctionKey, NSRightArrowFunctionKey:
             if option { setOtherPanelToFocusedSubFolder(); return true }                        // Alt+Left/Right
         case NSPageUpFunctionKey:
             if command && !option && !shift { goUp(); return true }                            // Ctrl+PgUp
+            if !command && !option && pageMove(up: true, mods: mods) { return true }
         case NSPageDownFunctionKey:
             if command && !option && !shift { openSelection(insideOnly: true); return true }    // Ctrl+PgDn
+            if !command && !option && pageMove(up: false, mods: mods) { return true }
         case NSF1FunctionKey:
             if option && !command { delegate?.panel(self, focusAddressBarOfPanel: 0); return true }
         case NSF2FunctionKey:
@@ -129,6 +136,13 @@ extension PanelViewController {
                 if usesAlternativeSelection { insertToggleAndAdvance() } else { calcFocusedItemSize() }
                 return true
             }
+        case NSHomeFunctionKey, NSEndFunctionKey:
+            // The list control: Home / End focus and select the first / last item, Shift
+            // extends from the anchor, Ctrl moves the focus only (measured on 7zFM, recheck §3).
+            // NSTableView would only scroll.
+            if option || rows.isEmpty { break }
+            moveFocusLikeListView(to: key == NSHomeFunctionKey ? 0 : rows.count - 1, mods: mods)
+            return true
         case PanelKey.escape:                                       // Esc in the list: nothing
             return false
         default:
@@ -152,6 +166,50 @@ extension PanelViewController {
         guard !usesAlternativeSelection, mods.subtracting([.numericPad, .function]).isEmpty,
               selectedIndexes.isEmpty, focusedIndex >= 0, focusedIndex < rows.count else { return false }
         setFocus(max(0, min(rows.count - 1, focusedIndex + delta)))
+        return true
+    }
+
+    /// The list control's page keys in Details: to the first / last fully visible row, then a
+    /// page further (NSTableView would only scroll).
+    private func pageMove(up: Bool, mods: NSEvent.ModifierFlags) -> Bool {
+        guard listViewMode == 3, !rows.isEmpty else { return false }
+        let visible = tableView.rows(in: tableView.visibleRect.insetBy(dx: 0, dy: 1))
+        let page = max(1, visible.length - 1)
+        let first = visible.location, last = max(first, visible.location + visible.length - 1)
+        let from = max(0, focusedIndex)
+        let target = up ? (from > first ? first : from - page) : (from < last ? last : from + page)
+        moveFocusLikeListView(to: max(0, min(rows.count - 1, target)), mods: mods)
+        return true
+    }
+
+    /// A keyboard move the way the list control makes it: plain = focus and select only the
+    /// target, Shift = select anchor...target, Cmd (Ctrl on Windows) = move the focus only.
+    private func moveFocusLikeListView(to target: Int, mods: NSEvent.ModifierFlags) {
+        if usesAlternativeSelection {
+            setFocus(target, extendingSelection: true)
+            if mods.contains(.shift) { selectRange(to: target) }
+            return
+        }
+        if mods.contains(.shift) {
+            selectRange(to: target)
+            scrollRowToVisible(target)
+        } else if mods.contains(.command) {
+            focusedIndex = target
+            scrollRowToVisible(target)
+            refreshSelectionAppearance()
+        } else {
+            setFocus(target)
+        }
+    }
+
+    /// Up / Down in Details as the list control moves: from the *focused* item (NSTableView moves
+    /// from the selection's end), Shift selecting anchor...target with the focus on the target
+    /// (recheck §3: Shift+Up from the last item focuses the one above it).
+    private func arrowLikeListView(delta: Int, mods: NSEvent.ModifierFlags) -> Bool {
+        guard !usesAlternativeSelection, listViewMode == 3, focusedIndex >= 0, focusedIndex < rows.count else { return false }
+        let plain = mods.subtracting([.numericPad, .function])
+        guard plain.isEmpty || plain == .shift else { return false }
+        moveFocusLikeListView(to: max(0, min(rows.count - 1, focusedIndex + delta)), mods: mods)
         return true
     }
 
