@@ -51,67 +51,54 @@ final class OverwriteDialog: NSObject {
         window = DialogKit.window(title: Lang.text(3500, "Confirm File Replace"), resizable: false)
         super.init()
 
-        let header = DialogKit.label(Lang.text(3501, "Destination folder already contains processed file."))
-        header.maximumNumberOfLines = 2                                      // IDT_OVERWRITE_HEADER 3501
-        // IDT_OVERWRITE_QUESTION_BEGIN 3502
-        let questionBegin = DialogKit.label(Lang.text(3502, "Would you like to replace the existing file"))
-        let questionEnd = DialogKit.label(Lang.text(3503, "with this one?"))  // IDT_OVERWRITE_QUESTION_END 3503
-
+        // IDD_OVERWRITE 3500 (OverwriteDialog.rc): 356 x 216 DLU = 534 x 351 px, fixed; every
+        // control on its template rect (dlgfeel). No DEFPUSHBUTTON in the resource.
+        let rc = RcDialog(3500)
+        let form = RcFormView()
+        form.add(DialogKit.label(Lang.text(3501, "Destination folder already contains processed file.")), rc, 3501)  // IDT_OVERWRITE_HEADER 3501
+        form.add(DialogKit.label(Lang.text(3502, "Would you like to replace the existing file")), rc, 3502)  // IDT_OVERWRITE_QUESTION_BEGIN 3502
         // IDI_OVERWRITE_OLD_FILE 100 / IDT_OVERWRITE_OLD_FILE_SIZE_TIME 102
-        let oldBlock = OverwriteDialog.fileBlock(oldInfo)
+        form.add(Self.iconView(oldInfo), rc, 100).frame.size = NSSize(width: 32, height: 32)
+        form.add(RcPlace.makeWrappingLabel(Self.infoText(oldInfo)), rc, 102)
+        form.add(DialogKit.label(Lang.text(3503, "with this one?")), rc, 3503)                            // IDT_OVERWRITE_QUESTION_END 3503
         // IDI_OVERWRITE_NEW_FILE 110 / IDT_OVERWRITE_NEW_FILE_SIZE_TIME 112
-        let newBlock = OverwriteDialog.fileBlock(newInfo)
+        form.add(Self.iconView(newInfo), rc, 110).frame.size = NSSize(width: 32, height: 32)
+        form.add(RcPlace.makeWrappingLabel(Self.infoText(newInfo)), rc, 112)
 
-        // Buttons in two rows, like the .rc (by2: Yes / Yes to All / Auto Rename,
-        // by1: No / No to All / Cancel). No DEFPUSHBUTTON in the resource.
-        let yes = DialogKit.button(Lang.text(406, "Yes"), target: self, action: #selector(answerYes))
-        let yesToAll = DialogKit.button(Lang.text(440, "Yes to All"), target: self, action: #selector(answerYesToAll))
-        let autoRename = DialogKit.button(Lang.text(3505, "Auto Rename"), target: self, action: #selector(answerAutoRename))
-        let no = DialogKit.button(Lang.text(407, "No"), target: self, action: #selector(answerNo))
-        let noToAll = DialogKit.button(Lang.text(441, "No to All"), target: self, action: #selector(answerNoToAll))
-        let cancel = DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(answerCancel), key: "\u{1b}")
-
-        yesToAll.isHidden = !showExtraButtons     // hidden when a single item is processed (:248)
+        let yes = form.add(DialogKit.button(Lang.text(406, "Yes"), target: self, action: #selector(answerYes)), rc, 6)
+        let yesToAll = form.add(DialogKit.button(Lang.text(440, "Yes to All"), target: self,
+                                                 action: #selector(answerYesToAll)), rc, 440)
+        let autoRename = form.add(DialogKit.button(Lang.text(3505, "Auto Rename"), target: self,
+                                                   action: #selector(answerAutoRename)), rc, 3505)
+        let no = form.add(DialogKit.button(Lang.text(407, "No"), target: self, action: #selector(answerNo)), rc, 7)
+        let noToAll = form.add(DialogKit.button(Lang.text(441, "No to All"), target: self,
+                                                action: #selector(answerNoToAll)), rc, 441)
+        form.add(DialogKit.button(Lang.text(402, "Cancel"), target: self, action: #selector(answerCancel),
+                                  key: "\u{1b}"), rc, 2)
+        // ShowItem_Bool(false) when a single item is processed (:248): the places stay empty.
+        yesToAll.isHidden = !showExtraButtons
         noToAll.isHidden = !showExtraButtons
         autoRename.isHidden = !showExtraButtons
 
-        let topRow = NSStackView(views: [yes, yesToAll, autoRename])
-        let bottomRow = NSStackView(views: [no, noToAll, cancel])
-        for row in [topRow, bottomRow] {
-            row.orientation = .horizontal
-            row.spacing = 10
-            row.distribution = .fillEqually
-        }
-
-        let stack = NSStackView(views: [header, questionBegin, oldBlock, questionEnd, newBlock, topRow, bottomRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        for view in [header, questionBegin, oldBlock, questionEnd, newBlock, topRow, bottomRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        }
-
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 520)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
         // DefaultButton_is_NO (:255-261)
         window.initialFirstResponder = defaultIsNo ? no : yes
         (defaultIsNo ? no : yes).keyEquivalent = "\r"
     }
 
-    /// SetFileInfoControl (OverwriteDialog.cpp:90-118): icon + shortened path + size + time.
-    private static func fileBlock(_ info: FileInfo) -> NSView {
+    /// The 32 x 32 file icon (SHGetFileInfo SHGFI_ICON), at the static's top left.
+    private static func iconView(_ info: FileInfo) -> NSImageView {
         let icon = NSImageView()
-        icon.image = OverwriteDialog.icon(for: info)                    // SHGetFileInfo equivalent
+        icon.image = OverwriteDialog.icon(for: info)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.addConstraint(NSLayoutConstraint(item: icon, attribute: .width, relatedBy: .equal, toItem: nil,
-                                              attribute: .notAnAttribute, multiplier: 1, constant: 32))
-        icon.addConstraint(NSLayoutConstraint(item: icon, attribute: .height, relatedBy: .equal, toItem: nil,
-                                              attribute: .notAnAttribute, multiplier: 1, constant: 32))
+        icon.imageAlignment = .alignTopLeft
+        return icon
+    }
 
-        // SetFileInfoControl: the folder part (up to the last separator) and the name on two
-        // lines, each ReduceString-ed, then AddSizeValue and "Modified: <time>" (:96-117). An
-        // undefined size or time leaves its line empty, as on Windows.
+    /// SetFileInfoControl (OverwriteDialog.cpp:90-118): the folder part (up to the last separator)
+    /// and the name on two lines, each ReduceString-ed, then AddSizeValue and "Modified: <time>"
+    /// (:96-117). An undefined size or time leaves its line empty, as on Windows.
+    private static func infoText(_ info: FileInfo) -> String {
         let slash = info.path.range(of: "/", options: .backwards)
         let folderPart = slash.map { String(info.path[..<$0.upperBound]) } ?? ""
         let namePart = slash.map { String(info.path[$0.upperBound...]) } ?? info.path
@@ -122,15 +109,7 @@ final class OverwriteDialog: NSObject {
             // IDS_PROP_MTIME (lang 1000 + kpidMTime = 1012) + ConvertUtcFileTimeToString
             lines.append(Lang.text(1012, "Modified") + ": " + TimeMenuDelegate.format(time, level: 0, utc: SZFolder.timestampShowUTC))
         }
-        let text = DialogKit.label(lines.joined(separator: "\n"))
-        text.maximumNumberOfLines = 5
-        text.lineBreakMode = .byTruncatingMiddle
-
-        let row = NSStackView(views: [icon, text])
-        row.orientation = .horizontal
-        row.alignment = .top
-        row.spacing = 8
-        return row
+        return lines.joined(separator: "\n")
     }
 
     /// AddSizeValue (:68-88): " (N K)" / " (N M)" / " (N G)".

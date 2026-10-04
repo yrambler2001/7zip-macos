@@ -426,3 +426,50 @@ extension RcPlace {
         }
     }
 }
+
+/// msctls_progress32 as Windows 11 draws it in 7zFM's progress window (dlg-progress-run.png):
+/// a 1 px (200,200,200) frame, a (235,235,235) track and a (0,138,17) bar, no animation.
+final class WinProgressBar: NSView {
+    var minValue: Double = 0 { didSet { needsDisplay = true } }
+    var maxValue: Double = 1 { didSet { needsDisplay = true } }
+    var doubleValue: Double = 0 { didSet { needsDisplay = true } }
+    var isIndeterminate = false
+
+    private static func color(_ light: (CGFloat, CGFloat, CGFloat), _ dark: (CGFloat, CGFloat, CGFloat)) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let c = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: c.0 / 255, green: c.1 / 255, blue: c.2 / 255, alpha: 1)
+        }
+    }
+    static let frameColor = color((200, 200, 200), (90, 90, 90))
+    static let trackColor = color((235, 235, 235), (50, 50, 50))
+    static let barColor = color((0, 138, 17), (0, 160, 30))
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.progressIndicator)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override func accessibilityValue() -> Any? { doubleValue }
+    override func accessibilityMinValue() -> Any? { minValue }
+    override func accessibilityMaxValue() -> Any? { maxValue }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let b = bounds
+        Self.frameColor.setFill()
+        b.fill()
+        let inner = b.insetBy(dx: 1, dy: 1)
+        Self.trackColor.setFill()
+        inner.fill()
+        let span = maxValue - minValue
+        guard span > 0 else { return }
+        let fraction = min(1, max(0, (doubleValue - minValue) / span))
+        Self.barColor.setFill()
+        NSRect(x: inner.minX, y: inner.minY, width: (inner.width * fraction).rounded(), height: inner.height).fill()
+    }
+}

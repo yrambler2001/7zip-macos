@@ -41,25 +41,25 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
 
     // MARK: controls (Windows IDs in comments)
 
-    private let elapsedValue = DialogKit.value()        // IDT_PROGRESS_ELAPSED_VAL 120
-    private let remainingValue = DialogKit.value()      // IDT_PROGRESS_REMAINING_VAL 121
-    private let filesValue = DialogKit.value()          // IDT_PROGRESS_FILES_VAL 111
-    private let filesTotalValue = DialogKit.value()     // IDT_PROGRESS_FILES_TOTAL 112
+    private let elapsedValue = DialogKit.label("", alignment: .right)        // IDT_PROGRESS_ELAPSED_VAL 120
+    private let remainingValue = DialogKit.label("", alignment: .right)      // IDT_PROGRESS_REMAINING_VAL 121
+    private let filesValue = DialogKit.label("", alignment: .right)          // IDT_PROGRESS_FILES_VAL 111
+    private let filesTotalValue = DialogKit.label("", alignment: .right)     // IDT_PROGRESS_FILES_TOTAL 112
     private let errorsLabel = DialogKit.label(Lang.text(3906, "Errors:"))   // IDT_PROGRESS_ERRORS 3906
-    private let errorsValue = DialogKit.value()         // IDT_PROGRESS_ERRORS_VAL 126
-    private let totalValue = DialogKit.value()          // IDT_PROGRESS_TOTAL_VAL 122
-    private let speedValue = DialogKit.value()          // IDT_PROGRESS_SPEED_VAL 123
-    private let processedValue = DialogKit.value()      // IDT_PROGRESS_PROCESSED_VAL 124
+    private let errorsValue = DialogKit.label("", alignment: .right)         // IDT_PROGRESS_ERRORS_VAL 126
+    private let totalValue = DialogKit.label("", alignment: .right)          // IDT_PROGRESS_TOTAL_VAL 122
+    private let speedValue = DialogKit.label("", alignment: .right)          // IDT_PROGRESS_SPEED_VAL 123
+    private let processedValue = DialogKit.label("", alignment: .right)      // IDT_PROGRESS_PROCESSED_VAL 124
     // kLangIDs_Colon (ProgressDialog2.cpp:66-70): IDT_PROGRESS_PACKED and IDT_PROGRESS_FILES take
     // the property name from the lang file plus ":" (LangSetDlgItems_Colon) -- 7zFM 25.01 shows
     // "Files:" (Mac/docs/reports/wincompare.md).
     private let packedLabel = DialogKit.label(Lang.dialogTextColon(97, 1008, "Compressed size:"))  // IDT_PROGRESS_PACKED 1008
-    private let packedValue = DialogKit.value()         // IDT_PROGRESS_PACKED_VAL 110
+    private let packedValue = DialogKit.label("", alignment: .right)         // IDT_PROGRESS_PACKED_VAL 110
     private let ratioLabel = DialogKit.label(Lang.text(3905, "Compression ratio:")) // IDT_PROGRESS_RATIO 3905
-    private let ratioValue = DialogKit.value()          // IDT_PROGRESS_RATIO_VAL 125
+    private let ratioValue = DialogKit.label("", alignment: .right)          // IDT_PROGRESS_RATIO_VAL 125
     private let statusLabel = DialogKit.label("")       // IDT_PROGRESS_STATUS 103
     private let fileNameLabel = DialogKit.label("")     // IDT_PROGRESS_FILE_NAME 102 (two lines)
-    private let progressBar = NSProgressIndicator()     // IDC_PROGRESS1 100
+    private let progressBar = WinProgressBar()          // IDC_PROGRESS1 100 (msctls_progress32)
     private let messageList = MessageListView(showsHeader: false)  // IDL_PROGRESS_MESSAGES 101
     private let backgroundButton: NSButton              // IDB_PROGRESS_BACKGROUND 444
     private let pauseButton: NSButton                   // IDB_PAUSE 446
@@ -101,33 +101,6 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
         progressBar.minValue = 0
         progressBar.maxValue = 1
         progressBar.doubleValue = 0
-        progressBar.controlSize = .regular
-        progressBar.style = .bar
-
-        statusLabel.lineBreakMode = .byTruncatingTail
-        fileNameLabel.maximumNumberOfLines = 2
-        fileNameLabel.lineBreakMode = .byTruncatingMiddle
-        fileNameLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-
-        // Two label/value columns, exactly the row order of ProgressDialog2a.rc.
-        let grid = NSGridView(views: [
-            [DialogKit.label(Lang.text(3900, "Elapsed time:")), elapsedValue,      // IDT_PROGRESS_ELAPSED 3900 / 120
-             DialogKit.label(Lang.text(3902, "Total size:")), totalValue],         // IDT_PROGRESS_TOTAL 3902 / 122
-            [DialogKit.label(Lang.text(3901, "Remaining time:")), remainingValue,  // IDT_PROGRESS_REMAINING 3901 / 121
-             DialogKit.label(Lang.dialogText(97, 3903, "Speed:")), speedValue],              // IDT_PROGRESS_SPEED 3903 / 123
-            [DialogKit.label(Lang.dialogTextColon(97, 1032, "Files:")), filesValue,          // IDT_PROGRESS_FILES 1032 / 111
-             DialogKit.label(Lang.text(3904, "Processed:")), processedValue],       // IDT_PROGRESS_PROCESSED 3904 / 124
-            [DialogKit.label(""), filesTotalValue,                                 //        112
-             packedLabel, packedValue],                                            // 1008 / 110
-            [errorsLabel, errorsValue,                                             // 3906 / 126
-             ratioLabel, ratioValue],                                              // 3905 / 125
-        ])
-        grid.rowSpacing = 4
-        grid.columnSpacing = 10
-        grid.column(at: 1).width = 110
-        grid.column(at: 3).width = 110
-        grid.column(at: 1).xPlacement = .trailing
-        grid.column(at: 3).xPlacement = .trailing
 
         // Errors label/value appear only once a message arrives (EnableErrorsControls :332)
         errorsRow = [errorsLabel, errorsValue]
@@ -138,36 +111,98 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
             ratioLabel.isHidden = true
             ratioValue.isHidden = true
         }
-
-        let buttons = NSStackView(views: [backgroundButton, pauseButton, cancelButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-        buttons.alignment = .centerY
-
-        let buttonRow = NSStackView(views: [NSView(), buttons])
-        buttonRow.orientation = .horizontal
-        buttonRow.distribution = .fill
-
-        let stack = NSStackView(views: [grid, statusLabel, fileNameLabel, progressBar, messageList, buttonRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.setHuggingPriority(.defaultLow, for: .horizontal)
-
-        for view in [grid, statusLabel, fileNameLabel, progressBar, messageList, buttonRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        }
         messageList.isHidden = true
-        messageList.addConstraint(NSLayoutConstraint(item: messageList, attribute: .height, relatedBy: .greaterThanOrEqual,
-                                                    toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 110))
-        fileNameLabel.addConstraint(NSLayoutConstraint(item: fileNameLabel, attribute: .height, relatedBy: .equal,
-                                                      toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 30))
+
+        // IDD_PROGRESS 97 (ProgressDialog2a.rc): 376 x 204 DLU = 564 x 332 px, resizable. Every
+        // control starts on its template rect and OnSize (ProgressDialog2.cpp:455-565) lays the
+        // label / value pairs, the status and file lines, the bar, the message list and the three
+        // buttons out for the client size (dlgfeel).
+        let rc = RcDialog(97)
+        let form = RcFormView()
+        let pairs: [(NSTextField?, NSTextField, Int, Int)] = [
+            (DialogKit.label(Lang.text(3900, "Elapsed time:")), elapsedValue, 3900, 120),     // IDT_PROGRESS_ELAPSED
+            (DialogKit.label(Lang.text(3901, "Remaining time:")), remainingValue, 3901, 121), // IDT_PROGRESS_REMAINING
+            (DialogKit.label(Lang.dialogTextColon(97, 1032, "Files:")), filesValue, 1032, 111), // IDT_PROGRESS_FILES
+            (nil, filesTotalValue, 0, 112),                                                    // IDT_PROGRESS_FILES_TOTAL
+            (errorsLabel, errorsValue, 3906, 126),                                             // IDT_PROGRESS_ERRORS
+            (DialogKit.label(Lang.text(3902, "Total size:")), totalValue, 3902, 122),         // IDT_PROGRESS_TOTAL
+            (DialogKit.label(Lang.dialogText(97, 3903, "Speed:")), speedValue, 3903, 123),    // IDT_PROGRESS_SPEED
+            (DialogKit.label(Lang.text(3904, "Processed:")), processedValue, 3904, 124),      // IDT_PROGRESS_PROCESSED
+            (packedLabel, packedValue, 1008, 110),                                             // IDT_PROGRESS_PACKED
+            (ratioLabel, ratioValue, 3905, 125),                                               // IDT_PROGRESS_RATIO
+        ]
+        for (label, value, labelID, valueID) in pairs {
+            if let label { form.add(label, rc, labelID) }
+            form.add(value, rc, valueID)
+        }
+        form.add(statusLabel, rc, 103)                                                         // IDT_PROGRESS_STATUS 103
+        form.add(fileNameLabel, rc, 102)                                                       // IDT_PROGRESS_FILE_NAME 102
+        form.addSubview(progressBar)
+        progressBar.frame = rc.rect(100)                                                       // IDC_PROGRESS1 100
+        form.addSubview(messageList)
+        messageList.frame = rc.rect(101)                                                       // IDL_PROGRESS_MESSAGES 101
+        form.add(backgroundButton, rc, 444)
+        form.add(pauseButton, rc, 446)
+        form.add(cancelButton, rc, 2)
+
+        let mx = rc.rect(3900).minX, my = rc.rect(3900).minY
+        let sY = rc.rect(3900).height, sStep = rc.rect(3901).minY - my
+        let button = rc.rect(2).size
+        let statusRect = rc.rect(103), fileRect = rc.rect(102), barRect = rc.rect(100), listRect = rc.rect(101)
+        form.onResize = { [weak self] size in
+            guard let self else { return }
+            let xSizeClient = size.width - mx * 2
+            let yPos = size.height - my - button.height
+            RcPlace.label(self.statusLabel, NSRect(x: statusRect.minX, y: statusRect.minY, width: xSizeClient, height: statusRect.height))
+            RcPlace.label(self.fileNameLabel, NSRect(x: fileRect.minX, y: fileRect.minY, width: xSizeClient, height: fileRect.height))
+            self.progressBar.frame = NSRect(x: barRect.minX, y: barRect.minY, width: xSizeClient, height: barRect.height)
+            // the buttons: 3 x 120 px with mx between them, squeezed when the window is narrow
+            var bSizeX = button.width
+            var mx2 = mx
+            while bSizeX * 3 + mx2 * 2 > xSizeClient {
+                if mx2 < 5 { bSizeX = (xSizeClient - mx2 * 2) / 3; break }
+                mx2 -= 1
+            }
+            bSizeX = max(2, bSizeX)
+            var listHeight = yPos - my - listRect.minY
+            var listWidth = xSizeClient
+            if listHeight < button.height * 7 / 4 {
+                listHeight = button.height * 7 / 4
+                if listWidth > bSizeX * 2 { listWidth -= bSizeX }
+            }
+            self.messageList.frame = NSRect(x: mx, y: listRect.minY, width: listWidth, height: listHeight)
+            var x = size.width - mx - bSizeX
+            for b in [self.cancelButton, self.pauseButton, self.backgroundButton] {
+                RcPlace.button(b, NSRect(x: x, y: yPos, width: bSizeX, height: button.height))
+                x -= mx2 + bSizeX
+            }
+            // the two label / value columns
+            let valueSize = DLU.x(72)                            // MY_PROGRESS_VAL_UNITS
+            var labelSize = DLU.x(60)                            // MY_PROGRESS_LABEL_UNITS_MIN
+            // MY_PROGRESS_PAD_UNITS: 4 DLU; 7zFM 26.03 lays the columns out as if it were 7 px
+            // (labels 135, values 108, second column at 309 in a 564 px client: dlg-progress-run.txt).
+            let required = (labelSize + valueSize) * 2 + 7
+            if required < xSizeClient {
+                labelSize += ((xSizeClient - required) / 3).rounded(.down)
+            } else {
+                labelSize = max(0, ((xSizeClient - valueSize * 2 - 7) / 2).rounded(.down))
+            }
+            let gSize = labelSize + valueSize
+            let padSize = xSizeClient - gSize * 2
+            var y = my
+            for (i, pair) in pairs.enumerated() {
+                if i == 5 { y = my }
+                let x = i < 5 ? mx : mx + gSize + padSize
+                if let label = pair.0 { RcPlace.label(label, NSRect(x: x, y: y, width: labelSize, height: sY)) }
+                RcPlace.label(pair.1, NSRect(x: x + labelSize, y: y, width: valueSize, height: sY))
+                y += sStep
+            }
+        }
 
         window.delegate = self
         // Centred on the window the operation was started from (the key / main window), as
         // CProgressDialog is created with the main window as its owner -- not on the screen.
-        DialogKit.install(stack, in: window, parent: nil, minimumWidth: 560)
+        RcPlace.install(form, in: window, size: rc.size, parent: nil)
         updateTitle(percent: nil, fileName: "")
     }
 
@@ -210,15 +245,8 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
         if !snapshot.messages.isEmpty {
             setErrorsControlsVisible(true)
             errorsValue.stringValue = "\(snapshot.messages.count)"
-            if messageList.isHidden {
-                messageList.isHidden = false
-                if let content = window.contentView {
-                    content.layoutSubtreeIfNeeded()
-                    let fitting = content.fittingSize
-                    window.setContentSize(NSSize(width: max(content.frame.width, fitting.width),
-                                                 height: fitting.height))
-                }
-            }
+            // ShowItem(IDL_PROGRESS_MESSAGES) in its place; the window keeps its size.
+            messageList.isHidden = false
             messageList.setMessages(snapshot.messages)
         }
 

@@ -66,19 +66,24 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         filterCombo.addItem(withTitle: "7-Zip temp files (7z*)")      // the single fixed string (:349)
         filterCombo.isEnabled = false
 
+        // IDT_BROWSE2_FOLDER: a read-only EDITTEXT (ES_READONLY), drawn on the dialog face
         folderLabel.isEditable = false
-        folderLabel.isBordered = true
+        folderLabel.isSelectable = true
+        folderLabel.isBezeled = true
         folderLabel.drawsBackground = true
-        folderLabel.backgroundColor = .textBackgroundColor
+        folderLabel.backgroundColor = .windowBackgroundColor
         folderLabel.lineBreakMode = .byTruncatingHead
 
+        // BrowseDialog2.cpp:398-422 sizes every column with LVSCW_AUTOSIZE over a sample row
+        // ("123...890" x 27, "2009-09-09 09:09:09", "99999 MB+", "123456789+", 20 digits); in
+        // 7zFM 26.03 that is 186 / 111 / 67 / 72 / 72 / 132 px (dlg-tempfiles.txt).
         for (identifier, title, width) in [
-            ("name", Lang.text(1004, "Name"), CGFloat(260)),          // IDS_PROP_NAME
-            ("modified", Lang.text(1012, "Modified"), CGFloat(150)),  // IDS_PROP_MTIME
-            ("size", Lang.text(1007, "Size"), CGFloat(110)),          // IDS_PROP_SIZE
-            ("files", Lang.text(1032, "Files"), CGFloat(70)),         // IDS_PROP_FILES
-            ("folders", Lang.text(1031, "Folders"), CGFloat(70)),     // IDS_PROP_FOLDERS
-            ("inner", Lang.text(1004, "Name") + "-2", CGFloat(200)),  // LangString(IDS_PROP_NAME) + "-2"
+            ("name", Lang.text(1004, "Name"), CGFloat(186)),          // IDS_PROP_NAME
+            ("modified", Lang.text(1012, "Modified"), CGFloat(111)),  // IDS_PROP_MTIME
+            ("size", Lang.text(1007, "Size"), CGFloat(67)),           // IDS_PROP_SIZE
+            ("files", Lang.text(1032, "Files"), CGFloat(72)),         // IDS_PROP_FILES
+            ("folders", Lang.text(1031, "Folders"), CGFloat(72)),     // IDS_PROP_FOLDERS
+            ("inner", Lang.text(1004, "Name") + "-2", CGFloat(132)),  // LangString(IDS_PROP_NAME) + "-2"
         ] {
             let column = NSTableColumn(identifier: .init(identifier))
             column.title = title
@@ -88,13 +93,17 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
                 (column.dataCell as? NSCell)?.alignment = .right
             }
             column.width = width
-            column.minWidth = 50
+            column.minWidth = 10
+            column.headerCell.font = PanelMetrics.listFont
             tableView.addTableColumn(column)
         }
-        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.usesAlternatingRowBackgroundColors = false
         tableView.allowsMultipleSelection = true
-        tableView.rowSizeStyle = .small
         tableView.style = .plain
+        tableView.rowHeight = 17
+        tableView.intercellSpacing = .zero
+        tableView.columnAutoresizingStyle = .noColumnAutoresizing
+        tableView.headerView = NSTableHeaderView(frame: NSRect(x: 0, y: 0, width: 100, height: 24))
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
@@ -138,27 +147,43 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         let scroll = NSScrollView()
         scroll.documentView = tableView
         scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.addConstraint(NSLayoutConstraint(item: scroll, attribute: .height, relatedBy: .greaterThanOrEqual,
-                                               toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 320))
+        scroll.borderType = .lineBorder
 
-        let topRow = NSStackView(views: [deleteButton, refresh, parentButton, NSView()])
-        topRow.orientation = .horizontal
-        topRow.spacing = 8
-        let bottomRow = NSStackView(views: [filterCombo, NSView(), help, close, escape])
-        bottomRow.orientation = .horizontal
-        bottomRow.spacing = 8
-
-        let stack = NSStackView(views: [topRow, folderLabel, scroll, bottomRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        for view in [topRow, folderLabel, scroll, bottomRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
+        // IDD_BROWSE2 93 (BrowseDialog2.rc): 466 x 344 DLU = 699 x 559 px, resizable; OnSize
+        // (BrowseDialog2.cpp:483-530) stretches the folder edit, the list and the filter combo and
+        // keeps Close / Help at the bottom right (dlgfeel).
+        let rc = RcDialog(93)
+        let form = RcFormView()
+        form.add(deleteButton, rc, 7205)                                         // IDS_BUTTON_DELETE 7205
+        form.add(refresh, rc, 737)                                               // IDM_VIEW_REFRESH 737
+        form.add(parentButton, rc, 110)                                          // IDB_BROWSE2_PARENT 110
+        form.add(folderLabel, rc, 101)                                           // IDT_BROWSE2_FOLDER 101
+        form.addSubview(scroll)
+        scroll.frame = rc.rect(100)                                              // IDL_BROWSE2 100
+        form.add(filterCombo, rc, 103)                                           // IDC_BROWSE2_FILTER 103
+        form.add(close, rc, 8)                                                   // IDCLOSE
+        form.add(help, rc, 9)                                                    // IDHELP
+        form.addSubview(escape)
+        let mx = rc.rect(7205).minX, my = rc.rect(7205).minY
+        let folderRect = rc.rect(101), listRect = rc.rect(100), filterRect = rc.rect(103)
+        let closeSize = rc.rect(8).size, helpSize = rc.rect(9).size
+        form.onResize = { [folderLabel, filterCombo] size in
+            let xLim = size.width - mx
+            RcPlace.edit(folderLabel, NSRect(x: folderRect.minX, y: folderRect.minY,
+                                             width: xLim - folderRect.minX, height: folderRect.height))
+            let y = size.height - my - closeSize.height
+            let x = xLim - closeSize.width
+            RcPlace.button(close, NSRect(x: x - mx - helpSize.width, y: y, width: closeSize.width, height: closeSize.height))
+            RcPlace.button(help, NSRect(x: x, y: y, width: helpSize.width, height: helpSize.height))
+            // yFilterSize: GetClientRectOfItem gives the closed combo 23 px here (the list ends at
+            // 471 and the combo starts at 484 in 7zFM 26.03's 559 px client, dlg-tempfiles.txt).
+            let filterY = y - my - 23
+            RcPlace.popup(filterCombo, NSRect(x: filterRect.minX, y: filterY, width: xLim - filterRect.minX,
+                                              height: RcPlace.comboHeight))
+            scroll.frame = NSRect(x: listRect.minX, y: listRect.minY, width: xLim - listRect.minX,
+                                  height: max(0, filterY - my - listRect.minY))
         }
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 900)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
         window.initialFirstResponder = tableView
         reload()
     }
@@ -280,6 +305,39 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         case "inner": return entry.innerName
         default: return nil
         }
+    }
+
+    /// A view-based row in the list's font: the system's small icon before the name (the
+    /// list has the shell's small image list, BrowseDialog2.cpp:366) and every text 6 px from the
+    /// column's aligned edge, as in the main list (PanelMetrics).
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard let column = tableColumn else { return nil }
+        let text = self.tableView(tableView, objectValueFor: column, row: row) as? String ?? ""
+        let cell = NSTableCellView()
+        let field = NSTextField(labelWithString: text)
+        field.font = PanelMetrics.listFont
+        field.lineBreakMode = .byTruncatingTail
+        let right = ["size", "files", "folders"].contains(column.identifier.rawValue)
+        field.alignment = right ? .right : .left
+        field.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(field)
+        cell.textField = field
+        var leading: CGFloat = 4
+        if column.identifier.rawValue == "name", row < entries.count {
+            let icon = NSImageView(frame: NSRect(x: 4, y: 0, width: 16, height: 16))
+            icon.image = NSWorkspace.shared.icon(forFile: (directory as NSString).appendingPathComponent(entries[row].name))
+            icon.imageScaling = .scaleProportionallyDown
+            icon.autoresizingMask = [.minYMargin, .maxYMargin]
+            cell.addSubview(icon)
+            cell.imageView = icon
+            leading = 22
+        }
+        NSLayoutConstraint.activate([
+            field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: leading),
+            field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+            field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
     }
 
     /// Browse_ConvertSizeToString (BrowseDialog.cpp:552-567): plain digits below 10000, then

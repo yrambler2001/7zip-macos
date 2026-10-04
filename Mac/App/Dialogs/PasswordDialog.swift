@@ -1,11 +1,12 @@
 // PasswordDialog.swift -- CPasswordDialog / IDD_PASSWORD 3800 "Enter password"
 // (PasswordDialog.cpp/.rc), built in code. Parity: 01b-fm-dialogs-settings.md 4.16.
 //
-// The extract/open side shows the password field + "Show password"; the compress side
-// (CCompressDialog's password block, CompressDialogRes.h:27-45) adds the verify field
-// (IDT_PASSWORD_REENTER 3802 / IDE_COMPRESS_PASSWORD2 121) and "Encrypt file names"
-// (IDX_COMPRESS_ENCRYPT_FILE_NAMES 4016). Both live behind `Options` so the `compress`
-// scope can reuse this dialog.
+// One field and "Show password", for the extract / open side and for the compress side alike:
+// CUpdateCallbackGUI2::CryptoGetTextPassword2 shows the very same CPasswordDialog
+// (UpdateCallbackGUI2.cpp:54-60), with no verify field and no "Encrypt file names" -- those are
+// the Add to Archive dialog's own controls. Every control is on IDD_PASSWORD's template rect
+// (324 x 143 px, fixed; dlgfeel). `requiresVerification` / `showsEncryptFileNames` are kept in
+// `Options` for source compatibility and no longer change the dialog.
 
 import AppKit
 import SevenZipKit
@@ -65,46 +66,18 @@ final class PasswordDialog: NSObject, NSTextFieldDelegate {
         for field in [passwordField, plainField, verifyField, plainVerifyField] {
             field.stringValue = options.password
             field.delegate = self
-            field.translatesAutoresizingMaskIntoConstraints = false
-            field.addConstraint(NSLayoutConstraint(item: field, attribute: .width, relatedBy: .greaterThanOrEqual,
-                                                  toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 260))
-        }
-        mismatchLabel.textColor = .systemRed
-
-        let enterLabel = DialogKit.label(Lang.dialogText(3800, 3801, "Enter password:"))     // IDT_PASSWORD_ENTER 3801
-        let reenterLabel = DialogKit.label(Lang.text(3802, "Reenter password:")) // IDT_PASSWORD_REENTER 3802
-
-        var views: [NSView] = []
-        if !options.subject.isEmpty {
-            views.append(DialogKit.label(options.subject))
-        }
-        views.append(enterLabel)
-        views.append(contentsOf: [passwordField, plainField])
-        if options.requiresVerification {
-            views.append(reenterLabel)
-            views.append(contentsOf: [verifyField, plainVerifyField])
-            views.append(mismatchLabel)
-        }
-        views.append(showBox)
-        if options.showsEncryptFileNames { views.append(encryptNamesBox) }
-
-        let buttons = NSStackView(views: [cancel, okButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-        let buttonRow = NSStackView(views: [NSView(), buttons])
-        buttonRow.orientation = .horizontal
-        views.append(buttonRow)
-
-        let stack = NSStackView(views: views)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        for view in [passwordField, plainField, verifyField, plainVerifyField, buttonRow] as [NSView] where views.contains(view) {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
         }
 
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 340)
+        let rc = RcDialog(3800)
+        let form = RcFormView()
+        form.add(DialogKit.label(Lang.dialogText(3800, 3801, "Enter password:")), rc, 3801)  // IDT_PASSWORD_ENTER 3801
+        form.add(passwordField, rc, 120)
+        form.addSubview(plainField)
+        RcPlace.edit(plainField, rc.rect(120))
+        form.add(showBox, rc, 3803)
+        form.add(okButton, rc, 1)
+        form.add(cancel, rc, 2)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
         applyShowPassword()
         window.initialFirstResponder = options.showPassword ? plainField : passwordField
     }
@@ -138,12 +111,7 @@ final class PasswordDialog: NSObject, NSTextFieldDelegate {
     @objc private func toggleShowPassword() { applyShowPassword() }
 
     @objc private func accept() {
-        // OnOK (:54-58) -> ReadControls. The compress side also checks IDS_PASSWORD_NOT_MATCH.
-        if options.requiresVerification, enteredPassword != enteredVerification {
-            mismatchLabel.stringValue = Lang.text(3804, "Passwords do not match")
-            NSSound.beep()
-            return
-        }
+        // OnOK (:54-58) -> ReadControls.
         result = Result(password: enteredPassword,
                         showPassword: showBox.state == .on,
                         encryptFileNames: encryptNamesBox.state == .on)

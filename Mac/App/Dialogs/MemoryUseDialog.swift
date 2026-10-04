@@ -65,8 +65,6 @@ final class MemoryUseDialog: NSObject {
         super.init()
 
         messageLabel.stringValue = MemoryUseDialog.message(options)
-        messageLabel.maximumNumberOfLines = 10
-        messageLabel.lineBreakMode = .byWordWrapping
 
         // Spin range: 1 .. 64 without RAM info, else min(RAM - 1, 16384) (:128-142)
         let maxGB = options.ramGB == 0 ? 64 : max(1, min(options.ramGB - 1, 16384))
@@ -77,10 +75,7 @@ final class MemoryUseDialog: NSObject {
         limitStepper.target = self
         limitStepper.action = #selector(stepperChanged)
         limitField.integerValue = limitStepper.integerValue
-        limitField.alignment = .right
-        limitField.translatesAutoresizingMaskIntoConstraints = false
-        limitField.addConstraint(NSLayoutConstraint(item: limitField, attribute: .width, relatedBy: .equal,
-                                                  toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: 70))
+        limitField.alignment = .center                                    // ES_CENTER
         unitLabel.stringValue = options.ramGB == 0 ? "GB" : "GB / \(options.ramGB) GB (RAM)"
 
         saveLimitBox.target = self
@@ -92,34 +87,31 @@ final class MemoryUseDialog: NSObject {
         rememberBox.isHidden = !options.showRemember
         setSpinEnabled(false)
 
-        let spinRow = NSStackView(views: [limitField, limitStepper, unitLabel])
-        spinRow.orientation = .horizontal
-        spinRow.spacing = 6
-
-        let actionLabel = DialogKit.label(Lang.text(7803, "Action"), bold: true)   // IDG_MEM_ACTION 7803
         let continueButton = DialogKit.button(Lang.text(411, "Continue"), target: self,
                                              action: #selector(continueClicked), key: "\r")   // IDCONTINUE
         let cancelButton = DialogKit.button(Lang.text(402, "Cancel"), target: self,
                                            action: #selector(cancelClicked), key: "\u{1b}")
-        let buttons = NSStackView(views: [cancelButton, continueButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-        let buttonRow = NSStackView(views: [NSView(), buttons])
-        buttonRow.orientation = .horizontal
 
-        var views: [NSView] = [messageLabel, saveLimitBox, spinRow, actionLabel, allowRadio, skipRadio]
-        if options.showRemember { views.append(rememberBox) }
-        views.append(buttonRow)
-
-        let stack = NSStackView(views: views)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        for view in [messageLabel, buttonRow] as [NSView] {
-            stack.addConstraint(NSLayoutConstraint(item: view, attribute: .width, relatedBy: .equal,
-                                                   toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        }
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 480)
+        // IDD_MEM 7800 (MemDialog.rc): 336 x 216 DLU = 504 x 351 px, fixed; every control on its
+        // template rect, the up-down control at the right end of its 75 px edit (dlgfeel).
+        let rc = RcDialog(7800)
+        let form = RcFormView()
+        form.add(messageLabel, rc, 101)
+        form.add(saveLimitBox, rc, 7801)
+        let edit = rc.rect(110)
+        form.addSubview(limitField)
+        RcPlace.edit(limitField, NSRect(x: edit.minX, y: edit.minY, width: edit.width - 16, height: edit.height))
+        form.addSubview(limitStepper)
+        limitStepper.controlSize = .small
+        limitStepper.frame = NSRect(x: edit.maxX - 18, y: edit.minY - 1, width: 18, height: edit.height + 2)
+        form.add(unitLabel, rc, 112)
+        form.add(WinGroupBox(title: Lang.text(7803, "Action")), rc, 7803)       // IDG_MEM_ACTION 7803
+        form.add(allowRadio, rc, 7820)
+        form.add(skipRadio, rc, 7821)
+        form.add(rememberBox, rc, 7802)
+        form.add(continueButton, rc, 11)
+        form.add(cancelButton, rc, 2)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
     }
 
     /// MemDialog.cpp:82-127 (AddInfoMessage_To_String).

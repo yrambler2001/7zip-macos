@@ -213,17 +213,19 @@ final class MessageListView: NSView, NSTableViewDataSource {
         messageColumn.width = 520
         tableView.addTableColumn(indexColumn)
         tableView.addTableColumn(messageColumn)
-        tableView.headerView = showsHeader ? NSTableHeaderView() : nil
-        tableView.usesAlternatingRowBackgroundColors = true
+        // A report list like 7zFM's: 17 px rows, a 24 px header, no alternating rows (dlgfeel).
+        tableView.headerView = showsHeader ? NSTableHeaderView(frame: NSRect(x: 0, y: 0, width: 100, height: 24)) : nil
+        tableView.usesAlternatingRowBackgroundColors = false
         tableView.allowsMultipleSelection = true
-        tableView.rowSizeStyle = .small
         tableView.dataSource = self
         tableView.style = .plain
         tableView.usesAutomaticRowHeights = false
+        tableView.rowHeight = 17
+        tableView.intercellSpacing = .zero
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
+        scrollView.borderType = .lineBorder
         scrollView.autohidesScrollers = true
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scrollView)
