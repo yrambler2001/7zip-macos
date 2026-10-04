@@ -14,8 +14,10 @@ import AppKit
 import XCTest
 @testable import SevenZipAppHost
 
-/// A stand-in for `pluginkit`: registered copies in the order they were added (the last one is the
-/// one Finder runs, as measured) and one election for the identifier.
+/// A stand-in for `pluginkit`: registered copies and one election for the identifier. Which copy
+/// Finder runs is not steerable on the real system except by removing the others, so the fake
+/// reports the *first* registered copy as the active one -- a claim that only re-added its own copy
+/// would fail here, as it did on the real machine.
 final class FakePluginKit {
     private let lock = NSLock()
     private var _copies: [String] = []
@@ -36,14 +38,13 @@ final class FakePluginKit {
             _calls.append(arguments)
             switch arguments.first {
             case "-m":
-                let listed = arguments.contains("-D") ? _copies : _copies.suffix(1).map { $0 }
+                let listed = arguments.contains("-D") ? _copies : Array(_copies.prefix(1))
                 let lines = listed.map {
                     "\(_election)    \(FinderExtensionControl.identifier)(26.03)\t00000000-0000-0000-0000-000000000000\t2026-10-04 00:00:00 +0000\t\($0)"
                 }
                 return (0, (lines + [" (\(listed.count) plug-ins)"]).joined(separator: "\n") + "\n")
             case "-a":
-                _copies.removeAll { $0 == arguments[1] }
-                _copies.append(arguments[1])
+                if !_copies.contains(arguments[1]) { _copies.append(arguments[1]) }
             case "-r":
                 _copies.removeAll { $0 == arguments[1] }
             case "-e":
@@ -202,25 +203,26 @@ final class AppFeelTests: AppHostTestCase {
                                                     embeddedPath: link + "/Contents/PlugIns/FinderSync.appex"), .enabled)
     }
 
-    /// Enabling: deleted copies are forgotten, this copy is re-added (so it is the one Finder
-    /// runs), use is elected. Disabling: ignore is elected, the copies stay.
+    /// Enabling: every other copy's registration (deleted or not) is removed, so this copy is the
+    /// one Finder runs, and use is elected. Disabling: ignore is elected, the registrations stay.
     func testEnableClaimsThisCopyAndDisableElectsIgnore() throws {
         let mine = try makeAppex("Mine")
         let other = try makeAppex("Other")
         let gone = scratch + "/Gone.app/Contents/PlugIns/FinderSync.appex"
-        let fake = FakePluginKit(copies: [mine, gone, other], election: "-")
+        let fake = FakePluginKit(copies: [other, gone, mine], election: "-")
         FinderExtensionControl.runner = fake.run
         XCTAssertEqual(FinderExtensionControl.currentState(embeddedPath: mine), .otherCopy(path: other, enabled: false))
 
         XCTAssertEqual(FinderExtensionControl.setEnabled(true, embeddedPath: mine), .enabled)
-        XCTAssertEqual(fake.copies, [other, mine], "the deleted copy is removed, this one is the newest")
+        XCTAssertEqual(fake.copies, [mine], "only this copy stays registered")
         XCTAssertTrue(fake.calls.contains(["-r", gone]))
-        XCTAssertFalse(fake.calls.contains(["-r", other]), "an existing copy keeps its registration")
+        XCTAssertTrue(fake.calls.contains(["-r", other]))
+        XCTAssertFalse(fake.calls.contains(["-r", mine]), "this copy is never removed")
         XCTAssertTrue(fake.calls.contains(["-e", "use", "-i", FinderExtensionControl.identifier]))
 
         XCTAssertEqual(FinderExtensionControl.setEnabled(false, embeddedPath: mine), .disabled)
         XCTAssertEqual(fake.election, "-")
-        XCTAssertEqual(fake.copies, [other, mine])
+        XCTAssertEqual(fake.copies, [mine])
         XCTAssertEqual(FinderExtensionControl.setEnabled(true, embeddedPath: nil), .notEmbedded)
     }
 
@@ -273,7 +275,7 @@ final class AppFeelTests: AppHostTestCase {
     func testBoxReflectsThisCopyAndApplySwitchesIt() throws {
         let mine = try makeAppex("Mine")
         let other = try makeAppex("Other")
-        let fake = FakePluginKit(copies: [mine, other], election: "+")
+        let fake = FakePluginKit(copies: [other, mine], election: "+")
         FinderExtensionControl.runner = fake.run
 
         let (page, box) = try loadedPage(embedded: mine)
@@ -290,7 +292,7 @@ final class AppFeelTests: AppHostTestCase {
         XCTAssertTrue(wait(for: "Apply") { done })
         XCTAssertEqual(page.finderExtensionState, .enabled)
         XCTAssertEqual(box.state, .on)
-        XCTAssertEqual(fake.copies.last, mine)
+        XCTAssertEqual(fake.copies, [mine])
 
         box.performClick(nil)
         XCTAssertEqual(box.state, .off)

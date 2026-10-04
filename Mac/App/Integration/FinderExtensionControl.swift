@@ -14,12 +14,17 @@
 // user turned it on; **-** = ignore, off; **!** / **=** / **?** see `Registration`); the copy that
 // Finder runs is the one inside <path>". Several copies of the app (Debug, Release, a DMG copy,
 // a scratch copy) each register their own appex under the same identifier; PlugInKit keeps them
-// all (`pluginkit -m -D -A` lists them) and hands Finder one -- measured on macOS 26: the copy
-// added most recently. The election (+/-) belongs to the identifier, not to a copy.
+// all (`pluginkit -m -D -A` lists them) and hands Finder one. Which one is not something a caller
+// can steer: measured on macOS 26, neither the registration date, nor re-adding (`-a` of a known
+// path is a no-op), nor `lsregister -f`, nor touching the bundle moved it; the freshly built copy
+// kept winning. What does work, at once, is removing the other copies' registrations
+// (`pluginkit -r <path>`): the only copy left is the one Finder runs. A removed copy registers
+// itself again when it is launched (or rebuilt), and then it claims the extension the same way.
+// The election (+/-) belongs to the identifier, not to a copy.
 //
 // So: "enabled" here means the elected copy is *this* app's appex and the election is use. Enabling
-// re-adds this copy's appex (`pluginkit -a`, which makes it the newest and so the one Finder runs)
-// and elects use (`pluginkit -e use`); disabling elects ignore. Neither needs the user's consent on
+// removes every other copy's registration, adds this one (`pluginkit -a`) and elects use
+// (`pluginkit -e use`); disabling elects ignore. Neither needs the user's consent on
 // macOS 14-26 (measured on 26.0: rc 0, Finder starts/stops the extension process at once). When the
 // election does not take effect anyway (an MDM profile, a future system), the page falls back to
 // `FIFinderSyncController.showExtensionManagementInterface()`, the System Settings pane.
@@ -141,11 +146,11 @@ enum FinderExtensionControl {
         return state(active: activeRegistration(), embeddedPath: embeddedPath)
     }
 
-    /// Makes this copy's appex the one Finder runs: forgets the registrations whose bundle has been
-    /// deleted, then re-adds this one, which makes it the newest. Blocking.
+    /// Makes this copy's appex the one Finder runs: removes the registration of every other copy
+    /// (deleted ones included), then adds this one. Blocking.
     static func claim(embeddedPath: String) {
-        for registration in allRegistrations()
-        where !FileManager.default.fileExists(atPath: registration.path) {
+        let mine = canonical(embeddedPath)
+        for registration in allRegistrations() where canonical(registration.path) != mine {
             _ = runner(["-r", registration.path])
         }
         _ = runner(["-a", embeddedPath])

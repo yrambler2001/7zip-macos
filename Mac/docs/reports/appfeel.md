@@ -79,11 +79,14 @@ identifier; the path is which *copy* serves it.
 Every 7-Zip.app with an embedded appex registers it under the same identifier. On this machine
 `pluginkit -m -D -A -v -i com.yrambler2001.7zip.FinderSync` listed four: the main tree's Release
 and Debug builds, this worktree's Debug build and a leftover copy in another agent's scratch
-folder. Measured: **the copy registered last is the one Finder gets** (`pluginkit -a <path>` makes
-a copy the newest; a few hundred ms later it is the active one), and **building the Debug app
-registers it**, so a mere `build.sh` used to take Finder's menu away from the installed app. A
-deleted copy drops out of the list by itself; `pluginkit -r <path>` removes a registration
-explicitly (it exits 1 for a path PlugInKit never knew). The test copies (`7-Zip-Host`,
+folder. Measured: **building the Debug app registers it and Finder then gets the fresh build**, so a
+mere `build.sh` used to take Finder's menu away from the installed app. Which copy wins cannot be
+steered from outside: re-adding a copy (`pluginkit -a` of a known path is a no-op), a newer
+registration date, `lsregister -f` of its app and touching the bundle all left the fresh build in
+charge (a first guess, "the copy added last wins", was disproved by exactly this). What works, at
+once, is **removing the other copies' registrations** (`pluginkit -r <path>`): the only copy left is
+the one Finder runs. A removed copy registers itself again when it is launched or rebuilt. A deleted
+copy drops out of the list by itself; `pluginkit -r` of a path PlugInKit never knew exits 1. The test copies (`7-Zip-Host`,
 `-Probe1/2`) embed no appex, so they never registered one.
 
 ### What was built
@@ -91,11 +94,14 @@ explicitly (it exits 1 for a path PlugInKit never knew). The test copies (`7-Zip
 - `Mac/App/Integration/FinderExtensionControl.swift`: parses `pluginkit -m -v` lines; the state
   for *this* copy (`notEmbedded`, `notRegistered`, `enabled`, `disabled`,
   `otherCopy(path, enabled)`; paths compared after `realpath`, so the `Mac/build/Debug` symlink is
-  the same copy); `setEnabled(on)` = drop registrations of deleted bundles (`-r`), re-add this copy
+  the same copy); `setEnabled(on)` = remove every other copy's registration (`-r`), add this copy
   (`-a`), elect `use`, or elect `ignore`; then wait up to 3 s for the state to follow.
   `claimAtLaunchIfNeeded()`: every launch of a real copy (never a test instance, `SZ_TEST_SUPPORT`)
-  re-adds its appex in the background when Finder is using another copy, so **the copy the user
-  runs wins**. The election is never changed at launch.
+  does the same claim in the background when Finder is using another copy, so **the copy the user
+  runs wins**. The election is never changed at launch. Verified on this machine: launching this
+  branch's Debug build took the extension from the Release copy within 5 s; launching the old
+  (pre-appfeel) Release build did not take it back -- the claim is new code, so the user's
+  installed copy needs a rebuild/DMG from this branch to behave this way.
 - Options ▸ 7-Zip (`OptionsMenuPage.swift`), as `MenuPage.cpp` does it: ticked only when Finder
   uses this copy's extension and it is on (`CheckContextMenuHandler(path)`); **disabled** when this
   copy has no appex (`EnableItem(false)` when 7-zip.dll is missing, :170-174); a click only marks
@@ -106,11 +112,13 @@ explicitly (it exits 1 for a path PlugInKit never knew). The test copies (`7-Zip
   the extension process immediately). macOS 14/15 were not available to test; the fallback above
   covers a system that refuses.
 - `Mac/scripts/finderext-registration.sh`, sourced by `build.sh` (around xcodebuild) and `test.sh`
-  (EXIT trap): remember which copy Finder used before, hand it back afterwards (`pluginkit -a`),
-  and drop registrations whose bundle is gone. So builds and test runs leave the user's copy in
-  charge.
-- Machine cleanup done once by hand: the scratch-folder copy's registration was removed and the
-  main tree's Release copy (the user's) was re-added so it is the active one again (§5).
+  (EXIT trap): remember which copy Finder used before; if the build/test changed it, remove the
+  other registrations and re-add that copy; drop registrations whose bundle is gone. Verified:
+  `build.sh` printed "Finder extension handed back to …/Release/7-Zip.app/…" and Release stayed the
+  only, active copy. So builds and test runs leave the user's copy in charge.
+- Machine cleanup done by hand: the scratch-folder copy, the main tree's Debug copy and this
+  worktree's Debug copy were unregistered; the user's Release copy
+  (`Mac/build/DerivedData/Build/Products/Release/7-Zip.app`) is the only registered one, elected `+`.
 
 ## 3. README and docs
 
@@ -133,7 +141,8 @@ explicitly (it exits 1 for a path PlugInKit never knew). The test copies (`7-Zip
   per copy incl. symlinks; enable/disable against a fake PlugInKit (deleted copy removed, existing
   copies kept, this copy newest, `use`/`ignore`); an election that does not take; no claim from a
   test instance; the Options box disabled without an appex, unticked for another copy's extension,
-  click → page changed → Apply switches both ways. **The real `pluginkit` is never called with a
+  click → page changed → Apply switches both ways. The fake reports the *first* registered copy as
+  active, so a claim that merely re-added its own copy (the first, wrong implementation) fails. **The real `pluginkit` is never called with a
   mutating argument by any test**: the runner is replaced for the whole class.
 - `NewWindowTests` (hosted): the reopen cases call `handleReopen(from: .launcher(...))`.
 - `NewWindowUITests` (input shard), three new cases with real input: **a real Dock-tile click**
@@ -144,7 +153,17 @@ explicitly (it exits 1 for a path PlugInKit never knew). The test copies (`7-Zip
 
 ## 5. Verification
 
-See the table at the end of this section (filled after the final runs).
+| run | result |
+|---|---|
+| `Mac/scripts/build.sh` (Debug) | exit 0, no warnings in `Mac/`; hands the extension back to the Release copy |
+| `Mac/scripts/test.sh` (SevenZipKitTests) | 388 passed, 0 failed |
+| `Mac/scripts/test.sh -H` (SevenZipAppTests, incl. 12 `AppFeelTests`), after the final claim fix | 196 passed, 0 failed; Release still the only registered copy afterwards |
+| `Mac/scripts/test.sh -u` (input shard + two probes) | 52 + 6 + 6 passed, 0 failed |
+| `NewWindowUITests` alone | 8 passed: real Dock click (sender logged `com.apple.dock -> dock`), real Dock click on a minimized window, real Finder double-click (`com.apple.finder -> launcher`), the existing reopen / New Window / archive cases |
+
+The UI suite ran before the last change to `FinderExtensionControl.claim` (remove the other
+copies instead of re-adding this one); that code runs only in non-test launches and in the
+hosted tests, which were re-run after it. The final DMG is left to the orchestrator.
 
 ## 6. Known gaps
 

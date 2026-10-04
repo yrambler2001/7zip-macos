@@ -188,11 +188,11 @@ How to read the `pluginkit -m` line:
 by another copy, blank: never chosen, which for a Finder extension means off); then the extension's
 identifier and version; then an ID and the date the copy was registered; and last the copy Finder
 actually runs. **Several copies of 7-Zip.app** (an installed one, a build, a mounted DMG) all
-register the same extension, and macOS gives Finder the one registered last; `pluginkit -m -D -A -v
--i com.yrambler2001.7zip.FinderSync` lists them all. 7-Zip claims it for itself every time you
-start it, so the copy you run is the one Finder's menu calls; the build and test scripts hand it
-back to whichever copy had it before they ran, and copies that were deleted are dropped
-(`pluginkit -r <path>`). If Finder never shows the menu, reset Launch
+register the same extension and macOS gives Finder one of them, usually the newest build;
+`pluginkit -m -D -A -v -i com.yrambler2001.7zip.FinderSync` lists them all. 7-Zip claims it for
+itself every time you start it (it unregisters the other copies with `pluginkit -r <path>`; a copy
+registers again when it is next launched), so the copy you run is the one Finder's menu calls. The
+build and test scripts hand it back to whichever copy had it before they ran. If Finder never shows the menu, reset Launch
 Services with `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain user`
 and log out and in again; a managed Mac whose MDM profile denies public extension points blocks
 it silently.
