@@ -286,6 +286,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         }
         window.contentView = content
         window.setContentSize(Self.clientSize)
+        window.contentMinSize = Self.clientSize
+        window.contentMaxSize = Self.clientSize
     }
 
     private func configure(_ button: NSButton, _ title: String, _ action: Selector) {
