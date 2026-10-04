@@ -418,6 +418,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     @discardableResult
     func runFolderOperation<T>(_ options: OperationRunner.Options,
                                work: @escaping (SZFolder, OperationRunner) throws -> T) -> Result<T, Error>? {
+        cancelRenameEditing()                               // recheck2: no edit outlives the change
         guard let folder else { return nil }
         // The park block only *enqueues* behind whatever the panel queue is already running, so
         // the worker waits until it is actually parked before it touches the folder.

@@ -163,10 +163,13 @@ final class PanelTableView: NSTableView {
     }
 
     private func scheduleSlowClickRename(row: Int) {
+        let name = panel.flatMap { row < $0.rows.count ? $0.rows[row].name : nil }
         let timer = Timer(timeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
             guard let self, let panel = self.panel else { return }
             self.slowClickTimer = nil
+            // still the same item, still alone in the selection, no button down, no edit open
             guard panel.selectedIndexes == IndexSet(integer: row), panel.focusedIndex == row,
+                  row < panel.rows.count, panel.rows[row].name == name, panel.renamingRow == nil,
                   NSEvent.pressedMouseButtons == 0 else { return }
             panel.renameFocusedItem()
         }

@@ -21,6 +21,7 @@ extension PanelViewController {
 
     /// The same with the rows captured by the caller (a move that already killed the selection).
     func deleteItems(rowIndices: [Int], toTrash: Bool, confirm: Bool) {
+        cancelRenameEditing()
         guard let snap = snapshot else { return }
         guard snap.supportsOperations else { showUnsupportedOperation(); return }
         guard checkBeforeUpdate() else { return }
@@ -100,6 +101,28 @@ extension PanelViewController {
         field.drawsBackground = true
         field.delegate = self
         view.window?.makeFirstResponder(field)
+    }
+
+    /// LVN_ENDLABELEDIT with no text: an operation that changes the folder while a label is being
+    /// edited (File > Delete after a slow click, recheck2) cancels the edit instead of letting it
+    /// commit later against a row index that no longer names the same item.
+    func cancelRenameEditing() {
+        guard let index = renamingRow else { return }
+        renamingRow = nil                                   // controlTextDidEndEditing now ignores it
+        let identifier = NSUserInterfaceItemIdentifier(String(SZPropID.name.rawValue))
+        let column = tableView.column(withIdentifier: identifier)
+        if column >= 0, index < tableView.numberOfRows,
+           let cell = tableView.view(atColumn: column, row: index, makeIfNecessary: false) as? NSTableCellView,
+           let field = cell.textField {
+            field.abortEditing()
+            (cell as? PanelCellView)?.editingConstraint?.isActive = false
+            field.isEditable = false
+            field.isSelectable = false
+            field.isBordered = false
+            field.drawsBackground = false
+            if index < rows.count { field.stringValue = rows[index].displayName }
+        }
+        if view.window?.firstResponder is NSText { view.window?.makeFirstResponder(tableView) }
     }
 
     private func renameWithDialog(_ index: Int) {

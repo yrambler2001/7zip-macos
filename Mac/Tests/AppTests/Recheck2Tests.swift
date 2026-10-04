@@ -367,6 +367,27 @@ final class Recheck2Tests: AppHostTestCase {
         XCTAssertFalse(table.hasPendingSlowClickRename, "a click on one of several selected items starts nothing")
     }
 
+    /// File > Delete while the slow click's rename is open deletes the item (7zFM: IDM_DELETE goes to
+    /// the panel whatever the label edit is doing).
+    func testDeleteWhileRenamingDeletesTheItem() throws {
+        Settings.singleClick = false
+        let (_, p) = try boundPanel()
+        let name = p.rows[2].name
+        p.setFocus(2)
+        p.renameFocusedItem()
+        XCTAssertEqual(p.renamingRow, 2)
+        var chain: [String] = []
+        var r: NSResponder? = p.view.window?.firstResponder
+        while let x = r { chain.append(String(describing: type(of: x))); r = x.nextResponder }
+        let handled = p.view.window?.firstResponder?.tryToPerform(#selector(MenuActions.fileDelete(_:)), with: nil) ?? false
+        XCTAssertTrue(handled, "the panel takes File > Delete from the rename field: \(chain)")
+        XCTAssertNil(p.renamingRow, "the delete cancelled the edit")
+        XCTAssertTrue(wait(for: "the delete", timeout: 10) { !p.rows.contains { $0.name == name } },
+                      "rows: \(p.rows.map(\.name))")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        XCTAssertEqual(p.rows.count, 7, "nothing else was renamed or lost: \(p.rows.map(\.name))")
+    }
+
     /// LVS_EX_TRACKSELECT: with Single-click on, resting on an item's label for the hover time
     /// selects and focuses it; a Size cell or the background does nothing; with the option off,
     /// hovering does nothing.
