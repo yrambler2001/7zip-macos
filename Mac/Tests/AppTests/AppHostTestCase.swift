@@ -79,6 +79,25 @@ class AppHostTestCase: XCTestCase {
         // Titles are asserted against the English resource text, exactly as the XCUITest suite
         // asserted them with `Lang = "-"` in the settings domain.
         useLanguage("-")
+        // An error report nobody waits for (`WinMessageBox.show`, what used to be a sheet that
+        // stayed up unnoticed) is modal since recheck2: answer it after a moment, so a stray report
+        // never wedges the suite. A test that expects a box sets its own observers.
+        WinMessageBox.observers = [AppHostTestCase.dismissStrayReports]
+    }
+
+    static let dismissStrayReports: (WinMessageBoxWindow) -> Void = { box in
+        guard box.isAsynchronous else {
+            // a question a test did not script: say who asked, the test's own watcher answers it
+            print("APPHOST | message box [\(box.caption)]: \(box.message)\n"
+                  + Thread.callStackSymbols.prefix(14).joined(separator: "\n"))
+            return
+        }
+        print("APPHOST | stray message box [\(box.caption)] over '\(box.ownerWindow?.title ?? "-")': \(box.message)")
+        let timer = Timer(timeInterval: 2, repeats: false) { [weak box] _ in
+            guard let box, box.isVisible else { return }
+            box.answer(box.boxButtons.escapeResult ?? .no)
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     override func tearDown() {

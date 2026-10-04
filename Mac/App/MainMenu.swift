@@ -201,6 +201,7 @@ enum MainMenu {
         menu.addItem(pasteItem)
         let top = NSMenuItem()
         top.submenu = menu
+        EditMenuCleanup.adopt(menu)     // recheck2: no AutoFill / Dictation / Emoji items
         return top
     }
 

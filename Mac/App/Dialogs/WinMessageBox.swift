@@ -101,8 +101,17 @@ enum WinMessageBox {
     @discardableResult
     static func run(_ text: String, caption: String = "7-Zip", buttons: Buttons = .ok, icon: Icon = .none,
                     owner: NSWindow?) -> Result {
+        run(text, caption: caption, buttons: buttons, icon: icon, owner: owner, asynchronous: false)
+    }
+
+    private static func run(_ text: String, caption: String, buttons: Buttons, icon: Icon, owner: NSWindow?,
+                            asynchronous: Bool) -> Result {
         let box = WinMessageBoxWindow(text: text, caption: caption, buttons: buttons, icon: icon,
                                       owner: DialogKit.owner(for: nil, parent: owner))
+        box.isAsynchronous = asynchronous
+        #if DEBUG
+        NSLog("7-Zip message box [%@]: %@", caption, text)
+        #endif
         return box.runModal()
     }
 
@@ -114,7 +123,7 @@ enum WinMessageBox {
                      owner: NSWindow?, completion: ((Result) -> Void)? = nil) {
         weak let weakOwner = owner
         CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
-            let result = run(text, caption: caption, buttons: buttons, icon: icon, owner: weakOwner)
+            let result = run(text, caption: caption, buttons: buttons, icon: icon, owner: weakOwner, asynchronous: true)
             completion?(result)
         }
         CFRunLoopWakeUp(CFRunLoopGetMain())
@@ -234,6 +243,8 @@ final class WinMessageBoxWindow: NSWindow {
     /// The push buttons, in the Windows order (Yes, No, Cancel / OK, Cancel).
     private(set) var pushButtons: [NSButton] = []
     private(set) var result: WinMessageBox.Result?
+    /// Shown with `WinMessageBox.show`: nobody waits for the answer (an error report).
+    var isAsynchronous = false
 
     init(text: String, caption: String, buttons: WinMessageBox.Buttons, icon: WinMessageBox.Icon, owner: NSWindow?) {
         message = text
