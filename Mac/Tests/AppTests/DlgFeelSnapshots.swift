@@ -91,15 +91,18 @@ final class DlgFeelSnapshots: AppHostTestCase {
         XCTAssertTrue(appeared, "\(name) never came up")
     }
 
-    func testSnapshotEveryDialog() throws {
-        continueAfterFailure = true
-        snap("about") { AboutDialog.show(parent: nil) }
+    func testAbout() { snap("about") { AboutDialog.show(parent: nil) } }
+
+    func testCopyMove() {
         snap("copy") {
             _ = CopyMoveDialog.run(move: false, value: "/Users/me/Documents/", history: [], info: "", parent: nil)
         }
         snap("move") {
             _ = CopyMoveDialog.run(move: true, value: "/Users/me/Documents/", history: [], info: "", parent: nil)
         }
+    }
+
+    func testCombo() {
         snap("createfolder") {
             _ = ComboDialog.run(title: Lang.text(6300, "Create Folder"), label: Lang.text(6302, "Folder name:"),
                                 value: Lang.text(6304, "New Folder"), parent: nil)
@@ -112,7 +115,11 @@ final class DlgFeelSnapshots: AppHostTestCase {
             _ = ComboDialog.run(title: Lang.text(6402, "Select"), label: Lang.text(6404, "Mask:"), value: "*",
                                 strings: ["*"], parent: nil)
         }
-        snap("comment-file") { _ = CommentDialog.run(value: "", parent: nil) }
+    }
+
+    func testComment() { snap("comment-file") { _ = CommentDialog.run(value: "", parent: nil) } }
+
+    func testTools() {
         snap("split") { _ = SplitDialog.run(filePath: archive, path: fixtures, parent: nil) }
         snap("combine") {
             _ = CombineDialog.run(title: Lang.text(7400, "Combine Files"), prompt: Lang.text(7402, "Combine to:"),
@@ -122,6 +129,9 @@ final class DlgFeelSnapshots: AppHostTestCase {
             _ = LinkDialog.run(currentDirPrefix: fixtures + "/", filePath: archive,
                                anotherPath: TestPaths.realHome, parent: nil)
         }
+    }
+
+    func testLists() throws {
         var history = ListViewDialogOptions()
         history.title = Lang.text(6601, "Folders History")
         history.strings = [fixtures, "/tmp"]
@@ -132,11 +142,20 @@ final class DlgFeelSnapshots: AppHostTestCase {
                                         recursive: false, progress: nil)
         snap("hash-crc32") { HashResultsDialog.show(results: results, parent: nil) }
         snap("tempfiles") { ToolsTempFilesDialog.show(parent: nil) }
+    }
+
+    func testBenchmark() {
         snap("bench-start", timeout: 60, settle: 3) { BenchmarkDialog.run(totalMode: false, parent: nil) }
+    }
+
+    func testExtract() {
         var extract = ExtractDialog.Options()
         extract.directoryPath = fixtures + "/"
         extract.archivePath = archive
         snap("extract") { _ = ExtractDialog.run(extract) }
+    }
+
+    func testCompress() {
         var input = CompressDialogInput()
         input.directoryPrefix = fixtures + "/"
         input.archiveBaseName = "a"
@@ -149,6 +168,9 @@ final class DlgFeelSnapshots: AppHostTestCase {
             supportsNtSecurity: false, isTar: false, isZip: false, isGZip: false,
             isKeepName: false, tarMethodName: "")
         snap("compress-options") { _ = CompressOptionsSheet.run(&state, parent: nil) }
+    }
+
+    func testOperations() {
         let old = OverwriteDialog.FileInfo(path: archive, size: 838, time: Date())
         let new = OverwriteDialog.FileInfo(path: TestPaths.fixture("test.zip"), size: 1024, time: Date())
         snap("overwrite") { _ = OverwriteDialog.run(oldFile: old, newFile: new, showExtraButtons: true, parent: nil) }
@@ -167,7 +189,9 @@ final class DlgFeelSnapshots: AppHostTestCase {
         let progress = ProgressDialog(title: Lang.text(3300, "Extracting"), showCompressionInfo: false)
         progress.window.setContentSize(progress.window.contentMinSize)
         DlgSnap.write(progress.window, "progress", paired: paired)
+    }
 
+    func testOptions() {
         let controller = OptionsWindowController.shared
         guard let window = controller.window else { return XCTFail("no Options window") }
         _ = ModalProbe.present({ OptionsWindowController.showOptions() }) { _ in }

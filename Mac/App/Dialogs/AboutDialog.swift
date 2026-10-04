@@ -11,63 +11,61 @@ final class AboutDialog: NSObject {
 
     private let window: NSWindow
 
+    /// The extra line the user asked for (dlgfeel finding 8), placed under the copyright line.
+    static let macCredit = "macOS version by yrambler2001"
+
     private init(parent: NSWindow?) {
         window = DialogKit.window(title: Lang.text(2900, "About 7-Zip"), resizable: false)
         super.init()
 
-        // IDI_LOGO 100, 32 x 32, SS_REALSIZEIMAGE (AboutDialog.rc:10, :21): 7zipLogo.ico at its
-        // real size, the 110 x 63 wordmark, shipped as `AboutLogo` by make-icons (requests.md,
-        // icons -> tools). The app icon stands in only if the asset is missing.
+        // IDD_ABOUT 2900 (AboutDialog.rc): 160 x 160 DLU = 240 x 260 px, every control on its .rc
+        // rect (RcLayout, reports/dlgfeel.md section About).
+        let rc = RcDialog(2900)
+        let form = RcFormView()
+
+        // IDI_LOGO 100, SS_REALSIZEIMAGE (AboutDialog.rc:21): 7zipLogo.ico at its real size, the
+        // 110 x 63 wordmark, shipped as `AboutLogo` by make-icons (requests.md, icons -> tools). The
+        // app icon stands in only if the asset is missing.
         let logo = NSImageView()
         let wordmark = NSImage(named: "AboutLogo")
         logo.image = wordmark ?? NSApp.applicationIconImage
         logo.imageScaling = wordmark == nil ? .scaleProportionallyUpOrDown : .scaleNone
-        logo.translatesAutoresizingMaskIntoConstraints = false
-        let logoSize = wordmark?.size ?? NSSize(width: 64, height: 64)
+        logo.imageAlignment = .alignTopLeft
         logo.setAccessibilityIdentifier("aboutLogo")
-        logo.addConstraint(NSLayoutConstraint(item: logo, attribute: .width, relatedBy: .equal,
-                                              toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: logoSize.width))
-        logo.addConstraint(NSLayoutConstraint(item: logo, attribute: .height, relatedBy: .equal,
-                                              toItem: nil, attribute: .notAnAttribute, multiplier: 1, constant: logoSize.height))
+        form.add(logo, rc, -1, 0)
+        // SS_REALSIZEIMAGE: the static takes the image's own size (110 x 63 in the capture).
+        logo.frame.size = wordmark?.size ?? NSSize(width: 64, height: 64)
 
         // IDT_ABOUT_VERSION 101 = "7-Zip <MY_VERSION> (<cpu>)"; IDT_ABOUT_DATE 102 = MY_DATE
-        let version = DialogKit.label(SZBenchmark.versionWithCPUText, bold: true)
-        let date = DialogKit.label(SZBenchmark.engineDateText)
-        // static LTEXT MY_COPYRIGHT
-        let copyright = DialogKit.label(SZBenchmark.engineCopyrightText)
-        // IDT_ABOUT_INFO 2901 (the only localized item, kLangIDs)
-        let info = DialogKit.label(Lang.text(2901, "7-Zip is free software"))
-        info.maximumNumberOfLines = 4
-        info.preferredMaxLayoutWidth = 320
+        form.add(RcPlace.makeLabel(SZBenchmark.versionWithCPUText), rc, 101)
+        form.add(RcPlace.makeLabel(SZBenchmark.engineDateText), rc, 102)
+        // static LTEXT MY_COPYRIGHT (-1, the second static)
+        form.add(RcPlace.makeLabel(SZBenchmark.engineCopyrightText), rc, -1, 1)
+        // The macOS credit: one more 13 px line at the copyright line's pitch (21 px), so it sits
+        // where IDT_ABOUT_INFO started; IDT_ABOUT_INFO moves down by that pitch.
+        let copyrightRect = rc.rect(-1, 1)
+        let pitch = rc.rect(-1, 1).minY - rc.rect(102).minY
+        let credit = RcPlace.makeLabel(Self.macCredit)
+        credit.setAccessibilityIdentifier("aboutMacCredit")
+        form.addSubview(credit)
+        RcPlace.label(credit, copyrightRect.offsetBy(dx: 0, dy: pitch))
+        // IDT_ABOUT_INFO 2901 (the only localized item, kLangIDs): a multi-line LTEXT
+        var infoRect = rc.rect(2901)
+        infoRect.origin.y += pitch
+        infoRect.size.height -= pitch
+        let info = RcPlace.makeWrappingLabel(Lang.text(2901, "7-Zip is free software"))
+        form.addSubview(info)
+        RcPlace.label(info, infoRect)
+        info.frame.size.height = infoRect.height
 
-        // IDB_ABOUT_HOMEPAGE 110 "www.7-zip.org"
-        let homePage = DialogKit.button("www.7-zip.org", target: self, action: #selector(homePageClicked))
-        let ok = DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r")
-        // IDD_ABOUT has only OK and www.7-zip.org (AboutDialog.rc), and 7zFM 25.01 shows exactly
-        // those two (wincompare / winmatch dumps). Its help topic is reached with F1
-        // (CAboutDialog::OnHelp -> ShowHelpWindow("start.htm"), which opens HtmlHelp in 7zFM's
-        // process): `helpKeyMonitor` gives the dialog the same F1 (and the Mac Help key).
-        let buttons = NSStackView(views: [NSView(), homePage, ok])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
+        // IDB_ABOUT_HOMEPAGE 110 "www.7-zip.org", IDOK (DEFPUSHBUTTON). IDD_ABOUT has only these
+        // two (AboutDialog.rc, and 7zFM 26.03: dlgfeel-data/win/dlg-about.txt). Its help topic is
+        // reached with F1 (CAboutDialog::OnHelp -> ShowHelpWindow("start.htm"), which opens HtmlHelp
+        // in 7zFM's process): `helpKeyMonitor` gives the dialog the same F1 (and the Mac Help key).
+        form.add(DialogKit.button("www.7-zip.org", target: self, action: #selector(homePageClicked)), rc, 110)
+        form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r"), rc, 1)
 
-        let text = NSStackView(views: [version, date, copyright, info])
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 6
-
-        let top = NSStackView(views: [logo, text])
-        top.orientation = .horizontal
-        top.alignment = .top
-        top.spacing = 14
-
-        let stack = NSStackView(views: [top, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 16
-        stack.addConstraint(NSLayoutConstraint(item: buttons, attribute: .width, relatedBy: .equal,
-                                               toItem: stack, attribute: .width, multiplier: 1, constant: 0))
-        DialogKit.install(stack, in: window, parent: parent, minimumWidth: 420)
+        RcPlace.install(form, in: window, size: rc.size, parent: parent)
     }
 
     @objc private func homePageClicked() {

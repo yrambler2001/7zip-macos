@@ -287,3 +287,21 @@ extension RcFormView {
         return view
     }
 }
+
+extension RcPlace {
+    /// Makes `form` the window's client area at `size` and centres the window on its owner, as
+    /// DS_CENTER does (DialogKit.center). A fixed dialog cannot be resized; a resizable one starts
+    /// at its template size, which is also its smallest (OnSize never lays out anything smaller).
+    static func install(_ form: NSView, in window: NSWindow, size: NSSize, parent: NSWindow?) {
+        form.frame = NSRect(origin: .zero, size: size)
+        window.contentView = form
+        window.setContentSize(size)
+        if window.styleMask.contains(.resizable) {
+            window.contentMinSize = size
+        } else {
+            window.contentMinSize = size
+            window.contentMaxSize = size
+        }
+        DialogKit.center(window, over: parent)
+    }
+}

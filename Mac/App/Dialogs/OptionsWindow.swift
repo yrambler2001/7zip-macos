@@ -49,10 +49,15 @@ class OptionsPageBase: NSViewController, OptionsPage {
     /// changed (CPropertyPage::_initMode).
     var initMode = false
 
+    /// The page's client area: the .rc template IDD_* (316 x 296 DLU = 474 x 481 px), flipped so
+    /// every control goes on its template rect (RcLayout, dlgfeel).
+    var form: RcFormView { view as! RcFormView }
+
+    /// The page's template.
+    var rc: RcDialog { RcDialog(Int(pageID)) }
+
     override func loadView() {
-        // Frame-driven on purpose: NSTabView sets the page frame, the content inside is
-        // laid out with constraints.
-        view = NSView()
+        view = RcFormView(frame: NSRect(origin: .zero, size: OptionsWindowController.pageSize))
     }
 
     /// Changed(): enables the Apply button.
@@ -76,119 +81,14 @@ class OptionsPageBase: NSViewController, OptionsPage {
         body()
         initMode = old
     }
-
-    /// The page content, inset like a dialog's client area.
-    func install(_ content: NSView) {
-        content.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(content)
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
-            content.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            content.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            content.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
-        ])
-        OptionsUI.capWrappingLabels(in: content)
-    }
-
-    /// A wrapping label's intrinsic width is its text on **one** line until it has been told how
-    /// wide it may be, so every note on a page used to ask for 700-1000 pt and the Options window's
-    /// fitting size came out at up to 1018 pt in a 660 pt window (requests.md, `fastui` ->
-    /// `options`). `capWrappingLabels` gives each one a page-sized cap when the page is built; here,
-    /// after every layout pass, a label narrower than that is told its real width so its height is
-    /// measured for the lines it actually wraps into (the Windows pages are fixed-size dialogs whose statics wrap at
-    /// their template width, 01b section 4.22).
-    /// How many times `viewDidLayout` re-told a label its width (for tests).
-    private(set) var labelWidthUpdates = 0
-    /// The page size of the last pass that re-told a label its width, and how many such passes in
-    /// a row ran at that size.
-    private var labelPassSize = NSSize.zero
-    private var labelPassesAtSize = 0
-    /// For a label whose width the page decides, one re-tell settles it (its width does not depend
-    /// on its preferredMaxLayoutWidth); a second covers a label whose new height moved a
-    /// neighbour. More passes at the same page size mean the width is feeding back into itself,
-    /// which AppKit ends with NSGenericException "more Update Constraints in Window passes than
-    /// there are views" (`mac/syslayout`), so the page stops there.
-    static let maxLabelPassesPerSize = 3
-
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        if view.bounds.size != labelPassSize {
-            labelPassSize = view.bounds.size
-            labelPassesAtSize = 0
-        }
-        guard labelPassesAtSize < Self.maxLabelPassesPerSize else { return }
-        var changed = false
-        OptionsUI.forEachWrappingLabel(in: view) { field in
-            // Never more than the cap: a label told its own full width feeds that width back into
-            // the page's fitting size, which then only ever grows with the window.
-            let width = min(field.frame.width, OptionsUI.wrappingLabelWidth)
-            if width > 1, abs(field.preferredMaxLayoutWidth - width) > 0.5 {
-                field.preferredMaxLayoutWidth = width
-                labelWidthUpdates += 1
-                changed = true
-            }
-        }
-        if changed {
-            labelPassesAtSize += 1
-            view.needsLayout = true
-        }
-    }
 }
 
 // MARK: - Small control factory (dialog controls keep their Windows resource id in a comment)
 
 enum OptionsUI {
 
-    /// The widest a wrapping label may ask to be: the content width of a page in the 660 pt
-    /// Options window, less some room for a label that shares a row.
-    static let wrappingLabelWidth: CGFloat = 520
-
-    /// Every text field in `view` that wraps onto more than one line.
-    static func forEachWrappingLabel(in view: NSView, _ body: (NSTextField) -> Void) {
-        for child in view.subviews {
-            if let field = child as? NSTextField, !field.isEditable, field.maximumNumberOfLines != 1,
-               field.cell?.wraps == true || field.lineBreakMode == .byWordWrapping
-                || field.lineBreakMode == .byCharWrapping {
-                body(field)
-            }
-            // A table's cells are laid out by the table, not by the page.
-            if child is NSScrollView || child is NSTableView { continue }
-            forEachWrappingLabel(in: child, body)
-        }
-    }
-
-    /// Caps the one-line intrinsic width of every wrapping label (see `viewDidLayout`).
-    static func capWrappingLabels(in view: NSView) {
-        forEachWrappingLabel(in: view) { field in
-            if field.preferredMaxLayoutWidth == 0 || field.preferredMaxLayoutWidth > wrappingLabelWidth {
-                field.preferredMaxLayoutWidth = wrappingLabelWidth
-            }
-        }
-    }
-
     static func label(_ langID: UInt32, _ fallback: String) -> NSTextField {
-        let f = NSTextField(labelWithString: Lang.text(langID, fallback))
-        f.lineBreakMode = .byWordWrapping
-        f.maximumNumberOfLines = 3
-        return f
-    }
-
-    /// LangSetDlgItems_Colon: the lang text with a trailing ":".
-    static func colonLabel(_ langID: UInt32, _ fallback: String) -> NSTextField {
-        let base = Lang.text(langID, fallback)
-        let text = base.hasSuffix(":") ? base : base + ":"
-        let f = NSTextField(labelWithString: text)
-        f.lineBreakMode = .byWordWrapping
-        f.maximumNumberOfLines = 2
-        return f
-    }
-
-    static func note(_ text: String) -> NSTextField {
-        let f = NSTextField(wrappingLabelWithString: text)
-        f.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        f.textColor = .secondaryLabelColor
-        f.isSelectable = true
-        return f
+        RcPlace.makeLabel(Lang.text(langID, fallback))
     }
 
     static func checkbox(_ langID: UInt32, _ fallback: String, _ target: AnyObject, _ action: Selector) -> NSButton {
@@ -203,17 +103,10 @@ enum OptionsUI {
         return b
     }
 
-    static func button(_ title: String, _ target: AnyObject, _ action: Selector) -> NSButton {
-        let b = NSButton(title: title, target: target, action: action)
-        b.bezelStyle = .rounded
-        return b
-    }
-
     /// The `"..."` browse button next to a path field.
     static func browseButton(_ target: AnyObject, _ action: Selector) -> NSButton {
         let b = NSButton(title: "...", target: target, action: action)
         b.bezelStyle = .rounded
-        b.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         return b
     }
 
@@ -228,64 +121,60 @@ enum OptionsUI {
         return f
     }
 
-    static func vstack(_ views: [NSView], spacing: CGFloat = 8) -> NSStackView {
-        let s = NSStackView(views: views)
-        s.orientation = .vertical
-        s.alignment = .leading
-        s.spacing = spacing
-        return s
-    }
-
-    static func hstack(_ views: [NSView], spacing: CGFloat = 8) -> NSStackView {
-        let s = NSStackView(views: views)
-        s.orientation = .horizontal
-        s.alignment = .firstBaseline
-        s.spacing = spacing
-        return s
-    }
-
-    static func scrollTable(_ table: NSTableView, minHeight: CGFloat = 200) -> NSScrollView {
+    /// A report-style list view (SysListView32 with WS_BORDER): the list font, 17 px rows, a
+    /// 24 px header (or none), full-row selection, no alternating rows -- as the Windows control
+    /// draws in the Options pages.
+    static func listTable(_ table: NSTableView, header: Bool) -> NSScrollView {
+        table.style = .plain
+        table.rowHeight = 17
+        table.intercellSpacing = NSSize(width: 0, height: 0)
+        table.usesAlternatingRowBackgroundColors = false
+        table.gridStyleMask = []
+        table.columnAutoresizingStyle = .noColumnAutoresizing
+        table.allowsColumnReordering = false
+        if header {
+            let headerView = NSTableHeaderView(frame: NSRect(x: 0, y: 0, width: 100, height: 24))
+            table.headerView = headerView
+        } else {
+            table.headerView = nil
+        }
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = false
-        scroll.borderType = .bezelBorder
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight).isActive = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.borderType = .lineBorder
         return scroll
     }
 
-    /// Sizes every column of `table` to its header and to the widest of `texts[id]` (the strings
-    /// its cells will show), plus `extra[id]` for an icon, and lets the last column take what is
-    /// left. A list view column on Windows is sized by the page code the same way
-    /// (`ListView_SetColumnWidth(LVSCW_AUTOSIZE_USEHEADER)`); without it the fixed widths of the
-    /// System and Language pages added up to more than the page and the table squeezed them all,
-    /// cutting "Default application" and "444 / 444 = 100%" (requests.md, `packaging` -> `options`).
-    static func sizeColumnsToContent(_ table: NSTableView, texts: [String: [String]],
-                                     extra: [String: CGFloat] = [:]) {
-        let cellFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let padding: CGFloat = 14
-        for column in table.tableColumns {
-            let id = column.identifier.rawValue
-            var width = column.headerCell.cellSize.width + padding
-            for text in texts[id] ?? [] {
-                let size = (text as NSString).size(withAttributes: [.font: cellFont])
-                width = max(width, ceil(size.width) + padding + (extra[id] ?? 0))
-            }
-            column.minWidth = min(width, 60)
-            column.width = width
-        }
-        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
-        table.enclosingScrollView?.hasHorizontalScroller = true
-        table.enclosingScrollView?.autohidesScrollers = true
-    }
-
-    static func column(_ id: String, _ title: String, width: CGFloat) -> NSTableColumn {
+    static func column(_ id: String, _ title: String, width: CGFloat, alignment: NSTextAlignment = .left) -> NSTableColumn {
         let c = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
         c.title = title
         c.width = width
-        c.minWidth = 40
+        c.minWidth = 10
+        c.resizingMask = .userResizingMask
+        c.headerCell.alignment = alignment
+        c.headerCell.font = PanelMetrics.listFont
         return c
+    }
+
+    /// A list cell: the list font, `inset` px from the column's aligned edge (LVCFMT_LEFT text is
+    /// 6 px in, as in the main list, PanelMetrics).
+    static func cellText(_ text: String, alignment: NSTextAlignment = .left) -> NSTableCellView {
+        let cell = NSTableCellView()
+        let field = NSTextField(labelWithString: text)
+        field.font = PanelMetrics.listFont
+        field.alignment = alignment
+        field.lineBreakMode = .byTruncatingTail
+        field.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(field)
+        cell.textField = field
+        NSLayoutConstraint.activate([
+            field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+            field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
     }
 }
 
@@ -295,7 +184,20 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
 
     static let shared = OptionsWindowController()
 
+    // The property sheet as 7zFM 26.03 shows it (dlgfeel-data/win/dlg-options-*.txt): a fixed
+    // 494 x 550 client area (no WS_THICKFRAME), the tab control at 6,7 482x507, the page at
+    // 10,29 474x481 (the IDD_* templates' 316 x 296 DLU), and the four 75 x 23 buttons at y 520.
+    static let clientSize = NSSize(width: 494, height: 550)
+    static let tabControlRect = NSRect(x: 6, y: 7, width: 482, height: 507)
+    static let pageRect = NSRect(x: 10, y: 29, width: 474, height: 481)
+    static var pageSize: NSSize { pageRect.size }
+    static let okRect = NSRect(x: 170, y: 520, width: 75, height: 23)          // IDOK
+    static let cancelRect = NSRect(x: 251, y: 520, width: 75, height: 23)      // IDCANCEL
+    static let applyRect = NSRect(x: 332, y: 520, width: 75, height: 23)       // ID_APPLY_NOW 12321
+    static let helpRect = NSRect(x: 413, y: 520, width: 75, height: 23)        // IDHELP
+
     private let tabView = NSTabView()
+    private let tabControl = OptionsTabControl(frame: OptionsWindowController.tabControlRect)
     private var pages: [OptionsPageBase] = []
     private let okButton = NSButton()
     private let cancelButton = NSButton()
@@ -304,15 +206,11 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
     private var languageWasChanged = false      // CLangPage::LangWasChanged
 
     init() {
-        // A property sheet is as large as its largest page (PropertySheet sizes to the biggest
-        // template). 580 pt holds the tallest page -- the 7-Zip page in French, Russian, Hebrew or
-        // Ukrainian once the Finder-extension status has wrapped to three lines, measured at
-        // 566 pt (OptGapsTests.testOptionsPagesFitTheirWindow).
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 580),
-                              styleMask: [.titled, .closable, .resizable],
+        // Not resizable: a property sheet has a fixed frame (user finding 14).
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.clientSize),
+                              styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
         window.title = Lang.text(2100, "Options")     // IDS_OPTIONS 2100
-        window.minSize = NSSize(width: 560, height: 420)
         window.tabbingMode = .disallowed
         TestAnimations.apply(to: window)
         window.isReleasedWhenClosed = false          // the controller reuses it on every open
@@ -339,14 +237,14 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
 
     private func buildContent() {
         guard let window else { return }
-        let content = NSView()
+        let content = OptionsSheetView(frame: NSRect(origin: .zero, size: Self.clientSize))
+        content.owner = self
 
         // The small-screen templates IDD_SYSTEM_2, IDD_MENU_2, IDD_FOLDERS_2, IDD_EDIT_2,
         // IDD_SETTINGS_2, IDD_LANG_2 -- and likewise IDD_BENCH_2, IDD_COMPRESS_2, IDD_EXTRACT_2,
         // IDD_OVERWRITE_2, IDD_PROGRESS_2 of the other dialogs -- are not ported: macOS always gets
         // the full-size dialog (01 §9 #14, PROGRESS "Not applicable on macOS").
-        // Page order = OptionsDialog.cpp:13-20. The Plugins page is macOS-only (informational:
-        // 26.03 has no plugin chooser, 03 section 3.4) and comes last so the Windows order holds.
+        // Page order = OptionsDialog.cpp:13-20. 26.03 has no Plugins page (user finding 22).
         pages = [
             OptionsSystemPage(),      // IDD_SYSTEM 2200
             OptionsMenuPage(),        // IDD_MENU 2300  ("7-Zip")
@@ -354,9 +252,10 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
             OptionsEditorPage(),      // IDD_EDIT 2103
             OptionsSettingsPage(),    // IDD_SETTINGS 2500
             OptionsLanguagePage(),    // IDD_LANG 2101
-            OptionsPluginsPage(),     // macOS only
         ]
-        tabView.translatesAutoresizingMaskIntoConstraints = false
+        tabView.tabViewType = .noTabsNoBorder
+        tabView.drawsBackground = false
+        tabView.frame = Self.pageRect
         for page in pages {
             page.owner = self
             let item = NSTabViewItem(viewController: page)
@@ -366,33 +265,27 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         // Only now: adding the first item selects it, and that must not overwrite the stored
         // "last page" before reloadPages() has read it.
         tabView.delegate = self
+        tabControl.setTitles(pages.map(pageTitle))
+        tabControl.onSelect = { [weak self] index in self?.tabView.selectTabViewItem(at: index) }
 
         configure(okButton, Lang.text(401, "OK"), #selector(okPressed(_:)))            // IDOK -> lang 401
         configure(cancelButton, Lang.text(402, "Cancel"), #selector(cancelPressed(_:)))  // IDCANCEL -> 402
-        // "Apply" comes from comctl32 on Windows (PSBTN_APPLYNOW), so no lang id exists for it
+        // "&Apply" comes from comctl32 on Windows (PSBTN_APPLYNOW), so no lang id exists for it
         configure(applyButton, "Apply", #selector(applyPressed(_:)))
         configure(helpButton, Lang.text(409, "Help"), #selector(helpPressed(_:)))        // IDHELP -> 409
         okButton.keyEquivalent = "\r"
         cancelButton.keyEquivalent = "\u{1b}"
         applyButton.isEnabled = false
 
-        let buttons = NSStackView(views: [helpButton, NSView(), applyButton, cancelButton, okButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
-        buttons.translatesAutoresizingMaskIntoConstraints = false
-
+        content.addSubview(tabControl)
         content.addSubview(tabView)
-        content.addSubview(buttons)
-        NSLayoutConstraint.activate([
-            tabView.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
-            tabView.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
-            tabView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
-            buttons.topAnchor.constraint(equalTo: tabView.bottomAnchor, constant: 12),
-            buttons.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-            buttons.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-            buttons.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -14),
-        ])
+        for (button, rect) in [(okButton, Self.okRect), (cancelButton, Self.cancelRect),
+                               (applyButton, Self.applyRect), (helpButton, Self.helpRect)] {
+            content.addSubview(button)
+            RcPlace.button(button, rect)
+        }
         window.contentView = content
+        window.setContentSize(Self.clientSize)
     }
 
     private func configure(_ button: NSButton, _ title: String, _ action: Selector) {
@@ -400,8 +293,22 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         button.bezelStyle = .rounded
         button.target = self
         button.action = action
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 84).isActive = true
+    }
+
+    /// The number of pages (PSM_GETTABCONTROL item count).
+    var pageCount: Int { pages.count }
+
+    /// PSM_SETCURSEL: show page `index`.
+    func selectPage(_ index: Int) {
+        tabView.selectTabViewItem(at: index)
+    }
+
+    /// Ctrl+Tab / Ctrl+Shift+Tab / Ctrl+PgDn / Ctrl+PgUp move between the pages, as in every
+    /// property sheet.
+    fileprivate func cyclePage(by delta: Int) {
+        guard !pages.isEmpty else { return }
+        let current = tabView.selectedTabViewItem.map { tabView.indexOfTabViewItem($0) } ?? 0
+        tabView.selectTabViewItem(at: (current + delta + pages.count) % pages.count)
     }
 
     /// Page titles come only from the lang file, with the .rc caption as fallback
@@ -428,15 +335,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         languageWasChanged = false
         let index = min(max(Settings.optionsLastPage, 0), pages.count - 1)
         tabView.selectTabViewItem(at: index)
+        tabControl.select(index)
         window?.title = Lang.text(2100, "Options")
-    }
-
-    /// The number of pages (PSM_GETTABCONTROL item count).
-    var pageCount: Int { pages.count }
-
-    /// PSM_SETCURSEL: show page `index`.
-    func selectPage(_ index: Int) {
-        tabView.selectTabViewItem(at: index)
     }
 
     func pageDidChange() {
@@ -452,6 +352,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         cancelButton.title = Lang.text(402, "Cancel")
         applyButton.title = "Apply"   // not in the lang files (comctl32 string)
         helpButton.title = Lang.text(409, "Help")
+        tabControl.setTitles(pages.map(pageTitle))
         for (i, page) in pages.enumerated() {
             tabView.tabViewItem(at: i).label = pageTitle(page)
             page.loadViewIfNeeded()
@@ -510,6 +411,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
 
     func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
         guard let item = tabViewItem, let index = tabView.tabViewItems.firstIndex(of: item) else { return }
+        tabControl.select(index)
         Settings.optionsLastPage = index
     }
 
@@ -517,5 +419,31 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
         for page in pages where page.pageIsChanged { page.clearChanged() }
         pageDidChange()
         return true
+    }
+}
+
+/// The sheet's client area: flipped like the .rc, and the property sheet's page keys.
+final class OptionsSheetView: RcFormView {
+    weak var owner: OptionsWindowController?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if mods.contains(.control), !mods.contains(.command), !mods.contains(.option),
+           let key = event.charactersIgnoringModifiers?.unicodeScalars.first.map({ Int($0.value) }) {
+            switch key {
+            case 0x09, 0x19:                    // Tab, Shift+Tab (backtab)
+                owner?.cyclePage(by: mods.contains(.shift) || key == 0x19 ? -1 : 1)
+                return true
+            case NSPageDownFunctionKey:
+                owner?.cyclePage(by: 1)
+                return true
+            case NSPageUpFunctionKey:
+                owner?.cyclePage(by: -1)
+                return true
+            default:
+                break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }

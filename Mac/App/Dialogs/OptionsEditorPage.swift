@@ -4,7 +4,9 @@
 //
 // Windows browses for an .exe and drops any arguments the field held (SplitCmdLineSmart). On
 // macOS a "program" is usually an application bundle, so the browse panel accepts both a bundle
-// and a plain executable; the stored string may still carry arguments, exactly like Windows.
+// and a plain executable; the stored string may still carry arguments, exactly like Windows (the
+// file path is appended as the last argument). The page is IDD_EDIT's template: label, then the
+// full-width field and its "..." button, three times (dlgfeel finding 18), no placeholders.
 
 import Cocoa
 import UniformTypeIdentifiers
@@ -20,7 +22,6 @@ final class OptionsEditorPage: OptionsPageBase {
     private struct Row {
         let langID: UInt32
         let fallback: String
-        let hint: String
         let get: () -> String
         let set: (String) -> Void
     }
@@ -34,37 +35,29 @@ final class OptionsEditorPage: OptionsPageBase {
         super.loadView()
         rows = [
             // IDT_EDIT_VIEWER 543 / IDE_EDIT_VIEWER 100 / IDB_EDIT_VIEWER 101 -- FM.Viewer
-            Row(langID: 543, fallback: "View", hint: "empty = Quick Look",
-                get: { Settings.viewerPath }, set: { Settings.viewerPath = $0 }),
+            Row(langID: 543, fallback: "View", get: { Settings.viewerPath }, set: { Settings.viewerPath = $0 }),
             // IDT_EDIT_EDITOR 2104 / IDE_EDIT_EDITOR 102 / IDB_EDIT_EDITOR 103 -- FM.Editor
-            Row(langID: 2104, fallback: "Editor", hint: "empty = TextEdit (the notepad.exe fallback)",
-                get: { Settings.editorPath }, set: { Settings.editorPath = $0 }),
+            Row(langID: 2104, fallback: "Editor", get: { Settings.editorPath }, set: { Settings.editorPath = $0 }),
             // IDT_EDIT_DIFF 2105 / IDE_EDIT_DIFF 104 / IDB_EDIT_DIFF 105 -- FM.Diff
-            Row(langID: 2105, fallback: "Diff", hint: "empty hides the Diff command",
-                get: { Settings.diffPath }, set: { Settings.diffPath = $0 }),
+            Row(langID: 2105, fallback: "Diff", get: { Settings.diffPath }, set: { Settings.diffPath = $0 }),
         ]
 
-        var views: [NSView] = []
+        // (label, field, button) ids of each row in EditPage.rc
+        let ids: [(Int, Int, Int)] = [(543, 100, 101), (2104, 102, 103), (2105, 104, 105)]
+        let rc = self.rc
         for (index, row) in rows.enumerated() {
-            let label = OptionsUI.colonLabel(row.langID, row.fallback)
-            label.translatesAutoresizingMaskIntoConstraints = false
-            label.widthAnchor.constraint(greaterThanOrEqualToConstant: 60).isActive = true
+            let label = OptionsUI.label(row.langID, row.fallback)
             let field = OptionsUI.textField(self, #selector(fieldEdited(_:)))
             field.tag = index
             field.delegate = self
-            field.translatesAutoresizingMaskIntoConstraints = false
-            field.widthAnchor.constraint(greaterThanOrEqualToConstant: 360).isActive = true
-            field.placeholderString = row.hint
             let button = OptionsUI.browseButton(self, #selector(browse(_:)))
             button.tag = index
             labels.append(label)
             fields.append(field)
-            views.append(OptionsUI.vstack([label, OptionsUI.hstack([field, button])], spacing: 4))
+            form.add(label, rc, ids[index].0)
+            form.add(field, rc, ids[index].1)
+            form.add(button, rc, ids[index].2)
         }
-        views.append(OptionsUI.note("A value may be an application bundle (\u{201C}/Applications/BBEdit.app\u{201D}), "
-                                    + "an executable, or a command line with arguments \u{2014} the file path is "
-                                    + "appended as the last argument, as on Windows."))
-        install(OptionsUI.vstack(views, spacing: 12))
     }
 
     // MARK: OnInit
