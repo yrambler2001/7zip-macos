@@ -63,9 +63,24 @@ enum PanelMetrics {
 /// header cell keeps only 3 pt (listfeel.md §2).
 final class PanelHeaderCell: NSTableHeaderCell {
     static let extraInset: CGFloat = 3
+    static let baselineShift: CGFloat = 5
+    /// The Windows 11 header divider: 1 px (229) at the item's right edge - 1, the header's full
+    /// 24 px (recheck §2; AppKit draws a short one in the middle).
+    static let divider = WinChrome.dynamic(WinChrome.gray(229), .separatorColor)
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        WinChrome.window.setFill()
+        cellFrame.fill()
+        Self.divider.setFill()
+        NSRect(x: cellFrame.maxX - 1, y: cellFrame.minY, width: 1, height: cellFrame.height).fill()
+        drawInterior(withFrame: cellFrame, in: controlView)
+    }
 
     override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
         var frame = cellFrame
+        // The text's baseline 16 px down the 24 px header, as SysHeader32 centres Segoe UI 9
+        // ("Name" ink rows 7..15, recheck §2); AppKit's cell put it 5 px higher.
+        frame.origin.y += Self.baselineShift
         switch alignment {
         case .right: frame.size.width -= Self.extraInset
         case .center: break
@@ -85,6 +100,7 @@ extension PanelViewController {
         let header = PanelHeaderCell(textCell: info.title)
         header.alignment = PanelFormat.alignment(for: info.varType, propID: info.propID)
         header.font = PanelMetrics.listFont                       // SysHeader32: the list's font
+        header.textColor = WinChrome.text                         // COLOR_WINDOWTEXT, not AppKit grey
         column.headerCell = header
         column.title = info.title
         column.width = CGFloat(info.width)

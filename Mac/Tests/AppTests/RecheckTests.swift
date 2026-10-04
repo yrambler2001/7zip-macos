@@ -301,4 +301,12 @@ final class RecheckTests: AppHostTestCase {
         XCTAssertTrue(appeared)
         XCTAssertTrue(wait(for: "About closed by Esc", timeout: 5) { closed })
     }
+
+    /// CW_USEDEFAULT: 1440 x 753 at the work area's top-left cascade slot for a 1920 x 1032 area.
+    func testDefaultWindowFrameIsTheWindowsDefault() {
+        let frame = MainWindowController.defaultFrame(in: NSRect(x: 0, y: 48, width: 1920, height: 1032))
+        XCTAssertEqual(frame.size, NSSize(width: 1440, height: 753))
+        XCTAssertEqual(frame.minX, 26)
+        XCTAssertEqual(frame.maxY, 48 + 1032 - 26)
+    }
 }
