@@ -327,7 +327,19 @@ Nothing outside `Mac/` was touched.
 
 ## 13. Verification
 
-RESULTS
+All runs used `DEVELOPER_DIR=/Applications/Xcode.app`, at the final code.
+
+| run | result |
+|---|---|
+| `Mac/scripts/build.sh` | clean, no warnings in `Mac/` |
+| `Mac/scripts/test.sh` (unit) | 388 passed, 0 failed |
+| `Mac/scripts/test.sh -H` (app-hosted) | 158 passed, 0 failed (`ListFeelTests` 13) |
+| `Mac/scripts/test.sh -u` (input shard + both probe shards) | 61 passed, 0 failed (`ListFeelInputTests` 2) |
+
+Along the way: the first `-H` run failed `InfoHangTests` (it expected a dialog for Info with nothing
+operated on the file system, where 7zFM opens none) and `HostTargetTests` (the variant Info.plist).
+Both tests were updated, and four `SelColorsTests` failures were only the knock-on of the dialog
+that test left up. Each passes alone and in the full run above.
 
 ## 14. The Windows machine
 
