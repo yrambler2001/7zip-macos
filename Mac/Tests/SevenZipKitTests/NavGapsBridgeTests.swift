@@ -259,17 +259,19 @@ final class NavGapsBridgeTests: XCTestCase {
 
     // MARK: - raw-property column widths (archgaps follow-up)
 
-    func testRawPropertyColumnsStartWideEnoughForTheirHex() throws {
+    /// GetColumnWidth gives raw properties 100 px like every other column (PanelItems.cpp:44-51,
+    /// 195); the port used to widen hex columns, which listfeel undid for parity (listfeel.md §2).
+    func testRawPropertyColumnsStartAtTheWindowsWidth() throws {
         let wim = try SZFolder.folder(forPath: fixture("test.wim"), passwordDelegate: nil)
         let model = PanelColumnsModel(properties: wim.properties, folderType: wim.folderType,
                                       isFileSystem: false, hiddenByDefault: [], layout: nil)
         let sha1 = try XCTUnwrap(model.columns.first { $0.propID == .sha1 })
-        XCTAssertEqual(sha1.width, 300)
+        XCTAssertEqual(sha1.width, 100)
         XCTAssertEqual(model.columns.first { $0.propID == .size }?.width, 100, "ordinary columns keep 7zFM's 100")
         let xar = try SZFolder.folder(forPath: fixture("test.xar"), passwordDelegate: nil)
         let xarModel = PanelColumnsModel(properties: xar.properties, folderType: xar.folderType,
                                          isFileSystem: false, hiddenByDefault: [], layout: nil)
-        XCTAssertEqual(xarModel.columns.first { $0.propID == .checksum }?.width, 300)
+        XCTAssertEqual(xarModel.columns.first { $0.propID == .checksum }?.width, 100)
     }
 
     // MARK: - work dir "removable drives only" (PROGRESS 169)
