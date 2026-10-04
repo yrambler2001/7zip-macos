@@ -31,9 +31,15 @@ import AppKit
 enum ErrorAlert {
 
     /// MessageBox_Error (Panel.cpp:757-761): caption "7-Zip", OK, MB_ICONSTOP. Returns at once; the
-    /// box comes up from the main run loop, owned by `window` (or the app's key / main window).
+    /// box comes up from the main run loop, owned by `window`. With no window the message goes to
+    /// the log: a report from something whose window is gone (a panel of a closed window still
+    /// finishing a reload) has nobody to tell, and must not borrow another window.
     static func present(_ message: String, caption: String = "7-Zip", icon: WinMessageBox.Icon = .error,
                         on window: NSWindow?) {
+        guard let window else {
+            NSLog("7-Zip: %@ (no window to present it on)", message)
+            return
+        }
         WinMessageBox.show(message, caption: caption, icon: icon, owner: window)
     }
 

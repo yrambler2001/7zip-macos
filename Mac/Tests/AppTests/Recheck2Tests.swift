@@ -22,7 +22,7 @@ final class Recheck2Tests: AppHostTestCase {
     }
 
     override func tearDown() {
-        WinMessageBox.observers = [AppHostTestCase.dismissStrayReports]
+        WinMessageBox.observers = [recordAndDismissReports]
         for box in WinMessageBox.visibleBoxes { box.orderOut(nil) }
         NSApp.appearance = savedAppearance
         super.tearDown()
@@ -126,7 +126,7 @@ final class Recheck2Tests: AppHostTestCase {
             }
         }]
         let result = WinMessageBox.run(text, caption: caption, buttons: buttons, icon: icon, owner: owner)
-        WinMessageBox.observers = [AppHostTestCase.dismissStrayReports]
+        WinMessageBox.observers = [recordAndDismissReports]
         XCTAssertNil(NSApp.modalWindow, "the box must leave no modal session behind")
         XCTAssertFalse(seen?.isVisible ?? true, "the box must be gone")
         return (result, seen)
@@ -225,7 +225,7 @@ final class Recheck2Tests: AppHostTestCase {
         WinMessageBox.observers = [{ box in
             RunLoop.main.perform(inModes: [.modalPanel, .default]) { box.answer(.ok) }
         }]
-        defer { WinMessageBox.observers = [AppHostTestCase.dismissStrayReports] }
+        defer { WinMessageBox.observers = [recordAndDismissReports] }
         WinMessageBox.show("There are no errors", owner: nil) { answered = $0 }
         XCTAssertNil(answered, "show must not block its caller")
         XCTAssertTrue(wait(for: "the box", timeout: 10) { answered != nil })

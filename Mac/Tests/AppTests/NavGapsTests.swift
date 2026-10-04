@@ -12,7 +12,7 @@
 //   * a failed command-line open shows "Error" and closes its window (FM.cpp:975-1014; PROGRESS 78).
 //
 // Modal dialogs (the password dialog, the app-modal launch box) are answered by a timer in the
-// modal run-loop mode; panel errors are sheets and are read from the window.
+// modal run-loop mode; panel errors are message boxes owned by the window (AppHostTestCase records them).
 
 import AppKit
 import SevenZipKit
@@ -146,10 +146,9 @@ final class NavGapsTests: AppHostTestCase {
         try XCTUnwrap(panel.rows.first { $0.name == name }, "no row \(name) in \(panel.rows.map(\.name))")
     }
 
-    /// The text of the sheet on `window`, nil when there is none.
+    /// The text of the message box `window` owns (a sheet before recheck2), nil when there was none.
     private func sheetText(_ window: NSWindow?) -> String? {
-        guard let sheet = window?.attachedSheet else { return nil }
-        return ModalAnswerer.views(of: NSTextField.self, in: sheet.contentView).map(\.stringValue).joined(separator: "\n")
+        boxText(ownedBy: window)
     }
 
     /// Lets queued main-thread work run, then asserts nothing was presented.

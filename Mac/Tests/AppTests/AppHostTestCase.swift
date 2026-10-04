@@ -79,10 +79,34 @@ class AppHostTestCase: XCTestCase {
         // Titles are asserted against the English resource text, exactly as the XCUITest suite
         // asserted them with `Lang = "-"` in the settings domain.
         useLanguage("-")
-        // An error report nobody waits for (`WinMessageBox.show`, what used to be a sheet that
-        // stayed up unnoticed) is modal since recheck2: answer it after a moment, so a stray report
-        // never wedges the suite. A test that expects a box sets its own observers.
-        WinMessageBox.observers = [AppHostTestCase.dismissStrayReports]
+        // Every message box is recorded (`recordedBoxes`), and an error report nobody waits for
+        // (`WinMessageBox.show`, what used to be a sheet that stayed up unnoticed, modal since
+        // recheck2) is answered at once with its Esc answer, so a stray report never wedges the
+        // suite. A question (`WinMessageBox.run`) is left to the test's own answerer. A test that
+        // drives boxes itself sets its own observers and puts `recordAndDismissReports` back.
+        recordedBoxes = []
+        WinMessageBox.observers = [recordAndDismissReports]
+    }
+
+    struct RecordedBox {
+        let caption: String
+        let text: String
+        weak var owner: NSWindow?
+        let asynchronous: Bool
+    }
+
+    /// Every box shown since setUp (or `recordedBoxes = []`), oldest first.
+    var recordedBoxes: [RecordedBox] = []
+
+    /// The text of the last box owned by `window` -- what used to be "the sheet on the window".
+    func boxText(ownedBy window: NSWindow?) -> String? {
+        recordedBoxes.last { $0.owner != nil && $0.owner === window }?.text
+    }
+
+    lazy var recordAndDismissReports: (WinMessageBoxWindow) -> Void = { [weak self] box in
+        self?.recordedBoxes.append(RecordedBox(caption: box.caption, text: box.message, owner: box.ownerWindow,
+                                               asynchronous: box.isAsynchronous))
+        Self.dismissStrayReports(box)
     }
 
     static let dismissStrayReports: (WinMessageBoxWindow) -> Void = { box in
@@ -92,22 +116,12 @@ class AppHostTestCase: XCTestCase {
                   + Thread.callStackSymbols.prefix(14).joined(separator: "\n"))
             return
         }
-        print("APPHOST | stray message box [\(box.caption)] over '\(box.ownerWindow?.title ?? "-")': \(box.message)")
-        let timer = Timer(timeInterval: 2, repeats: false) { [weak box] _ in
+        print("APPHOST | report [\(box.caption)] over '\(box.ownerWindow?.title ?? "-")': \(box.message)\n"
+              + Thread.callStackSymbols.prefix(16).joined(separator: "\n"))
+        RunLoop.main.perform(inModes: [.modalPanel, .default, .common]) { [weak box] in
             guard let box, box.isVisible else { return }
             box.answer(box.boxButtons.escapeResult ?? .no)
         }
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    override func tearDown() {
-        if let savedLanguageCode, savedLanguageCode != SZLang.shared.currentLanguageCode {
-            useLanguage(savedLanguageCode.isEmpty ? "-" : savedLanguageCode)
-        }
-        if let savedContextProvider { ActiveContext.register(savedContextProvider) }
-        // A dialog that a failing test left modal would hang every case after it.
-        while NSApp.modalWindow != nil { NSApp.abortModal() }
-        super.tearDown()
     }
 
     // MARK: - language

@@ -122,7 +122,13 @@ enum WinMessageBox {
     static func show(_ text: String, caption: String = "7-Zip", buttons: Buttons = .ok, icon: Icon = .none,
                      owner: NSWindow?, completion: ((Result) -> Void)? = nil) {
         weak let weakOwner = owner
+        let hadOwner = owner != nil
         CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
+            // The window it was for closed in the meantime: nobody to tell (ErrorAlert.present).
+            if hadOwner, weakOwner == nil || weakOwner?.isVisible == false && weakOwner?.isMiniaturized == false {
+                NSLog("7-Zip: %@ (its window is gone)", text)
+                return
+            }
             let result = run(text, caption: caption, buttons: buttons, icon: icon, owner: weakOwner, asynchronous: true)
             completion?(result)
         }
