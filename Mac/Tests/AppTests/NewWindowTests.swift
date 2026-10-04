@@ -87,11 +87,12 @@ final class NewWindowTests: AppHostTestCase {
 
     // MARK: - re-launch of the running app (reopen Apple event)
 
-    /// Dock click / Finder double-click / `open -a` while windows are open: one more window, and
-    /// AppKit's default reaction is suppressed (false).
+    /// Finder double-click / Spotlight / `open -a` while windows are open: one more window, and
+    /// AppKit's default reaction is suppressed (false). (A Dock click shows the open windows
+    /// instead: `AppFeelTests`.)
     func testReopenWithWindowsOpenOpensAnotherWindow() throws {
         Settings.setPanelPath(scratch + "/a", 0)
-        let handled = delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: true)
+        let handled = delegate.handleReopen(from: .launcher("com.apple.finder"))
         XCTAssertFalse(handled, "AppKit must not also un-minimize or activate a window of its own")
         XCTAssertEqual(added.count, 1, "a reopen with windows open must open exactly one more window")
         let window = try XCTUnwrap(added.first?.window)
@@ -101,14 +102,14 @@ final class NewWindowTests: AppHostTestCase {
         XCTAssertTrue(wait(for: "the saved path") { panel.currentPath.hasPrefix(self.scratch + "/a") },
                       "the new window shows \(panel.currentPath)")
         // Two reopens, two more windows.
-        _ = delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: true)
+        _ = delegate.handleReopen(from: .launcher("com.apple.finder"))
         XCTAssertEqual(added.count, 2)
     }
 
-    /// Dock click with no visible window (every window minimized; with none at all the app has
+    /// A launch with no visible window (every window minimized; with none at all the app has
     /// already quit, as 7zFM's process ends with its window): a window appears.
     func testReopenWithNoVisibleWindowOpensOne() throws {
-        let handled = delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+        let handled = delegate.handleReopen(from: .launcher("com.apple.finder"))
         XCTAssertFalse(handled)
         XCTAssertEqual(added.count, 1)
         XCTAssertTrue(added.first?.window?.isVisible ?? false, "the new window is on screen")

@@ -118,12 +118,18 @@ fi
 ACTION=build
 if [ "$FOR_TESTING" = 1 ]; then ACTION=build-for-testing; fi
 say "== xcodebuild $ACTION ($CONFIG) -> $LOG"
+# The build registers its FinderSync.appex, which would take Finder's 7-Zip menu away from the
+# copy the user runs; hand it back afterwards (finderext-registration.sh, reports/appfeel.md).
+# shellcheck source=finderext-registration.sh
+. "$MAC/scripts/finderext-registration.sh"
+finderext_snapshot
 set +e
 xcodebuild -project "$MAC/7-Zip.xcodeproj" "${SCHEME_ARGS[@]}" -configuration "$CONFIG" \
   -destination 'platform=macOS,arch=arm64' \
   "${SIGN_ARGS[@]}" ${XCODEBUILD_EXTRA:-} "$ACTION" >"$LOG" 2>&1
 RC=$?
 set -e
+finderext_restore
 # Show our own diagnostics (anything under Mac/) and the verdict.
 if [ "$QUIET" = 0 ]; then
   grep -E '(^|/)Mac/[^ ]*:[0-9]+:[0-9]+: (warning|error)|error:|\*\* BUILD' "$LOG" | grep -v 'CoreSimulator\|appintentsmetadataprocessor' | tail -40 || true

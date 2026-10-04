@@ -241,6 +241,8 @@ enum FinderIntegration {
         NotificationCenter.default.addObserver(
             forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main) { _ in
             LaunchServicesRegistration.registerIfNeeded()
+            // The copy the user runs is the one whose Finder extension Finder uses (appfeel).
+            FinderExtensionControl.claimAtLaunchIfNeeded()
             FinderSettingsBridge.push()
             CompressCommands.purgeStaleEmailDirectories()
             SevenZipCommandLineEntry.runLaunchCommandIfNeeded()
