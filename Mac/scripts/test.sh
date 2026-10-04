@@ -238,7 +238,13 @@ unregister_test_apps() {
   done
 }
 
-cleanup() { restore_prefs; release_app_lock; unregister_test_apps; }
+# The test builds register the Debug FinderSync.appex and the input shard launches that copy; hand
+# Finder's extension back to the copy it used before the run (finderext-registration.sh, appfeel).
+# shellcheck source=finderext-registration.sh
+. "$MAC/scripts/finderext-registration.sh"
+finderext_snapshot
+
+cleanup() { restore_prefs; release_app_lock; unregister_test_apps; finderext_restore; }
 trap cleanup EXIT INT TERM
 
 needs_input_shard() { printf '%s\n' $TARGETS | grep -qx "$UI_TARGET"; }

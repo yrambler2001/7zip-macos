@@ -106,10 +106,14 @@ spctl --assess --type open --context context:primary-signature -v Mac/build/7-Zi
 xcrun stapler validate Mac/build/7-Zip-26.03.dmg
 ```
 
-The app needs **no** hardened-runtime exception: it uses no JIT, loads no plug-ins and sends no
-Apple events. That was checked by running an ad-hoc copy with `--options runtime` (only library
-validation had to be relaxed for that local test, because ad-hoc signatures carry no Team ID; a
-Developer ID signature gives the app and its framework the same one). The extensions keep their
+The app needs **one** hardened-runtime entitlement, `com.apple.security.automation.apple-events`
+(`Mac/Resources/App.entitlements`, already wired up): **Properties** (Info) on files outside an
+archive asks Finder for its Get Info windows, which is an Apple event to Finder. macOS asks the user
+once ("7-Zip wants to control Finder", System Settings ▸ Privacy & Security ▸ Automation); without
+that permission Info shows 7-Zip's own Properties list instead. Nothing else is needed: the app uses
+no JIT and loads no plug-ins. That was checked by running an ad-hoc copy with `--options runtime`
+(only library validation had to be relaxed for that local test, because ad-hoc signatures carry no
+Team ID; a Developer ID signature gives the app and its framework the same one). The extensions keep their
 sandbox entitlement and nothing asks for `get-task-allow`; `package.sh` asserts both.
 
 ---
@@ -169,8 +173,26 @@ pluginkit -e use -i com.yrambler2001.7zip.QuickActionCompress
 pluginkit -m -p com.apple.FinderSync -v        # "+" enabled, "-" disabled, "!" blocked
 ```
 
-The app's **Options ▸ 7-Zip** page shows the current `pluginkit` state, the command to enable it,
-and which of the eleven menu entries to show. If Finder never shows the menu, reset Launch
+Or simply tick **Options ▸ 7-Zip ▸ Integrate 7-Zip to shell context menu** and press OK / Apply:
+the box is ticked when Finder uses *this copy's* extension, and Apply turns it on or off (it runs
+the `pluginkit` commands above for the copy you are running). The same page chooses which of the
+eleven menu entries to show.
+
+How to read the `pluginkit -m` line:
+
+```
++    com.yrambler2001.7zip.FinderSync(26.03)   5A9DAFA2-…   2026-10-03 23:39:09 +0000   /…/7-Zip.app/Contents/PlugIns/FinderSync.appex
+```
+
+`+` means you switched the extension **on** (`-` off, `!` forced on by a developer tool, `=` replaced
+by another copy, blank: never chosen, which for a Finder extension means off); then the extension's
+identifier and version; then an ID and the date the copy was registered; and last the copy Finder
+actually runs. **Several copies of 7-Zip.app** (an installed one, a build, a mounted DMG) all
+register the same extension and macOS gives Finder one of them, usually the newest build;
+`pluginkit -m -D -A -v -i com.yrambler2001.7zip.FinderSync` lists them all. 7-Zip claims it for
+itself every time you start it (it unregisters the other copies with `pluginkit -r <path>`; a copy
+registers again when it is next launched), so the copy you run is the one Finder's menu calls. The
+build and test scripts hand it back to whichever copy had it before they ran. If Finder never shows the menu, reset Launch
 Services with `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain user`
 and log out and in again; a managed Mac whose MDM profile denies public extension points blocks
 it silently.
@@ -226,10 +248,11 @@ for, and those show a good deal of English alongside their own language. The ful
 
 The honest list is `Mac/docs/parity.md`. The short version:
 
-* **Opening several archives from Finder at once**: the first one opens in the front window, the
-  others in windows of their own (Windows opens one window per archive).
-* **Re-launching the app** (Dock, Finder) brings its window forward instead of opening a new one,
-  as Mac apps do; `open -n -a 7-Zip` starts a second window.
+* **Starting 7-Zip again while it runs** (from Finder, Spotlight, `open -a`) opens a new window,
+  as a second `7zFM.exe` does; **clicking its Dock icon** only shows the open windows, as Mac apps
+  do. On macOS 14 and 15 Launchpad belongs to the Dock, so starting 7-Zip from Launchpad behaves
+  like a Dock click. File ▸ New Window (Option-Command-N) always opens one.
+* **Opening archives from Finder** gives each archive its own window, as on Windows.
 * **Right-to-left languages are not mirrored** — the text is right, the layout is left-to-right.
 * **About a quarter of the translations are incomplete upstream** and fall back to English for
   what they miss.

@@ -137,7 +137,12 @@ Current list. The first audit's 24 items are accounted for at the end of this se
    click, a Finder double-click of the app or `open -a 7-Zip` opens a new window, with windows
    open or not, as a new 7zFM process would (`01 §1.1`); File ▸ New Window (Option+Cmd+N, a macOS
    addition) does the same. Arguments given to `open -a … --args` on a running app are not
-   delivered by Launch Services; `open -n` still starts a second process.
+   delivered by Launch Services; `open -n` still starts a second process. **Refined by
+   `mac/appfeel` (user request 7):** a **Dock click** now only shows the open windows (restores a
+   minimized one), as Mac apps do; every other re-launch still opens a window. The two are the same
+   reopen event, told apart by its sender (`com.apple.dock`); a sender-less event shows the open
+   windows. On macOS 14-15 Launchpad is the Dock process, so it behaves like a Dock click
+   (`reports/appfeel.md` §1).
 7. **Cancel during a command-line wildcard scan** (`7zG a … *.txt -r` from the Finder extension or
    a `sevenzip://` URL) takes effect when the engine's directory walk returns: the walk has no
    break check. The window and the Cancel button are there; the app no longer hangs during it.
@@ -165,6 +170,7 @@ decided up front (`00-orchestration.md`, `01 §9`, `03 §6`).
 | Windows | macOS | Why |
 |---|---|---|
 | Explorer shell DLL (`IContextMenu`), drop handler, right-drag menu (`03 §1.1, §1.7`) | Finder Sync extension, Services, Quick Actions; Control-drag menu | macOS has no COM shell extensions, and Finder has no right-drag menu |
+| Options ▸ 7-Zip "Integrate 7-Zip to shell context menu" registers 7-zip.dll (`01b §4.13`, MenuPage.cpp) | ticked when Finder uses *this copy's* Finder Sync extension, disabled in a copy without one; Apply runs `pluginkit -a` / `-e use` / `-e ignore` | PlugInKit instead of the registry; `reports/appfeel.md` §2 |
 | `7zG.exe` as a second process (`01 §9 #1`) | one process; `argv[1] ∈ {a,u,d,x,e,t,h,b}` puts the app into command mode with a real exit code | one binary, no helper bundle |
 | `#7zMap` shared-memory selection transport (`03 §1.5`) | `-aiw-!<path>` / `-aiw-@<listfile>` and a `sevenzip://` URL | no shared sections between a sandboxed appex and the app |
 | Recycle Bin (`01 §9 #9`) | `NSFileManager.trashItem`; Shift+Cmd+Backspace deletes permanently | — |
@@ -185,7 +191,7 @@ decided up front (`00-orchestration.md`, `01 §9`, `03 §6`).
 | Drive letters, `\\.\` physical-drive imaging, Network root (`01 §6.2, §6.3, §6.6`) | Computer = mounted volumes plus Documents; imaging and Network dropped | — |
 | Win32 controls, dialog units, the `IDD_*_2` small-screen templates (`01 §9 #14, #33`) | AppKit views; always the full menus and full-size dialogs | — |
 | `DeleteOldTempFiles` never called (`01 §1.1`, `§9 #11`) | stale `7zO*` / `7zE*` folders swept at launch, conservatively (L.1) | an improvement, documented as such |
-| One 7zFM process per window | one process, one window per launch: a re-launch (Dock, Finder, `open -a`) or File ▸ New Window opens one; each window saves its state on close (last closed wins), Quit saves them back to front | macOS application model; `reports/newwindow.md` |
+| One 7zFM process per window | one process, one window per launch: a re-launch (Finder, Spotlight, `open -a`) or File ▸ New Window opens one, a Dock click shows the open windows (`reports/appfeel.md`); each window saves its state on close (last closed wins), Quit saves them back to front | macOS application model; `reports/newwindow.md` |
 | Back / Forward | View ▸ Back / Forward (Cmd+[ / Cmd+]) over the panel's folder history | an addition; 7zFM has no navigation stack |
 | `FM\NumPanels`, `CurrentPanel`, `SplitterPos`, the `Columns` blob, `Compression\Options\<fmt>` sub-keys | `FM.Panels.*` (the splitter as a ratio), `FM.Columns.<ID>` as JSON, flat `Compression.Options.<Fmt>.<Name>` keys, `MemUse64` | `UserDefaults` value types; recorded as spec corrections in `requests.md` |
 

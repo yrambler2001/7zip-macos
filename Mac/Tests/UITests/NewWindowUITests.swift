@@ -5,7 +5,9 @@
 // A Dock click, a Finder double-click of 7-Zip.app and `open -a 7-Zip` all reach a running app as
 // the *reopen* Apple event, which Launch Services sends when it is asked to open an application
 // that is already running: `NSWorkspace.openApplication(at:)` aimed at this shard's bundle is
-// exactly that request. A Finder double-click of an archive is the *open documents* event:
+// exactly that request, sent by the test runner -- i.e. a launch, which opens a window. A Dock
+// click is the same event sent by the Dock, which only shows the open windows (appfeel); those
+// cases click the real Dock tile. A Finder double-click of an archive is the *open documents* event:
 // `NSWorkspace.open(_:withApplicationAt:)`. Neither drives another application, so no Automation
 // consent is involved (Mac/docs/reports/vmcheck.md). The in-process half of the same cases is
 // `Mac/Tests/AppTests/NewWindowTests.swift`.
@@ -42,7 +44,8 @@ final class NewWindowUITests: SevenZipUITestCase {
         return outcome != nil && (outcome ?? nil) == nil
     }
 
-    /// "Open the application" while it runs: the reopen event of a Dock click / `open -a`.
+    /// "Open the application" while it runs, from the test runner: the reopen event of a launch
+    /// from Finder / Spotlight / `open -a` (its sender is not the Dock).
     private func sendReopen() throws -> Bool {
         let url = try appURL()
         let configuration = NSWorkspace.OpenConfiguration()
@@ -98,6 +101,87 @@ final class NewWindowUITests: SevenZipUITestCase {
         sevenZip.closeOpenMenus()
         XCTAssertEqual(listed.count, 2, "the reopen must open a new window, not un-minimize: \(listed)")
         screenshot("05-reopen-after-minimize")
+    }
+
+    // MARK: - a Dock click (appfeel, user request 7)
+
+    /// This app's tile in the Dock, found through the Dock's own accessibility tree (no Automation
+    /// consent: XCUITest reads and clicks other apps' elements as the test runner). The running
+    /// app's tile comes before the "recent applications" section, so the first tile with the app's
+    /// name is the running one.
+    private func dockTile() throws -> XCUIElement {
+        let dock = XCUIApplication(bundleIdentifier: "com.apple.dock")
+        let name = (try appURL()).deletingPathExtension().lastPathComponent
+        // A Dock tile is an AXDockItem, which XCUITest reports as `.dockItem`.
+        let tile = dock.descendants(matching: .dockItem).matching(NSPredicate(format: "title == %@", name)).firstMatch
+        guard tile.waitForExistence(timeout: 10) else {
+            let all = dock.descendants(matching: .any).allElementsBoundByIndex.prefix(40)
+                .map { "\($0.elementType.rawValue):\($0.title)" }
+            throw XCTSkip("no Dock tile titled \(name) (Dock elements: \(all))")
+        }
+        return tile
+    }
+
+    /// A click on the Dock tile sends the reopen event from the Dock: the open window is shown,
+    /// and no new window is opened (a launch from Finder / Spotlight / `open -a` still opens one,
+    /// `testReopenWithAWindowOpenOpensAnotherWindow`).
+    func testDockClickShowsTheOpenWindowInsteadOfOpeningOne() throws {
+        launch(seed: .values([SettingsDomain.Key.panelPath0: TestPaths.fixtures]))
+        XCTAssertTrue(waitForManagerWindows(1))
+        try dockTile().click()
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        XCTAssertEqual(managerWindows.count, 1, "a Dock click must not open a window")
+        XCTAssertTrue(waitFor("the app in front") { self.app.state == .runningForeground })
+        screenshot("06-dock-click-shows-window")
+    }
+
+    /// With the only window minimized, a Dock click brings it back -- one window, on screen -- as
+    /// every Mac app does.
+    func testDockClickRestoresTheMinimizedWindow() throws {
+        launch()
+        XCTAssertTrue(waitForManagerWindows(1))
+        XCTAssertTrue(sevenZip.selectMenuItem("Window", "Minimize"))
+        XCTAssertTrue(waitFor("the window minimized") {
+            !self.managerWindows.allElementsBoundByIndex.contains { $0.isHittable }
+        }, "the window did not minimize")
+        try dockTile().click()
+        XCTAssertTrue(waitFor("the window back on screen") {
+            self.managerWindows.allElementsBoundByIndex.contains { $0.isHittable }
+        }, "a Dock click must restore the minimized window")
+        let listed = sevenZip.itemTitles(in: "Window").filter { $0.hasPrefix("/") }
+        sevenZip.closeOpenMenus()
+        XCTAssertEqual(listed.count, 1, "a Dock click must restore, not open a window: \(listed)")
+        screenshot("07-dock-click-restores")
+    }
+
+    /// A double-click on 7-Zip.app in a Finder window while the app runs: the reopen event comes
+    /// from Finder, i.e. a launch, which opens a new window (the Dock's sender would not). The
+    /// Finder window is opened with Launch Services and driven through its accessibility tree.
+    func testFinderDoubleClickOfTheAppOpensANewWindow() throws {
+        launch()
+        XCTAssertTrue(waitForManagerWindows(1))
+        let bundle = try appURL()
+        let name = bundle.deletingPathExtension().lastPathComponent
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.addsToRecentItems = false
+        let finderURL = try XCTUnwrap(NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder"))
+        XCTAssertTrue(deliver { done in
+            NSWorkspace.shared.open([bundle.deletingLastPathComponent()], withApplicationAt: finderURL,
+                                    configuration: configuration) { _, error in done(error) }
+        })
+        let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
+        let folderWindow = finder.windows.matching(NSPredicate(format: "title == %@",
+                                                               bundle.deletingLastPathComponent().lastPathComponent)).firstMatch
+        guard folderWindow.waitForExistence(timeout: 15) else { throw XCTSkip("no Finder window for the build folder") }
+        defer { folderWindow.typeKey("w", modifierFlags: .command) }
+        let names = [name, name + ".app"]
+        let item = folderWindow.descendants(matching: .any)
+            .matching(NSPredicate(format: "(value IN %@ OR title IN %@) AND elementType != %d",
+                                  names, names, XCUIElement.ElementType.window.rawValue)).firstMatch
+        guard item.waitForExistence(timeout: 15) else { throw XCTSkip("\(name) not found in the Finder window") }
+        item.doubleClick()
+        XCTAssertTrue(waitForManagerWindows(2), "a launch from Finder must open a window, found \(managerWindows.count)")
+        screenshot("08-finder-double-click-new-window")
     }
 
     // MARK: - File > New Window

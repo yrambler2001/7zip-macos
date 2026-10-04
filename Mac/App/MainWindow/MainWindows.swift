@@ -6,9 +6,10 @@
 // one process, so the same thing is done with a window per "launch" inside it (user decision,
 // Mac/docs/reports/newwindow.md):
 //
-//   * a re-launch of the running app -- Dock click, Finder double-click of the app, `open -a 7-Zip`
+//   * a re-launch of the running app -- Finder double-click of the app, Spotlight, `open -a 7-Zip`
 //     -- arrives as the reopen Apple event (`applicationShouldHandleReopen`) and opens a window,
-//     whether or not windows are already open;
+//     whether or not windows are already open; a Dock click sends the same event but only shows
+//     the open windows (its sender is the Dock: `ReopenSender`, reports/appfeel.md §1);
 //   * File > New Window (macOS addition, no Windows resource ID) does the same from the menu;
 //   * every archive or folder handed over by Finder / `open` / a 7zFM argv URL gets its own window
 //     (`CommandExecutor.openInFileManager`), except that the documents of a cold launch replace the

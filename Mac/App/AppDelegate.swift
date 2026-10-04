@@ -88,18 +88,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         documentWindows == 0 || startPath != nil
     }
 
-    /// A re-launch of the running app -- Dock icon click, Finder double-click of 7-Zip.app,
-    /// `open -a 7-Zip` (the reopen Apple event, `kAEReopenApplication`) -- is a new 7zFM.exe on
-    /// Windows, i.e. a new window (01 §1.1 "Single instance"; user decision,
-    /// Mac/docs/reports/newwindow.md). So a window is opened whether windows are open or not, and
-    /// AppKit's own reaction (un-minimizing a window) is suppressed by returning false.
+    /// The reopen Apple event (`kAEReopenApplication`). Two gestures send it, and the user wants
+    /// them to differ (Mac/docs/reports/appfeel.md §1):
+    ///
+    /// * a **Dock click** shows the windows that are open, as every Mac app does: nothing new when
+    ///   a file-manager window is visible (the activation brings it forward), else the last
+    ///   minimized one comes back;
+    /// * a **launch** of the running app from Finder, Spotlight, `open -a` or another app is a new
+    ///   7zFM.exe on Windows, i.e. a new window (01 §1.1 "Single instance"; reports/newwindow.md).
+    ///
+    /// Both arrive as the same event; its sender tells them apart (`ReopenSender`). A sender that
+    /// cannot be identified is treated like the Dock. AppKit's own reaction is suppressed (false)
+    /// because both cases are handled here.
     ///
     /// Not in 7zG command mode: that process shows only its command's dialogs and exits when the
     /// command ends (03 §6.4), which would take a window opened here with it.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !SevenZipCommandLineEntry.isCommandMode else { return true }
-        openNewWindow()
+        return handleReopen(from: ReopenSender.classifyCurrent())
+    }
+
+    /// The decision of `applicationShouldHandleReopen` for a known sender (tests call it directly).
+    @discardableResult
+    func handleReopen(from kind: ReopenSender.Kind) -> Bool {
+        switch kind {
+        case .launcher:
+            openNewWindow()
+        case .dock, .unknown:
+            showExistingWindows()
+        }
         return false
+    }
+
+    /// The Dock-click reaction: a visible file-manager window is left as it is (activating the app
+    /// already brings its windows forward); with none visible the most recently used minimized one
+    /// is restored; with no file-manager window at all (only a dialog left on screen) one is
+    /// opened, as a click on a running app with no window does elsewhere.
+    func showExistingWindows() {
+        let windows = MainWindows.frontToBack.compactMap(\.window)
+        if let visible = windows.first(where: { $0.isVisible && !$0.isMiniaturized }) {
+            visible.makeKeyAndOrderFront(nil)
+        } else if let minimized = windows.first(where: { $0.isMiniaturized }) {
+            minimized.deminiaturize(nil)
+            minimized.makeKeyAndOrderFront(nil)
+        } else {
+            openNewWindow()
+        }
     }
 
     /// File > New Window (macOS addition, no Windows resource ID): what a second 7zFM.exe launch

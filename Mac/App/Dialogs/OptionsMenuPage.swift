@@ -3,9 +3,9 @@
 // 6.4 / 7, 01-fm-feature-inventory.md section 9 #2 and #23.
 //
 // On Windows the first checkbox registers 7-zip.dll as a context-menu handler. On macOS the
-// context menu comes from the Finder Sync extension, which only the user can enable (System
-// Settings > General > Login Items & Extensions): the checkbox shows whether it is enabled, and
-// clicking it opens that pane. Everything else is stored under the same Options.* keys Windows
+// context menu comes from the Finder Sync extension: the checkbox shows whether Finder uses *this*
+// copy's extension and Apply switches it on or off through PlugInKit (`FinderExtensionControl`,
+// appfeel), as MenuPage.cpp's OnApply calls SetContextMenuHandler. Everything else is stored under the same Options.* keys Windows
 // uses, so the extension (the `finder` scope) reads them unchanged. The controls sit on the
 // IDD_MENU template's rects (dlgfeel); the context-menu list shows all 14 items without a
 // scroll bar, as on Windows.
@@ -18,9 +18,6 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     override var pageID: UInt32 { 2300 }                      // IDD_MENU
     override var fallbackTitle: String { "7-Zip" }
     override var helpTopic: String { "fm/options.htm#sevenZip" }
-
-    /// Bundle id of the Finder Sync extension (Mac/FinderSync/Info.plist).
-    private static let finderSyncBundleID = "com.yrambler2001.7zip.FinderSync"
 
     /// One check-list row: MenuPage.cpp kMenuItems[] (:49-71), text built like :237-278.
     private struct MenuItemRow {
@@ -74,7 +71,11 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     private var iconsWasDefined = false
     private var elimDupWasDefined = false
     /// The Finder extension's state as `pluginkit` last reported it (nil while checking).
-    private(set) var finderExtensionEnabled: Bool?
+    private(set) var finderExtensionState: FinderExtensionControl.State?
+    /// CShellDll::wasChanged: the box was clicked since the last Apply.
+    private var integrateChanged = false
+    /// The appex this copy carries (CShellDll::Path); nil disables the box (MenuPage.cpp:170-174).
+    var embeddedAppexPath: String? = FinderExtensionControl.embeddedAppexPath
 
     override func loadView() {
         super.loadView()
@@ -126,6 +127,7 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         iconsChanged = false
         elimDupChanged = false
         flagsChanged = false
+        integrateChanged = false
         cascadedWasDefined = Settings.cascadedMenu != nil
         iconsWasDefined = Settings.menuIcons != nil
         elimDupWasDefined = Settings.elimDupExtract != nil
@@ -171,49 +173,78 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
 
     // MARK: Finder Sync state (03 section 6.4 / section 7)
 
-    private func refreshIntegrationState() {
+    /// CheckContextMenuHandler (MenuPage.cpp:170-180): the box is checked when Finder uses this
+    /// copy's extension, disabled when this copy has none.
+    func refreshIntegrationState(completion: (() -> Void)? = nil) {
+        let embedded = embeddedAppexPath
+        integrateCheckbox.isEnabled = embedded != nil
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let output = Self.runPluginkit()
-            let line = output.split(separator: "\n").first { $0.contains(Self.finderSyncBundleID) }
-            let enabled = line?.hasPrefix("+") ?? false
+            let state = FinderExtensionControl.currentState(embeddedPath: embedded)
             DispatchQueue.main.async {
-                guard let self else { return }
-                self.finderExtensionEnabled = enabled
-                self.integrateCheckbox.state = enabled ? .on : .off
-                self.integrateCheckbox.toolTip = line.map(String.init)
+                self?.show(state)
+                completion?()
             }
         }
     }
 
-    private static func runPluginkit() -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
-        process.arguments = ["-m", "-p", "com.apple.FinderSync", "-v"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return ""
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(decoding: data, as: UTF8.self)
+    private func show(_ state: FinderExtensionControl.State) {
+        finderExtensionState = state
+        integrateCheckbox.isEnabled = state != .notEmbedded
+        // A click that has not been applied yet wins over a late answer from pluginkit.
+        if !integrateChanged { integrateCheckbox.state = state.isOn ? .on : .off }
+        integrateCheckbox.toolTip = FinderExtensionControl.describe(state)
     }
 
-    /// The extension can only be switched on and off by the user in System Settings: the click
-    /// opens that pane and the box goes back to the real state.
+    /// OnButtonClicked(IDX_SYSTEM_INTEGRATE_TO_MENU): only marks the page changed; Apply acts.
     @objc private func integrateClicked(_ sender: Any?) {
-        integrateCheckbox.state = finderExtensionEnabled == true ? .on : .off
-        openSystemSettings(sender)
-        refreshIntegrationState()
+        guard embeddedAppexPath != nil else { return }
+        integrateChanged = true
+        changed()
     }
 
-    @objc private func openSystemSettings(_ sender: Any?) {
-        let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences")
-            ?? URL(fileURLWithPath: "/System/Applications/System Settings.app")
-        NSWorkspace.shared.open(url)
+    /// OnApply's SetContextMenuHandler (MenuPage.cpp:299-316): switch, report a failure in a
+    /// "7-Zip" error box (ShowMenuErrorMessage), re-read the state into the box. When the election
+    /// did not take, the System Settings pane is offered as the way that always works.
+    private func applyIntegration(completion: (() -> Void)? = nil) {
+        guard integrateChanged, let embedded = embeddedAppexPath else { completion?(); return }
+        integrateChanged = false
+        let wanted = integrateCheckbox.state == .on
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let state = FinderExtensionControl.setEnabled(wanted, embeddedPath: embedded)
+            DispatchQueue.main.async {
+                let failed = state.isOn != wanted && state != .notEmbedded
+                guard let self else {
+                    // OK closed the window before PlugInKit answered: still offer the pane.
+                    if failed { FinderExtensionControl.showManagementInterface() }
+                    completion?()
+                    return
+                }
+                self.show(state)
+                if failed {
+                    let alert = NSAlert()
+                    alert.alertStyle = .critical
+                    alert.messageText = "7-Zip"
+                    alert.informativeText = (wanted
+                        ? "The Finder extension could not be turned on."
+                        : "The Finder extension could not be turned off.")
+                        + " Use System Settings > General > Login Items & Extensions > Finder.\n\n"
+                        + FinderExtensionControl.describe(state)
+                    alert.addButton(withTitle: Lang.text(401, "OK"))
+                    if let window = self.view.window {
+                        alert.beginSheetModal(for: window) { _ in FinderExtensionControl.showManagementInterface() }
+                    } else {
+                        alert.runModal()
+                        FinderExtensionControl.showManagementInterface()
+                    }
+                }
+                completion?()
+            }
+        }
+    }
+
+    /// For the tests: Apply's PlugInKit half, with a completion.
+    func applyIntegrationForTesting(completion: @escaping () -> Void) {
+        applyIntegration(completion: completion)
     }
 
     @objc private func optionClicked(_ sender: Any?) {
@@ -235,6 +266,7 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     // MARK: OnApply (MenuPage.cpp:299-358: write only what changed)
 
     override func applyPage() -> Bool {
+        applyIntegration()
         if cascadedChanged || cascadedWasDefined { Settings.cascadedMenu = cascadedCheckbox.state == .on }
         if iconsChanged || iconsWasDefined { Settings.menuIcons = iconsCheckbox.state == .on }
         if elimDupChanged || elimDupWasDefined { Settings.elimDupExtract = elimDupCheckbox.state == .on }
