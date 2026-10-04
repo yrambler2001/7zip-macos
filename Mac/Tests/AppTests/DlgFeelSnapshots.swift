@@ -65,7 +65,9 @@ final class DlgFeelSnapshots: AppHostTestCase {
 
     private var fixtures: String { TestPaths.fixtures }
     private var archive: String { TestPaths.fixture("test.7z") }
-    private var paired: Bool { ProcessInfo.processInfo.environment["DLGFEEL_PAIRED"] == "1" }
+    /// The paired captures go to Mac/docs/reports/screenshots only when Mac/build/dlgfeel/PAIRED
+    /// exists (a flag file, because xcodebuild does not pass the shell's environment on).
+    private var paired: Bool { FileManager.default.fileExists(atPath: DlgSnap.buildDirectory + "/PAIRED") }
 
     override func setUpWithError() throws {
         try super.setUpWithError()

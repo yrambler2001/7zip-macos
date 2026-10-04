@@ -289,7 +289,9 @@ final class OptGapsTests: AppHostTestCase {
         }) { window in
             func walk(_ view: NSView) {
                 if let field = view as? NSTextField, !field.isEditable,
-                   Bidi.stripped(field.stringValue) == "الملفات: 1" { fields.append(field) }
+                   Bidi.stripped(field.stringValue).components(separatedBy: "\n").contains("الملفات: 1") {
+                    fields.append(field)
+                }
                 view.subviews.forEach(walk)
             }
             window.contentView.map(walk)

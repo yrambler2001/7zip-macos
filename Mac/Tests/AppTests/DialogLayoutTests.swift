@@ -270,8 +270,8 @@ final class DialogLayoutTests: AppHostTestCase {
         let appeared = ModalProbe.present({ OptionsWindowController.showOptions() }) { _ in }
         XCTAssertTrue(appeared, "the Options window did not come up")
         guard let tabs = firstTabView(in: window) else { return XCTFail("no NSTabView in the Options window") }
-        XCTAssertEqual(tabs.numberOfTabViewItems, 7,
-                       "OptionsDialog.cpp:13-20 plus the macOS Plugins page: \(tabs.tabViewItems.map(\.label))")
+        XCTAssertEqual(tabs.numberOfTabViewItems, 6,
+                       "OptionsDialog.cpp:13-20, no Plugins page: \(tabs.tabViewItems.map(\.label))")
         for index in 0..<tabs.numberOfTabViewItems {
             tabs.selectTabViewItem(at: index)
             window.contentView?.layoutSubtreeIfNeeded()

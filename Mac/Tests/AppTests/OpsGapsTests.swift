@@ -87,8 +87,8 @@ final class OpsGapsTests: AppHostTestCase {
         defer { ModalProbe.close(window) }
         let tabs = try XCTUnwrap(firstView(of: NSTabView.self, in: window.contentView))
         let help = try XCTUnwrap(button(titled: Lang.text(409, "Help"), in: window.contentView))
-        // OptionsDialog.cpp:13-20 order, plus the macOS-only Plugins page.
-        let expected = ["#system", "#sevenZip", "#folders", "#editor", "#settings", "#language", ""]
+        // OptionsDialog.cpp:13-20 order (no Plugins page since dlgfeel).
+        let expected = ["#system", "#sevenZip", "#folders", "#editor", "#settings", "#language"]
         XCTAssertEqual(tabs.numberOfTabViewItems, expected.count)
         for index in 0..<tabs.numberOfTabViewItems {
             tabs.selectTabViewItem(at: index)

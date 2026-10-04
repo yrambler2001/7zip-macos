@@ -516,7 +516,10 @@ final class SelColorsTests: AppHostTestCase {
                             guard !text.isEmpty, control.frame.width > 1 else { continue }
                             var rect = control.convert(control.bounds, to: table)
                             if let field = control as? NSTextField {
-                                rect.size.width = min(rect.width, field.intrinsicContentSize.width)
+                                let width = min(rect.width, field.intrinsicContentSize.width)
+                                // centred text (the System page's state column) sits mid-cell
+                                if field.alignment == .center { rect.origin.x += (rect.width - width) / 2 }
+                                rect.size.width = width
                             }
                             guard let m = ContrastProbe.measure(table, rect) else { continue }
                             if emphasized {           // the emphasized selection is the accent colour
