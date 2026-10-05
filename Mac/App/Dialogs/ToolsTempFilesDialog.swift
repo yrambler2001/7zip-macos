@@ -94,7 +94,7 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
             }
             column.width = width
             column.minWidth = 10
-            column.headerCell.font = PanelMetrics.listFont
+            WinHeaderCell.install(on: column, font: PanelMetrics.listFont)   // datecols: drawn in the font
             tableView.addTableColumn(column)
         }
         tableView.usesAlternatingRowBackgroundColors = false

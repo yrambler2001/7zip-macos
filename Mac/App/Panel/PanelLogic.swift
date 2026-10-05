@@ -212,16 +212,28 @@ struct PanelColumnsModel {
     /// sffont: with SF Pro 12.2 (tabular digits) the date is 111 pt, so a time column starts at the
     /// date's width plus Windows' two 6 px margins (88 + 12 = 100 on Windows), never below 100:
     /// the full date is never cut at the default width.
+    ///
+    /// datecols: the time width follows View > Time (the level's full date, plus "Z" with UTC),
+    /// and a size column starts wide enough for "9 999 999 999 999" (PanelMetrics).
     static func defaultWidth(for info: SZPropertyInfo) -> Int {
         if info.propID == .name { return nameWidth }
         if info.varType == .fileTime { return timeWidth }
+        if sizeColumnIDs.contains(info.propID) { return sizeWidth }
         return otherWidth
     }
 
-    /// A full "yyyy-mm-dd hh:mm" date in the columns' font plus the margins on both sides; set by
-    /// the panel from its font (`PanelMetrics.timeColumnWidth`) before it builds a column model.
-    /// This file is also compiled into the unit tests, which have no font: 100 there.
+    /// A full date at the current View > Time level in the columns' font plus the margins on both
+    /// sides; set by the panel from its font (`PanelMetrics.timeColumnWidth`) before it builds a
+    /// column model. This file is also compiled into the unit tests, which have no font: 100 there.
     static var timeWidth = otherWidth
+    /// Every width an earlier build or another View > Time level gave a time column by default
+    /// (100, and each level with and without UTC in the current font): a stored time column at one
+    /// of them is still "at the default" and gets today's (`PanelMetrics.timeColumnDefaults`).
+    static var timeWidthDefaults: Set<Int> = []
+    /// The size columns (`Formatting.sizePropIDs`) and their default width, set by the panel
+    /// (`PanelMetrics.sizeColumnWidth`); empty / 100 in the unit tests.
+    static var sizeColumnIDs: Set<SZPropID> = []
+    static var sizeWidth = otherWidth
 
     var columns: [PanelColumn]
     /// The folder's own property order (`_columns`, PanelItems.cpp:127-195). The header's column
@@ -265,8 +277,15 @@ struct PanelColumnsModel {
                 column.visible = column.isName ? true : stored.visible
                 column.width = max(24, stored.width)
                 // A time column still at the old 100 px default (saved before sffont) would cut
-                // the date in SF Pro: it gets the new default.
-                if column.varType == .fileTime, stored.width == Self.otherWidth { column.width = Self.timeWidth }
+                // the date in SF Pro: it gets the new default; so does one at another level's
+                // default (datecols). A size column at the old 100 px gets the size default.
+                if column.varType == .fileTime,
+                   stored.width == Self.otherWidth || Self.timeWidthDefaults.contains(stored.width) {
+                    column.width = Self.timeWidth
+                }
+                if Self.sizeColumnIDs.contains(column.propID), stored.width == Self.otherWidth {
+                    column.width = Self.sizeWidth
+                }
                 ordered.append(column)
             }
             // Columns the stored layout did not know about keep their defaults and stay in the

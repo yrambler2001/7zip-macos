@@ -25,10 +25,14 @@ struct PanelRow {
     let cells: [SZPropID: String]
     /// Typed sort keys per PROPID (NSNumber / Date / String).
     let sortKeys: [SZPropID: Any]
+    /// The status bar's fourth part for this item: kpidMTime at kTimestampPrintLevel_SEC
+    /// (PanelListNotify.cpp:812-816, ConvertPropertyToShortString2 with its default level 0),
+    /// whatever level the list's columns use; local time unless View > Time > UTC ("Z" then).
+    let statusTime: String
 
     init(engineIndex: Int, name: String, displayName: String, isDirectory: Bool, size: UInt64,
          prefix: String = "", isDeleted: Bool = false, isPackage: Bool = false, fullPath: String = "",
-         cells: [SZPropID: String] = [:], sortKeys: [SZPropID: Any] = [:]) {
+         cells: [SZPropID: String] = [:], sortKeys: [SZPropID: Any] = [:], statusTime: String = "") {
         self.engineIndex = engineIndex
         self.name = name
         self.displayName = displayName
@@ -40,6 +44,7 @@ struct PanelRow {
         self.fullPath = fullPath
         self.cells = cells
         self.sortKeys = sortKeys
+        self.statusTime = statusTime
     }
 
     static let parent = PanelRow(engineIndex: -1, name: "..", displayName: "..", isDirectory: true, size: 0)
