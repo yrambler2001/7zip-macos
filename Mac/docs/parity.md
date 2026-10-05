@@ -185,6 +185,7 @@ decided up front (`00-orchestration.md`, `01 §9`, `03 §6`).
 | MAPI `MAPISendMail` (`03 §2.5`) | `NSSharingService.composeEmail`; the temp archive is purged later, not synchronously | no "sent" callback to delete on |
 | `CBrowseDialog` / `SHBrowseForFolder` (`01b §4.2`) | `NSOpenPanel` / `NSSavePanel` | — |
 | Ctrl accelerators and the Insert key (`01 §3.7`) | Cmd accelerators; Space selects and calculates size; Cmd+[ / Cmd+] added for Back/Forward | Apple keyboards have no Insert key |
+| Ctrl+Space, toggle the focused item's selection (`01 §3.6`) | **Option+Space** (the user's decision, `mac/feel3`); Ctrl+Space too when macOS does not take it for the input-source switch | Ctrl+Space is the input-source shortcut, Cmd+Space Spotlight |
 | Accelerator text re-appended after translation (`01 §7.2`) | mnemonics and accelerator text stripped; macOS draws key equivalents itself | — |
 | Language applied on OK (`01b §4.9`) | applied live as you pick it; Cancel restores | — |
 | External `7z.dll` and `Codecs\*.dll` (`01 §6.8`) | the engine is statically linked; the Plugins page is informational | — |

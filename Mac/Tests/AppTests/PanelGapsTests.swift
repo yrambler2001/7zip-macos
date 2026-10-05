@@ -276,19 +276,25 @@ final class PanelGapsTests: AppHostTestCase {
         XCTAssertEqual(dirItems.map(\.title), ["SHA-256 -> dir.sha256"], "C13 refuses directories")
     }
 
-    /// kOpen binds the panel to the archive.
-    func testOpenArchiveVerbBindsThePanel() {
+    /// kOpen starts a new 7zFM on Windows (ContextMenu.cpp:1264): a new window shows the archive
+    /// and this panel stays in its folder (feel3, the user's finding 5).
+    func testOpenArchiveVerbOpensANewWindow() {
         let scratch = makeScratch("open")
         let controller = makeWindow(panels: 1)
         let panel = controller.focusedPanel
         navigate(panel, to: scratch)
         select(panel, "arc.zip")
+        let before = MainWindows.controllers
         let open = sevenZipItems(panel.makeItemContextMenu())
             .first { $0.action == #selector(PanelContextCommands.sevenZipOpenArchive(_:)) }
         if let open { XCTAssertTrue(send(open, from: panel)) } else { XCTFail("no Open archive") }
-        XCTAssertTrue(wait(for: "inside arc.zip") { panel.snapshot?.isArchive == true },
-                      "Open archive did not bind the panel")
-        XCTAssertTrue(panel.rows.contains { $0.name == "readme.txt" })
+        XCTAssertTrue(wait(for: "a new window") { MainWindows.controllers.count == before.count + 1 })
+        guard let opened = MainWindows.controllers.first(where: { c in !before.contains { $0 === c } }) else { return }
+        defer { opened.window?.close() }
+        XCTAssertTrue(wait(for: "inside arc.zip") { opened.focusedPanel.snapshot?.isArchive == true },
+                      "the new window did not open the archive")
+        XCTAssertTrue(opened.focusedPanel.rows.contains { $0.name == "readme.txt" })
+        XCTAssertFalse(panel.snapshot?.isArchive ?? true, "the invoking panel moved")
     }
 
     /// The right-clicked panel becomes the focused one, so ActiveContext names its items.
