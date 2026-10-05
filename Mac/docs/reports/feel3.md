@@ -279,11 +279,14 @@ All with `DEVELOPER_DIR=/Applications/Xcode.app`.
 | `Mac/scripts/build.sh` | exit 0, no warnings in `Mac/` |
 | `Mac/scripts/test.sh` | 388 passed, 0 failed |
 | `Mac/scripts/test.sh -H` | 235 passed, 0 failed after the two expectation updates (`PanelGapsTests` Open archive → new window, `RecheckTests` tab chain names `WinComboBox`) |
-| `Mac/scripts/test.sh -u` | see §10.1 |
+| `Mac/scripts/test.sh -u` | probe1 6 / 0, probe2 6 / 0; input shard 52 / 0 on its re-run (§10.1) |
 
 ### 10.1 UI suite
 
-UI_RESULT
+The first `-u` run lost the input shard to the known "Timed out while enabling automation mode"
+(`uiverify.md`) before any test ran, while both probe shards passed (6 + 6). The input shard alone
+(`test.sh -t 7-ZipUITests`) then passed **52 / 0**, including `ListFeelInputTests.testAddressDropdownPickNavigates`
+with the new drop-down (real mouse on the arrow and on an entry).
 
 ## 11. Files
 
