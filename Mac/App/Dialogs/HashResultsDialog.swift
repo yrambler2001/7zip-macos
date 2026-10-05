@@ -19,7 +19,7 @@ final class HashListDialogView: NSView, NSTableViewDataSource, NSTableViewDelega
 
     /// IDL_LISTVIEW 100
     private let tableView = NSTableView()
-    private let scrollView = NSScrollView()
+    private let scrollView = WinScrollView()
     private(set) var strings: [String] = []
     private(set) var values: [String] = []
     let numberOfColumns: Int
@@ -174,8 +174,13 @@ final class HashListDialogView: NSView, NSTableViewDataSource, NSTableViewDelega
     private func showItemInfo() {
         let row = tableView.selectedRow
         guard row >= 0, row < strings.count else { return }
-        // 7zFM shows the text in CEditDialog; here a plain MB_OK box captioned with the row's name.
-        WinMessageBox.run(row < values.count ? values[row] : "", caption: strings[row], owner: window)
+        // CEditDialog (IDD_EDIT_DLG 94), as 7zFM: one column -> the row's text with no title,
+        // two -> the name as the title and the value as the text (ListViewDialog.cpp:207-215).
+        if numberOfColumns == 1 {
+            TextViewerDialog.show(title: "", text: strings[row], parent: window)
+        } else {
+            TextViewerDialog.show(title: strings[row], text: row < values.count ? values[row] : "", parent: window)
+        }
     }
 
     /// DeleteItems (:133-162): removes the selected rows and sets StringsWereChanged.

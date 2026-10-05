@@ -207,7 +207,7 @@ enum ProgressFormatting {
 final class MessageListView: NSView, NSTableViewDataSource {
 
     private let tableView = NSTableView()
-    private let scrollView = NSScrollView()
+    private let scrollView = WinScrollView()
     private(set) var messages: [String] = []
 
     init(showsHeader: Bool) {

@@ -144,7 +144,7 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
             }
         }
 
-        let scroll = NSScrollView()
+        let scroll = WinScrollView()
         scroll.documentView = tableView
         scroll.hasVerticalScroller = true
         scroll.borderType = .lineBorder

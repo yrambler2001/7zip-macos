@@ -45,7 +45,7 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
     private let errorMessage = DialogKit.label("", alignment: .right)   // IDT_BENCH_ERROR_MESSAGE 161
     private let logLabel = RcPlace.makeWrappingLabel("")      // IDT_BENCH_LOG 160 (a static)
     private let consoleEdit = NSTextView()                    // IDE_BENCH2_EDIT 100
-    private let consoleScroll = NSScrollView()
+    private let consoleScroll = WinScrollView()
     private let restartButton: NSButton                       // IDB_RESTART 443
     private let stopButton: NSButton                          // IDB_STOP 442
     private let helpButton: NSButton                          // IDHELP

@@ -138,7 +138,7 @@ enum OptionsUI {
         } else {
             table.headerView = nil
         }
-        let scroll = NSScrollView()
+        let scroll = WinScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false

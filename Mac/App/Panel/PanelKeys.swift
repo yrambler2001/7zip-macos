@@ -38,6 +38,15 @@ extension PanelViewController {
         guard let scalar = (event.charactersIgnoringModifiers ?? "").unicodeScalars.first else { return false }
         let key = Int(scalar.value)
 
+        // Ctrl+Space: the list control toggles the focused item's selection (LVKF / 01 §3.6,
+        // recheck.md §3). macOS takes Ctrl+Space for the input-source switch and Cmd+Space for
+        // Spotlight, so the Mac key is Option+Space (the user's choice, feel3); Ctrl+Space works
+        // too whenever the system lets it through. Matched by key code: Option+Space types U+00A0.
+        if event.keyCode == 49, mods == .option || mods == .control {
+            toggleFocusedSelection()
+            return true
+        }
+
         if shift, selectionAnchor < 0 { selectionAnchor = focusedIndex }   // anchor (01 §3.7)
         if !shift { selectionAnchor = -1 }
 
@@ -214,6 +223,22 @@ extension PanelViewController {
     }
 
     /// OnInsert (PanelSelect.cpp:77-108).
+    /// Ctrl+Space (Option+Space on the Mac): toggle the focused item, the focus stays.
+    func toggleFocusedSelection() {
+        let index = focusedIndex
+        guard index >= 0, index < rows.count else { return }
+        if usesAlternativeSelection {
+            toggleMySelection(index)
+            return
+        }
+        var selection = selectedIndexes
+        if selection.contains(index) { selection.remove(index) } else { selection.insert(index) }
+        setSelectedIndexes(selection)
+        focusedIndex = index
+        refreshSelectionAppearance()
+        refreshStatusBar()
+    }
+
     func insertToggleAndAdvance() {
         guard usesAlternativeSelection else { return }
         let index = focusedIndex

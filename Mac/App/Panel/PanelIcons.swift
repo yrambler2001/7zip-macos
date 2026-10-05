@@ -37,6 +37,11 @@ enum PanelIcons {
                 return resized(image, size)
             }
         }
+        // By extension: 7-Zip's own per-format icon for the extensions it registers (the shell's
+        // DefaultIcon 7z.dll,<index>; PanelArchiveIcons, feel3), else the system's.
+        if !row.isDirectory, let archive = PanelArchiveIcons.icon(forName: row.name, large: large) {
+            return archive
+        }
         return resized(Icons.icon(forName: row.name, isDirectory: row.isDirectory), size)
     }
 
@@ -58,6 +63,7 @@ enum PanelIcons {
             return NSImage(systemSymbolName: "externaldrive", accessibilityDescription: nil)
         }
         if !snapshot.archivePath.isEmpty {
+            if let archive = PanelArchiveIcons.icon(forName: snapshot.archivePath, large: false) { return archive }
             return resized(NSWorkspace.shared.icon(forFile: snapshot.archivePath), smallSize)
         }
         if snapshot.isFileSystem, !snapshot.fullPath.isEmpty {

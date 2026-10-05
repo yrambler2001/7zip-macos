@@ -167,6 +167,11 @@ extension PanelViewController: PanelTableViewKeyHandler, NSComboBoxDelegate, NST
         case #selector(NSResponder.insertTab(_:)):
             focusList()
             return true
+        case #selector(NSResponder.moveDown(_:)) where NSApp.currentEvent?.modifierFlags.contains(.option) == true,
+             #selector(NSResponder.moveToEndOfParagraph(_:)), #selector(NSTextView.moveParagraphForwardAndModifySelection(_:)):
+            // Alt+Down (Option+Down here, which AppKit binds to the paragraph moves): CB_SHOWDROPDOWN
+            showAddressPopup()
+            return true
         default:
             return false
         }
@@ -194,7 +199,7 @@ extension PanelViewController: PanelTableViewKeyHandler, NSComboBoxDelegate, NST
 final class PanelIconView: NSView {
 
     private(set) weak var panel: PanelViewController?
-    let scrollView = NSScrollView()
+    let scrollView = WinScrollView()
     let collectionView = PanelCollectionView()
     private var mode = 0
 
