@@ -220,6 +220,7 @@ final class MessageListView: NSView, NSTableViewDataSource {
         let messageColumn = NSTableColumn(identifier: .init("message"))
         messageColumn.title = Lang.text(6603, "Message")         // IDS_MESSAGE 6603
         messageColumn.width = 520
+        WinHeaderCell.install(on: messageColumn, font: DialogMetrics.font)   // datecols: the dialog's font
         tableView.addTableColumn(indexColumn)
         tableView.addTableColumn(messageColumn)
         // A report list like 7zFM's: 17 px rows, a 24 px header, no alternating rows (dlgfeel).

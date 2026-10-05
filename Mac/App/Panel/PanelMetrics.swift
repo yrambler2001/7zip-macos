@@ -23,6 +23,7 @@
 //     below it (SFFontTests.testRowsHoldTheFontsLine).
 
 import Cocoa
+import SevenZipKit
 
 enum PanelMetrics {
 
@@ -53,11 +54,62 @@ enum PanelMetrics {
     /// times and CRCs line up as Segoe UI's tabular digits do on Windows.
     static var listDigitsFont: NSFont { ListFontChoice.withTabularDigits(listFont) }
 
-    /// A time column's default width: "2024-01-15 11:30" in `listDigitsFont` plus Windows' 6 px
-    /// on each side (88 + 12 = 100 on Windows; 111 + 12 = 123 in SF Pro 12.2), never below 100.
+    /// A time column's default width: the widest date View > Time prints (ConvertUtcFileTimeToString2:
+    /// "2024-12-31 23:59" at the default minute level, ":59" more at SEC, 7 / 9 more digits at
+    /// NTFS / NS, a "Z" with UTC) as a list cell's text field needs it in `listDigitsFont`, plus
+    /// Windows' 6 px on each side (88 + 12 = 100 on Windows; 111 + 12 = 123 in SF Pro 12.2 at
+    /// minutes, 142 with seconds), never below 100. datecols: the sffont width ignored the "Z"
+    /// and the level, so "2024-11-28 21:58Z" was cut.
     static var timeColumnWidth: Int {
-        let date = ceil(("2024-01-15 11:30" as NSString).size(withAttributes: [.font: listDigitsFont]).width)
-        return max(PanelColumnsModel.otherWidth, Int(date + 2 * subitemPadding))
+        timeColumnWidth(level: SZTimestampLevel(rawValue: Settings.timestampLevel) ?? .min,
+                        utc: Settings.timestampShowUTC)
+    }
+
+    static func timeColumnWidth(level: SZTimestampLevel, utc: Bool) -> Int {
+        columnWidth(fitting: widestDate(level: level, utc: utc))
+    }
+
+    /// Every level's default with and without UTC (PanelColumnsModel.timeWidthDefaults).
+    static var timeColumnDefaults: Set<Int> {
+        let levels: [SZTimestampLevel] = [.day, .min, .sec, .NTFS, .NS]
+        return Set(levels.flatMap { level in [false, true].map { timeColumnWidth(level: level, utc: $0) } })
+    }
+
+    /// The longest text a time cell shows at `level` (the digits are tabular, so any date will do).
+    static func widestDate(level: SZTimestampLevel, utc: Bool) -> String {
+        var text = "2024-12-31"
+        if level.rawValue > SZTimestampLevel.day.rawValue { text += " 23:59" }
+        if level.rawValue >= SZTimestampLevel.sec.rawValue { text += ":59" }
+        if level.rawValue > SZTimestampLevel.sec.rawValue {
+            text += "." + String("123456789".prefix(level.rawValue >= 9 ? 9 : Int(level.rawValue)))
+        }
+        return utc ? text + "Z" : text
+    }
+
+    /// The largest size a size column is made for: 9.99 TB (ConvertSizeToString's groups of three).
+    static let widestSize = "9 999 999 999 999"
+
+    /// A size column's default width (Size, Packed Size, ...): `widestSize` + 6 px each side
+    /// (126 in SF Pro 12.2; Windows' 100 px holds "99 999 999 999" in Segoe UI 9).
+    static var sizeColumnWidth: Int { columnWidth(fitting: widestSize) }
+
+    /// The width a Details column needs to show `text` whole in a list cell (`makeListCell`): the
+    /// text field's own width for it (an `NSTextField` label in `listDigitsFont`, as the cell
+    /// is) plus `subitemPadding` on both sides, never below Windows' 100.
+    static func columnWidth(fitting text: String) -> Int {
+        let field = NSTextField(labelWithString: text)
+        field.font = listDigitsFont
+        let width = ceil(field.intrinsicContentSize.width)
+        return max(PanelColumnsModel.otherWidth, Int(width + 2 * (subitemPadding - textFieldInset)))
+    }
+
+    /// The status bar's part edges (SetParts {220, 320, 420, -1}, Panel.cpp:581), with the two
+    /// size parts as wide as `widestSize` needs in the list font (2 px text inset each side and the
+    /// 1 px divider, so 120 for SF Pro 12.2): never narrower than Windows' 100.
+    static var statusSectionEdges: [CGFloat] {
+        let size = ceil((widestSize as NSString).size(withAttributes: [.font: listFont]).width)
+        let part = max(100, size + 6)
+        return [220, 220 + part, 220 + 2 * part]
     }
 
     /// The width the list font gives `text`.
@@ -77,7 +129,7 @@ enum PanelMetrics {
 /// A header item (SysHeader32 with the list's font): its text 6 px from the edge it is aligned to,
 /// as 7zFM's header draws it ("Name" from x 6, "Size" ending 6 px before the divider); AppKit's
 /// header cell keeps only 3 pt (listfeel.md §2).
-final class PanelHeaderCell: NSTableHeaderCell {
+final class PanelHeaderCell: WinHeaderCell {   // datecols: its title in the list font
     static let extraInset: CGFloat = 3
     static let baselineShift: CGFloat = 5
     /// The Windows 11 header divider: 1 px (229) at the item's right edge - 1, the header's full
@@ -116,6 +168,7 @@ extension PanelViewController {
         let header = PanelHeaderCell(textCell: info.title)
         header.alignment = PanelFormat.alignment(for: info.varType, propID: info.propID)
         header.font = PanelMetrics.listFont                       // SysHeader32: the list's font
+        header.titleFont = PanelMetrics.listFont                  // datecols: drawn in it (WinHeaderCell)
         header.textColor = WinChrome.text                         // COLOR_WINDOWTEXT, not AppKit grey
         column.headerCell = header
         column.title = info.title

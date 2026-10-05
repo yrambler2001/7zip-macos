@@ -154,7 +154,7 @@ enum OptionsUI {
         c.minWidth = 10
         c.resizingMask = .userResizingMask
         c.headerCell.alignment = alignment
-        c.headerCell.font = PanelMetrics.listFont
+        WinHeaderCell.install(on: c, font: PanelMetrics.listFont)   // datecols: drawn in the font
         return c
     }
 

@@ -318,7 +318,9 @@ final class NavGapsTests: AppHostTestCase {
         XCTAssertTrue(Bidi.stripped(texts[0]).contains("\(panel.rows.filter { !$0.isParentRow }.count) / "), texts[0])
         XCTAssertFalse(texts[1].isEmpty, "the selected size")
         XCTAssertFalse(texts[3].isEmpty, "the focused item's time")
-        XCTAssertEqual(PanelViewController.statusSectionEdges, [220, 320, 420])
+        // SetParts {220, 320, 420, -1}; datecols widened the two size parts for SF Pro.
+        XCTAssertEqual(PanelViewController.statusSectionEdges, PanelMetrics.statusSectionEdges)
+        XCTAssertEqual(PanelViewController.statusSectionEdges.first, 220)
         _ = attach(try XCTUnwrap(controller.window), "navgaps-02-status-sections")
     }
 

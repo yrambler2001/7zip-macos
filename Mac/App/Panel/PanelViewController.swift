@@ -71,6 +71,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     var columnsModel = PanelColumnsModel(properties: [], folderType: "", isFileSystem: false,
                                                       hiddenByDefault: [], layout: nil)
     private var folderTypeOfColumns = ""
+    /// The time columns' default width the columns were built with (datecols): View > Time changes it.
+    private var timeWidthOfColumns = 0
     private(set) var listViewMode = 3                       // _listViewMode, 3 = details
     private(set) var flatModeForDisk = false                // _flatModeForDisk
     private(set) var flatModeForArc = false                 // _flatModeForArc
@@ -148,10 +150,11 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     /// Section 0 of the status bar ("N / M object(s) selected"); sections 1-3 follow it.
     private let statusLabel = NSTextField(labelWithString: "")
     /// Sections 1-3: selected size, focused item size, focused item time (Refresh_StatusBar).
-    private let statusSections = [NSTextField(labelWithString: ""), NSTextField(labelWithString: ""),
-                                  NSTextField(labelWithString: "")]
-    /// The right edges of sections 0-2 (Panel.cpp CreateStatusBar: `{220, 320, 420, -1}`), in points.
-    static let statusSectionEdges: [CGFloat] = [220, 320, 420]
+    let statusSections = [NSTextField(labelWithString: ""), NSTextField(labelWithString: ""),
+                          NSTextField(labelWithString: "")]
+    /// The right edges of sections 0-2 (Panel.cpp CreateStatusBar: `{220, 320, 420, -1}`), in points,
+    /// the two size parts widened for SF Pro's "9 999 999 999 999" (datecols, PanelMetrics).
+    static var statusSectionEdges: [CGFloat] { PanelMetrics.statusSectionEdges }
     /// The dividers in front of sections 1-3.
     private var statusDividers: [NSView] = []
 
@@ -544,7 +547,10 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                                  isDeleted: deleted,
                                  isPackage: fsFolderObject?.isPackage(at: i) ?? false,
                                  fullPath: fsFolderObject?.fullPathOfItem(at: i) ?? "",
-                                 cells: cells, sortKeys: keys))
+                                 cells: cells, sortKeys: keys,
+                                 // OnRefreshStatusBar's date: level SEC, not the list's (datecols)
+                                 statusTime: (level == .sec ? cells[.mtime] : nil)
+                                     ?? folder.displayStringOfItem(at: i, propID: .mtime, timestampLevel: .sec)))
         }
         // The outermost archive and the file-system folder that holds it (CFolderLink chain).
         var outer: SZFolder = folder
@@ -606,6 +612,10 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         if snap.folderType != folderTypeOfColumns {
             saveColumnLayout()                              // SaveListViewInfo before rebuilding
             PanelColumnsModel.timeWidth = PanelMetrics.timeColumnWidth   // sffont: the font's date width
+            PanelColumnsModel.timeWidthDefaults = PanelMetrics.timeColumnDefaults
+            PanelColumnsModel.sizeColumnIDs = Formatting.sizePropIDs
+            PanelColumnsModel.sizeWidth = PanelMetrics.sizeColumnWidth
+            timeWidthOfColumns = PanelColumnsModel.timeWidth
             columnsModel = PanelColumnsModel(properties: snap.columns, folderType: snap.folderType,
                                              isFileSystem: snap.isFileSystem,
                                              hiddenByDefault: snap.hiddenByDefault,
@@ -622,6 +632,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
                                              layout: columnsModel.layout())
             rebuildColumns()
         }
+        followTimeColumnDefault()
         if snap.sortParams != currentSortParams() {
             if snap.supportsCompare {
                 resortRows()                          // a value-only pass now; the queue re-sorts below
@@ -663,6 +674,27 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     func reloadList() {
         tableView.reloadData()
         iconView.reloadData()
+    }
+
+    /// View > Time (IDM_VIEW_TIME 761 + k, IDM_VIEW_TIME_UTC 799) changed how long a date is: a
+    /// time column still at the previous default width takes the new one, so the dates stay whole;
+    /// a width the user chose is kept (datecols).
+    private func followTimeColumnDefault() {
+        guard timeWidthOfColumns != 0 else { return }
+        let width = PanelMetrics.timeColumnWidth
+        guard width != timeWidthOfColumns else { return }
+        let old = timeWidthOfColumns
+        timeWidthOfColumns = width
+        PanelColumnsModel.timeWidth = width
+        var changed = false
+        for column in tableView.tableColumns {
+            guard let pid = Self.propID(of: column),
+                  columnsModel.columns.first(where: { $0.propID == pid })?.varType == .fileTime,
+                  Int(column.width.rounded()) == old else { continue }
+            column.width = CGFloat(width)
+            changed = true
+        }
+        if changed { saveColumnLayout() }
     }
 
     private func rebuildColumns() {
@@ -1041,7 +1073,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         // Parts 2 and 3 only when something is selected and the focused row is not "..".
         if !selectedIndexes.isEmpty, let focused = focusedRow(), !focused.isParentRow {
             statusSections[1].stringValue = Formatting.size(focused.size)
-            statusSections[2].stringValue = focused.cells[.mtime] ?? ""
+            statusSections[2].stringValue = focused.statusTime          // PanelListNotify.cpp:812
         } else {
             statusSections[1].stringValue = ""
             statusSections[2].stringValue = ""

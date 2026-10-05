@@ -275,7 +275,10 @@ final class ListFeelTests: AppHostTestCase {
                 let pid = PanelViewController.propID(of: column)
                 // sffont: a time column is as wide as SF Pro's full date + 12 (123), the rest Windows'.
                 let isTime = panel.columnsModel.columns.first { $0.propID == pid }?.varType == .fileTime
-                XCTAssertEqual(column.width, pid == .name ? 160 : (isTime ? CGFloat(PanelMetrics.timeColumnWidth) : 100),
+                // datecols: a size column holds "9 999 999 999 999" (126).
+                let isSize = pid.map { Formatting.sizePropIDs.contains($0) } ?? false
+                XCTAssertEqual(column.width, pid == .name ? 160 : (isTime ? CGFloat(PanelMetrics.timeColumnWidth)
+                                                                   : isSize ? CGFloat(PanelMetrics.sizeColumnWidth) : 100),
                                "\(type) \(column.title)")
             }
         }

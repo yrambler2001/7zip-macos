@@ -18,6 +18,7 @@ final class SFFontTests: AppHostTestCase {
     private var savedNumPanels = 1
     private var savedPanelPath: String?
     private var savedListMode = 3
+    private var savedTime = (-1, false)
 
     private var fixtures: String { TestPaths.fixtures }
     private var archive: String { TestPaths.fixture("test.7z") }
@@ -27,6 +28,11 @@ final class SFFontTests: AppHostTestCase {
         savedNumPanels = Settings.numPanels
         savedPanelPath = Settings.panelPath(0)
         savedListMode = Settings.listMode(0)
+        savedTime = (Settings.timestampLevel, Settings.timestampShowUTC)
+        // The default View > Time: minutes, local time (datecols: a UTC left on by an earlier
+        // test put "Z" into every date of sffont-main.png).
+        Settings.timestampLevel = Int(SZTimestampLevel.min.rawValue)
+        Settings.timestampShowUTC = false
         NSApp.appearance = NSAppearance(named: .aqua)
     }
 
@@ -37,6 +43,7 @@ final class SFFontTests: AppHostTestCase {
         Settings.numPanels = savedNumPanels
         Settings.setPanelPath(savedPanelPath, 0)
         Settings.setListMode(savedListMode, 0)
+        (Settings.timestampLevel, Settings.timestampShowUTC) = savedTime
         NSApp.appearance = nil
         useLanguage("-")
         super.tearDown()
@@ -100,8 +107,10 @@ final class SFFontTests: AppHostTestCase {
         let (controller, panel) = try openPanel(on: makeFixture())
         _ = controller
         let table = panel.tableView
-        let date = ceil(("2024-01-15 11:30" as NSString).size(withAttributes: [.font: PanelMetrics.listDigitsFont]).width)
+        // datecols: the level's widest date (minutes by default, no "Z") as the cell's field needs it.
+        let date = ceil(("2024-12-31 23:59" as NSString).size(withAttributes: [.font: PanelMetrics.listDigitsFont]).width)
         XCTAssertEqual(CGFloat(PanelMetrics.timeColumnWidth), max(100, date + 12))
+        XCTAssertTrue(panel.rows.allSatisfy { !($0.cells[.mtime] ?? "").hasSuffix("Z") }, "local time, no UTC Z")
         var timeColumns = 0
         for column in panel.columnsModel.columns where column.visible && column.varType == .fileTime {
             timeColumns += 1

@@ -385,7 +385,13 @@ enum Settings {
 
     static var timestampShowUTC: Bool {
         get { bool(Key.timestampShowUTC) }
-        set { setBool(newValue, Key.timestampShowUTC) }
+        set {
+            setBool(newValue, Key.timestampShowUTC)
+            // The engine's g_Timestamp_Show_UTC follows the setting, so the list, the status bar
+            // and the dialogs never disagree (datecols: a test that restored only the setting left
+            // the global on, and every later list printed "...Z").
+            SZFolder.timestampShowUTC = newValue
+        }
     }
 
     static var timestampLevel: Int {
