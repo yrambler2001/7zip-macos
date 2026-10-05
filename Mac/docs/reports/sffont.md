@@ -132,8 +132,11 @@ chose from).
 
 ## 6. Verification
 
-See the end of this file (§9) for the final numbers of `build.sh`, `test.sh`, `test.sh -H` and the
-UI suite.
+* `Mac/scripts/build.sh`: exit 0, no warnings in `Mac/`.
+* `Mac/scripts/test.sh`: 388 passed, 0 failed.
+* `Mac/scripts/test.sh -H`: 243 passed, 0 failed (incl. the 93-language `LocalizationFittingTests`).
+* `Mac/scripts/test.sh -u`: 64 passed (52 input + 6 + 6 probe), 0 failed.
+* The images in §4 were looked at: dates whole, archive icons present and sharp, no clipped text.
 
 ## 7. Cross-scope edits (for the orchestrator)
 
