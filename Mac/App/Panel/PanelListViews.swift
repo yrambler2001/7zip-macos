@@ -243,7 +243,10 @@ final class PanelIconView: NSView {
         let layout = NSCollectionViewFlowLayout()
         switch mode {
         case 0:
-            layout.itemSize = NSSize(width: 104, height: 76)
+            // LVS_ICON: SM_CXICONSPACING x SM_CYICONSPACING = 75 x 75 at 96 dpi (feel3-data/win/
+            // icons-large.png: the icons 75 px apart both ways, the first one's cell at the
+            // list's edge).
+            layout.itemSize = NSSize(width: 75, height: 75)
             layout.scrollDirection = .vertical
         case 1:
             layout.itemSize = NSSize(width: 200, height: 20)
@@ -252,9 +255,10 @@ final class PanelIconView: NSView {
             layout.itemSize = NSSize(width: 200, height: 20)
             layout.scrollDirection = .horizontal
         }
-        layout.minimumInteritemSpacing = 2
-        layout.minimumLineSpacing = 2
-        layout.sectionInset = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        layout.minimumInteritemSpacing = mode == 0 ? 0 : 2
+        layout.minimumLineSpacing = mode == 0 ? 0 : 2
+        layout.sectionInset = mode == 0 ? NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
+                                        : NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
         // A vertically scrolling layout follows the clip view's width, a horizontal one (List
         // mode, LVS_LIST) its height.
         collectionView.autoresizingMask = layout.scrollDirection == .vertical ? [.width] : [.height]
@@ -274,12 +278,16 @@ final class PanelIconView: NSView {
         let clip = scrollView.contentView.bounds.size
         guard clip.width > 1, clip.height > 1 else { return }
         var frame = collectionView.frame
+        // The content's own extent, never the frame's old one: a frame that only ever grew kept a
+        // scroll bar after the folder got smaller, or from the 600 x 400 the view starts with
+        // (the phantom scroll bar of the user's finding 3, feel3).
+        let content = collectionView.collectionViewLayout?.collectionViewContentSize ?? .zero
         if mode == 2 {                                  // List: columns, horizontal scrolling
             frame.size.height = clip.height
-            frame.size.width = max(frame.size.width, clip.width)
+            frame.size.width = max(content.width, clip.width)
         } else {
             frame.size.width = clip.width
-            frame.size.height = max(frame.size.height, clip.height)
+            frame.size.height = max(content.height, clip.height)
         }
         if frame != collectionView.frame {
             collectionView.frame = frame
@@ -445,10 +453,8 @@ final class PanelCollectionView: NSCollectionView {
         // with the button already released the click is complete (a drag would have cleared it).
         if let up = NSApp.currentEvent, up.type == .leftMouseUp {
             finishSlowClick(up)
-        } else if let pending = pendingSlowClick, NSEvent.pressedMouseButtons & 1 == 0, let window {
-            // released where it went down (a drag inside the tracking loop moved the pointer)
-            let now = window.mouseLocationOutsideOfEventStream
-            if hypot(now.x - pending.at.x, now.y - pending.at.y) < 4 { finishSlowClick(event) } else { pendingSlowClick = nil }
+        } else if pendingSlowClick != nil, NSEvent.pressedMouseButtons & 1 == 0 {
+            finishSlowClick(event)                      // a drag in the loop cleared it (below)
         }
     }
 
@@ -460,6 +466,13 @@ final class PanelCollectionView: NSCollectionView {
     override func mouseDragged(with event: NSEvent) {
         pendingSlowClick = nil
         super.mouseDragged(with: event)
+    }
+
+    /// An item drag started inside the collection view's own click tracking: not a click.
+    override func beginDraggingSession(with items: [NSDraggingItem], event: NSEvent,
+                                       source: NSDraggingSource) -> NSDraggingSession {
+        pendingSlowClick = nil
+        return super.beginDraggingSession(with: items, event: event, source: source)
     }
 
     // MARK: slow click and Single-click hover in the icon views (feel3; recheck2 §5 for Details)
@@ -612,7 +625,7 @@ final class PanelCollectionItem: NSCollectionViewItem {
         icon.setAccessibilityElement(false)
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingMiddle
-        label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.font = PanelMetrics.listFont                // the list's font in every view mode (Segoe UI 9)
         root.addSubview(icon)
         root.addSubview(label)
         view = root

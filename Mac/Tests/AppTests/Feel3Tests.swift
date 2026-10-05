@@ -409,6 +409,57 @@ final class Feel3Tests: AppHostTestCase {
         }
     }
 
+    // MARK: paired captures (wincompare-feel3-*-mac.png, 1x)
+
+    private func writePaired(_ view: NSView, _ rect: NSRect, _ file: String) {
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(rect.width), pixelsHigh: Int(rect.height),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
+        rep.size = rect.size
+        view.cacheDisplay(in: rect, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: URL(fileURLWithPath: TestPaths.screenshots).appendingPathComponent(file), options: .atomic)
+    }
+
+    /// The Mac halves of the feel3 paired captures: the archive icons in Details and Large Icons
+    /// (the Windows folder: one empty file per registered extension plus a.txt), and the address
+    /// drop-down with the mouse on its fifth row.
+    func testPairedCaptures() throws {
+        let exts = FileTypes.extensions
+        let scratch = makeScratch(exts.map { "a." + $0 } + ["a.txt"])
+        try? FileManager.default.removeItem(atPath: scratch + "/sub")
+        for (mode, name) in [(3, "details"), (0, "large")] {
+            Settings.removeKey("FM.Columns.FSFolder")
+            let controller = makeWindow(mode: mode)
+            controller.window?.setContentSize(NSSize(width: 1084, height: 680))
+            let panel = controller.focusedPanel
+            navigate(panel, to: scratch)
+            panel.setSelectedIndexes(IndexSet())
+            panel.focusedIndex = 0
+            let content = try XCTUnwrap(controller.window?.contentView)
+            content.layoutSubtreeIfNeeded()
+            let list: NSView = mode == 3 ? (panel.tableView.enclosingScrollView ?? panel.tableView) : panel.iconView
+            let r = list.convert(list.bounds, to: content)
+            writePaired(content, NSRect(x: r.minX, y: r.maxY - 240, width: 760, height: 240), "wincompare-feel3-icons-\(name)-mac.png")
+            controller.window?.close()
+        }
+        // the address list, 720 pt wide like the Windows capture's crop
+        let deep = scratch + "/one/two"
+        try FileManager.default.createDirectory(atPath: deep, withIntermediateDirectories: true)
+        let controller = makeWindow()
+        controller.window?.setContentSize(NSSize(width: 760, height: 600))
+        let panel = controller.focusedPanel
+        navigate(panel, to: deep)
+        panel.showAddressPopup()
+        let popup = try XCTUnwrap(AddressPopup.current)
+        popup.list.hot = 4
+        let content = try XCTUnwrap(popup.panel.contentView)
+        content.layoutSubtreeIfNeeded()
+        writePaired(content, NSRect(x: 0, y: max(0, content.bounds.height - 200), width: min(720, content.bounds.width), height: min(200, content.bounds.height)),
+                    "wincompare-feel3-addrlist-mac.png")
+        popup.close()
+    }
+
     // MARK: list font setting
 
     /// FM.ListFont picks one of the candidates; the default stays Helvetica Neue 11.
