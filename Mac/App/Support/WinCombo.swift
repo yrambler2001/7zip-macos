@@ -136,6 +136,21 @@ enum WinCombo {
     }
 }
 
+/// The Swift half of an `NSCell` copy (reports/okcancel.md §4).
+///
+/// `-[NSCell copyWithZone:]` duplicates the instance bitwise (NSCopyObject), Swift stored
+/// properties included, but does not retain what they point to. AppKit copies cells all the time
+/// (a header while it draws or tracks, the accessibility snapshot XCUITest and VoiceOver read, a
+/// pop-up's menu), so every copy that is freed released an object its original still used: a
+/// header's `titleFont` (the shared list font -- the next `PanelMetrics.listFont` crashed), the
+/// address combo's icon, a drop-down's hover owner. A cell subclass with a stored reference calls
+/// `adopt` for it in `copy(with:)`, which gives the copy the reference it already holds.
+enum CellCopy {
+    static func adopt(_ object: AnyObject?) {
+        if let object { _ = Unmanaged.passUnretained(object).retain() }
+    }
+}
+
 /// Lets a cell follow the mouse: the owner of the control's tracking area.
 ///
 /// An `NSResponder`, not a plain `NSObject` (reports/okcancel.md). AppKit sends a tracking area's

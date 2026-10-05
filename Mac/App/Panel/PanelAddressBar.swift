@@ -125,6 +125,13 @@ final class PanelUpButton: NSButton {
 final class AddressComboCell: NSComboBoxCell {
     var icon: NSImage?
 
+    /// NSCell copied `icon` without retaining it (`CellCopy`, reports/okcancel.md).
+    override func copy(with zone: NSZone? = nil) -> Any {
+        let copy = super.copy(with: zone)
+        if let cell = copy as? AddressComboCell { CellCopy.adopt(cell.icon) }
+        return copy
+    }
+
     /// Where the text goes: 24 px from the left (the Edit 1003 at x 57 in a combo at x 33), the
     /// arrow's 18 px at the right kept clear.
     static let textInsetLeft: CGFloat = 24

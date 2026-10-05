@@ -16,6 +16,13 @@ class WinHeaderCell: NSTableHeaderCell {
     /// The font the title is drawn in (`font` is not kept: the header resets it).
     var titleFont: NSFont?
 
+    /// NSCell copied `titleFont` without retaining it (`CellCopy`, reports/okcancel.md).
+    override func copy(with zone: NSZone? = nil) -> Any {
+        let copy = super.copy(with: zone)
+        if let cell = copy as? WinHeaderCell { CellCopy.adopt(cell.titleFont) }
+        return copy
+    }
+
     override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
         applyFont()
         super.drawInterior(withFrame: cellFrame, in: controlView)

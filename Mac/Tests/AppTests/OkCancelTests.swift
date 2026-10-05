@@ -349,4 +349,47 @@ final class OkCancelTests: AppHostTestCase {
         XCTAssertEqual(DialogKit.caughtModalExceptions.count, before + 1)
         XCTAssertTrue(DialogKit.caughtModalExceptions.last?.contains("OkCancelTestException") ?? false)
     }
+
+    // MARK: - cell copies (the crash the UI tests met once the hover worked)
+
+    /// AppKit copies cells (a header's drawing and tracking, the accessibility snapshot, a
+    /// pop-up's menu), and NSCell's `copy(with:)` duplicates the instance bitwise: a Swift stored
+    /// reference arrives in the copy without its retain, so freeing the copy releases an object
+    /// the original still uses. Each cell subclass with such a property must keep its objects
+    /// alive through a copy and its release.
+    func testCellCopiesKeepTheirObjectsAlive() {
+        // AddressComboCell.icon
+        let address = AddressComboCell()
+        weak var weakIcon: NSImage?
+        autoreleasepool {
+            let icon = NSImage(size: NSSize(width: 16, height: 16))
+            address.icon = icon
+            weakIcon = icon
+            for _ in 0..<3 { _ = address.copy() }
+        }
+        XCTAssertNotNil(weakIcon, "AddressComboCell: the icon was freed by a copy")
+        XCTAssertTrue(address.icon === weakIcon)
+
+        // WinPopUpButtonCell.hover
+        let popup = WinPopUpButtonCell()
+        weak var weakHover: WinComboHover?
+        autoreleasepool {
+            weakHover = popup.hover
+            for _ in 0..<3 { _ = popup.copy() }
+        }
+        XCTAssertNotNil(weakHover, "WinPopUpButtonCell: the hover owner was freed by a copy")
+
+        // WinHeaderCell.titleFont: a font is shared, so count its references instead.
+        let header = WinHeaderCell(textCell: "Name")
+        let font = NSFont(name: "Menlo", size: 13.7)!
+        header.titleFont = font
+        let before = CFGetRetainCount(font)
+        autoreleasepool {
+            for _ in 0..<3 { _ = header.copy() }
+        }
+        XCTAssertGreaterThanOrEqual(CFGetRetainCount(font), before, "WinHeaderCell: copies released titleFont")   // the font system may keep one more
+        // and a copy carries the property
+        let copy = header.copy() as? WinHeaderCell
+        XCTAssertTrue(copy?.titleFont === font)
+    }
 }

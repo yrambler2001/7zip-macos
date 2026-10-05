@@ -581,6 +581,13 @@ final class WinPopUpButtonCell: NSPopUpButtonCell {
 
     let hover = WinComboHover()
 
+    /// The copy shares `hover`; NSCell copied the reference without retaining it (`CellCopy`).
+    override func copy(with zone: NSZone? = nil) -> Any {
+        let copy = super.copy(with: zone)
+        if let cell = copy as? WinPopUpButtonCell { CellCopy.adopt(cell.hover) }
+        return copy
+    }
+
     override func titleRect(forBounds rect: NSRect) -> NSRect {
         NSRect(x: rect.minX + Self.textInset, y: rect.minY, width: max(0, rect.width - Self.textInset - Self.buttonWidth),
                height: rect.height)
