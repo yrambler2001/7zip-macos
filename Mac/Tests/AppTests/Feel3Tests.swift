@@ -346,6 +346,69 @@ final class Feel3Tests: AppHostTestCase {
         XCTAssertFalse(panel.selectedIndexes.contains(index), "Ctrl+Space as well")
     }
 
+    // MARK: icon views: slow click and hover (recheck2 §10 item 2)
+
+    private func iconClick(_ window: NSWindow, _ view: NSView, _ point: NSPoint) {
+        let at = view.convert(point, to: nil)
+        let up = NSEvent.mouseEvent(with: .leftMouseUp, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0)!
+        let down = NSEvent.mouseEvent(with: .leftMouseDown, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                      windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        NSApp.postEvent(up, atStart: true)
+        window.sendEvent(down)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    /// Large Icons, Small Icons, List: a click on the label of the only selected, focused item
+    /// renames it in place after the double-click time; Single-click hover selects after 0.4 s.
+    func testIconViewsSlowClickRenameAndHover() throws {
+        let savedSingle = Settings.singleClick
+        defer { Settings.singleClick = savedSingle }
+        let scratch = makeScratch()
+        for mode in 0...2 {
+            Settings.singleClick = false
+            let controller = makeWindow(mode: mode)
+            let window = try XCTUnwrap(controller.window)
+            let panel = controller.focusedPanel
+            navigate(panel, to: scratch)
+            let cv = panel.iconView.collectionView
+            window.makeFirstResponder(cv)
+            cv.layoutSubtreeIfNeeded()
+            let index = try XCTUnwrap(panel.rows.firstIndex { $0.name == "b.bin" })
+            panel.setFocus(index)
+            cv.layoutSubtreeIfNeeded()
+            let label = try XCTUnwrap(cv.labelRect(item: index), "mode \(mode)")
+            let at = NSPoint(x: label.midX, y: label.midY)
+            XCTAssertEqual(cv.indexPathForItem(at: at)?.item, index, "mode \(mode): label \(label) hits the item")
+            XCTAssertEqual(panel.selectedIndexes, IndexSet(integer: index))
+            XCTAssertEqual(panel.focusedIndex, index)
+            iconClick(window, cv, at)
+            XCTAssertTrue(cv.hasPendingSlowClickRename, "mode \(mode): the slow click waits")
+            XCTAssertNil(panel.renamingRow)
+            XCTAssertTrue(wait(for: "the in-place rename", timeout: NSEvent.doubleClickInterval + 2) { panel.renamingRow == index },
+                          "mode \(mode)")
+            let item = try XCTUnwrap(cv.item(at: IndexPath(item: index, section: 0)) as? PanelCollectionItem)
+            XCTAssertEqual(item.textField?.isEditable, true, "mode \(mode): edited in place, not in a dialog")
+            panel.cancelRenameEditing()
+            XCTAssertNil(panel.renamingRow)
+
+            // Single-click hover
+            Settings.singleClick = true
+            panel.setFocus(0)
+            let other = try XCTUnwrap(panel.rows.firstIndex { $0.name == "a.txt" })
+            let r = try XCTUnwrap(cv.labelRect(item: other))
+            let move = NSEvent.mouseEvent(with: .mouseMoved, location: cv.convert(NSPoint(x: r.midX, y: r.midY), to: nil),
+                                          modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                          eventNumber: 0, clickCount: 0, pressure: 0)!
+            cv.mouseMoved(with: move)
+            XCTAssertTrue(cv.hasPendingHoverSelect, "mode \(mode): resting on an item starts the hover timer")
+            cv.hoverSelect(other, checkPointer: false)
+            XCTAssertEqual(panel.selectedIndexes, IndexSet(integer: other))
+            XCTAssertEqual(panel.focusedIndex, other)
+            window.close()
+        }
+    }
+
     // MARK: list font setting
 
     /// FM.ListFont picks one of the candidates; the default stays Helvetica Neue 11.

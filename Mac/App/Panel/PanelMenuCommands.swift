@@ -183,6 +183,13 @@ extension PanelViewController: NSUserInterfaceValidations {
         field.isEditable = false
         field.isBordered = false
         field.drawsBackground = false
-        performRename(index: index, to: field.stringValue)
+        let text = field.stringValue
+        if listViewMode != 3, index < rows.count,
+           let item = iconView.collectionView.item(at: IndexPath(item: index, section: 0)) as? PanelCollectionItem,
+           item.textField === field {
+            item.endLabelEdit(displayName: rows[index].displayName)
+            view.window?.makeFirstResponder(iconView.collectionView)
+        }
+        performRename(index: index, to: text)
     }
 }

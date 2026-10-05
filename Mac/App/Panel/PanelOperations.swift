@@ -81,8 +81,17 @@ extension PanelViewController {
         guard checkBeforeUpdate() else { return }
         let index = focusedIndex
         guard index >= 0, index < rows.count, !rows[index].isParentRow else { return }
-        guard listViewMode == 3 else {                        // icon modes: ask in a Combo dialog
-            renameWithDialog(index)
+        guard listViewMode == 3 else {
+            // The icon views edit the label in place too (LVS_EDITLABELS in every mode, feel3).
+            iconView.scrollItemToVisible(index)
+            guard let item = iconView.collectionView.item(at: IndexPath(item: index, section: 0)) as? PanelCollectionItem else {
+                renameWithDialog(index)
+                return
+            }
+            renamingRow = index
+            let field = item.beginLabelEdit(name: rows[index].name)
+            field.delegate = self
+            view.window?.makeFirstResponder(field)
             return
         }
         let identifier = NSUserInterfaceItemIdentifier(String(SZPropID.name.rawValue))
@@ -122,7 +131,14 @@ extension PanelViewController {
             field.drawsBackground = false
             if index < rows.count { field.stringValue = rows[index].displayName }
         }
-        if view.window?.firstResponder is NSText { view.window?.makeFirstResponder(tableView) }
+        if listViewMode != 3, index < rows.count,
+           let item = iconView.collectionView.item(at: IndexPath(item: index, section: 0)) as? PanelCollectionItem {
+            item.textField?.abortEditing()
+            item.endLabelEdit(displayName: rows[index].displayName)
+        }
+        if view.window?.firstResponder is NSText {
+            view.window?.makeFirstResponder(listViewMode == 3 ? tableView : iconView.collectionView)
+        }
     }
 
     private func renameWithDialog(_ index: Int) {

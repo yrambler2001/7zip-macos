@@ -10,7 +10,7 @@
 //
 //   by height  cap height + x-height = 15 px (Windows' rendered 9 + 6)
 //   by width   the summed advance widths of 23 list strings (names, sizes, dates, the header,
-//              the alphabet; GetTextExtentPoint32 on the PC) equal Segoe UI's 1 418 px
+//              the alphabet; GetTextExtentPoint32 on the PC) equal Segoe UI's 1 378 px
 //
 // `defaults write com.yrambler2001.7zip FM.ListFont <key>` picks one at the next launch:
 // a candidate key below, or any "<font name>:<size>" ("Arial:12.5", "system:12"). No value or an
