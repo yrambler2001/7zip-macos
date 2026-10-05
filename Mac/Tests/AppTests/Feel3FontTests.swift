@@ -90,13 +90,56 @@ final class Feel3FontTests: AppHostTestCase {
             panel.focusedIndex = a
             panel.refreshSelectionAppearance()
         }
-        guard let content = controller.window?.contentView else { return nil }
-        content.layoutSubtreeIfNeeded()
-        let list: NSView = panel.tableView.enclosingScrollView ?? panel.tableView
-        var rect = list.convert(list.bounds, to: content)
-        rect = NSRect(x: rect.minX, y: rect.maxY - 200, width: 760, height: 200)
-        return Self.drawUnsmoothed(content, rect: rect, scale: scale)
+        guard let content = controller.window?.contentView,
+              let scroll = panel.tableView.enclosingScrollView,
+              let headerClip = panel.tableView.headerView?.superview as? NSClipView else { return nil }
+        let rowCount = panel.rows.count
+        guard wait(for: "row views", until: {
+            content.layoutSubtreeIfNeeded()
+            content.displayIfNeeded()
+            let table = panel.tableView
+            return rowCount >= 12 && table.numberOfRows == rowCount
+                && (0..<min(rowCount, 9)).allSatisfy { table.view(atColumn: 0, row: $0, makeIfNecessary: false) != nil }
+        }) else { return nil }
+        return Self.drawList(scroll, parts: [scroll.contentView, headerClip],
+                             size: NSSize(width: 760, height: 200), scale: scale)
     }
+
+    /// The scroll view's top-left `size`, drawn part by part: the rows' clip view, then the header's
+    /// clip view over it. Drawing the window's content view (or the scroll view) as one piece is
+    /// not reliable on macOS 26: in about one run in three a capture of one candidate came out
+    /// with the header and **no rows** -- the scroll view, which now also holds the header's scroll
+    /// pocket and backdrop views, skipped its rows' clip view, with `cacheDisplay` as with
+    /// `displayIgnoringOpacity`, while that clip view drawn on its own was complete (that is how
+    /// feel3-font-arial-bywidth.png was written with an empty list). Each part is drawn exactly
+    /// once, so no text is drawn twice.
+    static func drawList(_ scroll: NSScrollView, parts: [NSView], size: NSSize, scale: Int) -> CGImage? {
+        let s = CGFloat(scale)
+        guard let ctx = CGContext(data: nil, width: Int(size.width * s), height: Int(size.height * s),
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: size.width * s, height: size.height * s))
+        // The capture, in the scroll view's coordinates: its top-left corner.
+        let b = scroll.bounds
+        let region = NSRect(x: b.minX, y: scroll.isFlipped ? b.minY : b.maxY - size.height,
+                            width: size.width, height: size.height)
+        for part in parts {
+            let inScroll = scroll.convert(part.bounds, from: part).intersection(region)
+            guard !inScroll.isEmpty else { continue }
+            let partRect = part.convert(inScroll, from: scroll)
+            guard let image = drawUnsmoothed(part, rect: partRect, scale: scale) else { continue }
+            // Top-left of the part's piece, measured from the capture's top-left.
+            let dx = inScroll.minX - region.minX
+            let dyTop = scroll.isFlipped ? inScroll.minY - region.minY : region.maxY - inScroll.maxY
+            ctx.draw(image, in: CGRect(x: dx * s, y: (size.height - dyTop - inScroll.height) * s,
+                                       width: inScroll.width * s, height: inScroll.height * s))
+        }
+        return ctx.makeImage()
+    }
+
+    /// The rows below the header carry ~4 000 px of ink at 1x for every candidate.
+    static let minimumRowInk = 2_000.0
 
     /// `rect` of `view` drawn at `scale` the way the screen shows it: **without font smoothing**.
     /// `cacheDisplay(in:to:)` draws into a bitmap context that keeps Core Graphics' default font
@@ -115,6 +158,27 @@ final class Feel3FontTests: AppHostTestCase {
         ctx.setShouldSmoothFonts(false)
         view.displayIgnoringOpacity(rect, in: NSGraphicsContext(cgContext: ctx, flipped: false))
         return ctx.makeImage()
+    }
+
+    /// Darkness (1 - mean RGB, over white) summed over the image below `top` pt, in 1x px units.
+    static func ink(_ image: CGImage, below top: Int, scale: Int) -> Double {
+        let w = image.width, h = image.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = ctx.data else { return 0 }
+        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let p = data.assumingMemoryBound(to: UInt8.self)
+        var sum = 0.0
+        for y in min(h, top * scale)..<h {                     // row 0 of the buffer is the top
+            for x in 0..<w {
+                let o = y * w * 4 + x * 4
+                sum += 1 - (Double(p[o]) + Double(p[o + 1]) + Double(p[o + 2])) / 765
+            }
+        }
+        return sum / Double(scale * scale)
     }
 
     private func windowsCapture() -> CGImage? {
@@ -181,6 +245,9 @@ final class Feel3FontTests: AppHostTestCase {
         for shot in shots {
             for scale in [1, 2] {
                 let mac = try XCTUnwrap(renderList(font: shot.font, folder: folder, scale: scale), shot.name)
+                // An empty capture (header only) must fail, not be written.
+                let ink = Self.ink(mac, below: 24, scale: scale)
+                XCTAssertGreaterThan(ink, Self.minimumRowInk, "\(shot.name) at \(scale)x: the Mac list has no rows (ink \(Int(ink)))")
                 compose(windows: windows, mac: mac, scale: scale, macCaption: shot.caption,
                         file: shot.name + (scale == 2 ? "-2x" : "") + ".png")
             }
