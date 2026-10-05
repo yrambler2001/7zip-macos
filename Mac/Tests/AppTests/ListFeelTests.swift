@@ -164,17 +164,19 @@ final class ListFeelTests: AppHostTestCase {
         XCTAssertEqual(table.rect(ofRow: 0).height, 19)
         XCTAssertEqual(table.intercellSpacing, .zero)
         XCTAssertEqual(table.headerView?.frame.height, 24, "SysHeader32 24 px")
-        let font = PanelMetrics.listFont
-        // Segoe UI 9 pt advance widths, measured on the PC (LVM_GETSTRINGWIDTH / pixel ink).
-        XCTAssertEqual(PanelMetrics.textWidth("a.txt"), 22, accuracy: 1)
-        XCTAssertEqual(PanelMetrics.textWidth("vol.7z.001"), 51, accuracy: 1)
-        XCTAssertEqual(PanelMetrics.textWidth("2024-01-15 11:30"), 89, accuracy: 1)
+        let font = PanelMetrics.listDigitsFont
+        // Segoe UI 9 pt advance widths, measured on the PC (LVM_GETSTRINGWIDTH / pixel ink), are
+        // 22, 51 and 88 px; sffont's SF Pro 12.2 is ~10 % wider (reports/sffont.md §1), the date
+        // with tabular digits.
+        XCTAssertEqual(PanelMetrics.textWidth("a.txt"), 26, accuracy: 1)
+        XCTAssertEqual(PanelMetrics.textWidth("vol.7z.001"), 58, accuracy: 1)
+        XCTAssertEqual(ceil(("2024-01-15 11:30" as NSString).size(withAttributes: [.font: font]).width), 111, accuracy: 1)
         // Tabular digits (Segoe UI's are): every digit is as wide as every other.
         let digitWidths = Set((0...9).map { ("\($0)" as NSString).size(withAttributes: [.font: font]).width })
         XCTAssertEqual(digitWidths.count, 1, "tabular digits: \(digitWidths)")
         for c in 0..<table.numberOfColumns {
             XCTAssertNil(table.indicatorImage(in: table.tableColumns[c]), "7zFM draws no sort arrow")
-            XCTAssertEqual(table.tableColumns[c].headerCell.font, font)
+            XCTAssertEqual(table.tableColumns[c].headerCell.font, PanelMetrics.listFont)
         }
         XCTAssertNil(table.highlightedTableColumn, "no highlighted column")
     }
@@ -241,7 +243,8 @@ final class ListFeelTests: AppHostTestCase {
         let r = try XCTUnwrap(render(table, NSRect(x: 0, y: rowRect.minY, width: 160, height: rowRect.height)))
         let fill = try XCTUnwrap(r.bbox { $0.isClose(to: .highlight) }, "no fill")
         XCTAssertEqual(fill.minX, 20, accuracy: 0.5, "LVIR_LABEL starts at 20")
-        XCTAssertEqual(fill.width, 30, accuracy: 1.5, "Windows fills 30 px for a.txt")
+        // Windows fills 30 px for a.txt (2 + 22 + 6); the same padding around SF Pro's 26 pt.
+        XCTAssertEqual(fill.width, 2 + PanelMetrics.textWidth("a.txt") + 6, accuracy: 1.5, "2 px, the text, 6 px")
         XCTAssertEqual(fill.height, 19, accuracy: 0.5, "the fill is the row's full height")
         // White ink inside the fill only.
         var minX = CGFloat.greatestFiniteMagnitude, maxX: CGFloat = 0
@@ -270,7 +273,10 @@ final class ListFeelTests: AppHostTestCase {
             navigate(panel, to: path)
             for column in panel.tableView.tableColumns {
                 let pid = PanelViewController.propID(of: column)
-                XCTAssertEqual(column.width, pid == .name ? 160 : 100, "\(type) \(column.title)")
+                // sffont: a time column is as wide as SF Pro's full date + 12 (123), the rest Windows'.
+                let isTime = panel.columnsModel.columns.first { $0.propID == pid }?.varType == .fileTime
+                XCTAssertEqual(column.width, pid == .name ? 160 : (isTime ? CGFloat(PanelMetrics.timeColumnWidth) : 100),
+                               "\(type) \(column.title)")
             }
         }
     }
@@ -468,7 +474,7 @@ final class ListFeelTests: AppHostTestCase {
 
         // The dialog: autosized columns, 80 / text + 12 as on Windows, 17 pt rows.
         let widths = ListViewMetrics.autosizedWidths(strings: file.names, values: file.values)
-        XCTAssertEqual(widths.strings, 80, accuracy: 0.5, "the 72 px separator + 8")
+        XCTAssertEqual(widths.strings, 84, accuracy: 0.5, "the separator (72 px in Segoe UI, 76 pt in SF Pro 12.2) + 8")
         let appeared = ModalProbe.present({ PropertiesDialog.show(lines: file, parent: controller.window) }) { window in
             guard let table = Self.firstTable(in: window.contentView) else { return XCTFail("no list") }
             XCTAssertEqual(table.tableColumns[0].width, widths.strings, accuracy: 0.5)

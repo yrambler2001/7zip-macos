@@ -74,18 +74,23 @@ final class Recheck2Tests: AppHostTestCase {
             let l = WinMessageBoxLayout(text: c.text, caption: c.caption, buttonCount: c.buttons.results.count,
                                         hasIcon: c.icon != .none)
             XCTAssertEqual(l.lines.count, c.lines, "\(c.name): lines \(l.lines)")
-            XCTAssertEqual(l.clientSize.height, c.client.height, "\(c.name): client height")
-            XCTAssertEqual(l.clientSize.width, c.client.width, accuracy: max(6, c.client.width * 0.03),
+            // sffont: SF Pro 12.2's lines are 15 pt (Windows' 13 px) and the widths are stretched
+            // by DLU.scaleX, so the box grows by those amounts and nothing else.
+            let icon: CGFloat = c.icon != .none ? 34 : 0
+            let extra = max(icon, CGFloat(c.lines) * WinMessageBoxLayout.lineHeight + 2) - max(icon, CGFloat(c.lines) * 13 + 2)
+            XCTAssertEqual(l.clientSize.height, c.client.height + extra, accuracy: 2, "\(c.name): client height")
+            XCTAssertEqual(l.clientSize.width, DLU.px(c.client.width), accuracy: max(6, c.client.width * 0.05),
                            "\(c.name): client width")
-            XCTAssertEqual(l.textFrame.origin, c.text0, "\(c.name): text origin")
-            XCTAssertEqual(l.textFrame.height, CGFloat(c.lines) * 13 + 2, "\(c.name): static height")
-            XCTAssertEqual(l.bandTop, c.client.height - 42, "\(c.name): band top")
+            XCTAssertEqual(l.textFrame.minX, c.text0.x, "\(c.name): text x")
+            XCTAssertEqual(l.textFrame.minY, c.text0.y, accuracy: 2, "\(c.name): text y")
+            XCTAssertEqual(l.textFrame.height, CGFloat(c.lines) * WinMessageBoxLayout.lineHeight + 2, "\(c.name): static height")
+            XCTAssertEqual(l.bandTop, l.clientSize.height - 42, "\(c.name): band top")
             XCTAssertEqual(l.iconFrame, c.icon == .none ? nil : NSRect(x: 21, y: 23, width: 32, height: 32))
             for (i, frame) in l.buttonFrames.enumerated() {
-                XCTAssertEqual(frame.minY, c.buttonY, "\(c.name): button y")
-                XCTAssertEqual(frame.size, NSSize(width: 75, height: 23))
+                XCTAssertEqual(frame.minY, c.buttonY + extra, "\(c.name): button y")
+                XCTAssertEqual(frame.size, WinMessageBoxLayout.buttonSize)
                 // right-aligned 15 px from the edge, 83 px apart
-                XCTAssertEqual(l.clientSize.width - frame.maxX, 15 + CGFloat(l.buttonFrames.count - 1 - i) * 83)
+                XCTAssertEqual(l.clientSize.width - frame.maxX, 15 + CGFloat(l.buttonFrames.count - 1 - i) * WinMessageBoxLayout.buttonPitch)
             }
         }
     }
@@ -96,18 +101,21 @@ final class Recheck2Tests: AppHostTestCase {
         let long = String(repeating: "word ", count: 120)
         let l = WinMessageBoxLayout(text: long, caption: "7-Zip", buttonCount: 1, hasIcon: true)
         XCTAssertGreaterThan(l.lines.count, 10)
-        for line in l.lines { XCTAssertLessThanOrEqual(WinMessageBoxLayout.width(line), 324) }
-        XCTAssertLessThanOrEqual(l.clientSize.width, 62 + 326 + 28)
+        let wrap = WinMessageBoxLayout.wrapWidth                 // 324 px, stretched by DLU.scaleX
+        for line in l.lines { XCTAssertLessThanOrEqual(WinMessageBoxLayout.width(line), wrap) }
+        XCTAssertLessThanOrEqual(l.clientSize.width, 62 + wrap + 2 + 28)
 
         let path = "Cannot open file '/Users/someone/" + String(repeating: "averyveryverylongfoldername_", count: 6) + "file.7z' as archive"
         let p = WinMessageBoxLayout(text: path, caption: "7-Zip", buttonCount: 1, hasIcon: true)
         XCTAssertGreaterThan(p.lines.count, 3)
-        XCTAssertTrue(p.lines.allSatisfy { WinMessageBoxLayout.width($0) <= 324 }, "\(p.lines)")
+        XCTAssertTrue(p.lines.allSatisfy { WinMessageBoxLayout.width($0) <= wrap }, "\(p.lines)")
         XCTAssertEqual(p.lines.joined().replacingOccurrences(of: " ", with: ""),
                        path.replacingOccurrences(of: " ", with: ""), "no character is lost when a word breaks")
 
         let three = WinMessageBoxLayout(text: "x", caption: "", buttonCount: 3, hasIcon: false)
-        XCTAssertEqual(three.clientSize.width, 284)
+        // 284 on Windows: 27 + three 75 px buttons 8.5 apart + 15, the buttons stretched by DLU.scaleX.
+        let b = WinMessageBoxLayout.buttonSize.width, gap = WinMessageBoxLayout.buttonPitch - b + 0.5
+        XCTAssertEqual(three.clientSize.width, 27 + (3 * b + 2 * gap).rounded() + 15)
     }
 
     // MARK: - behaviour

@@ -57,8 +57,7 @@ enum PanelArchiveIcons {
                 ?? frames.max(by: { $0.key < $1.key })?.value else { return nil }
         let image = NSImage(size: NSSize(width: points, height: points))
         for scale in 1...3 {
-            guard let enlarged = nearestNeighbour(frame, width: pixels * scale, height: pixels * scale) else { continue }
-            let rep = NSBitmapImageRep(cgImage: enlarged)
+            guard let rep = nearestNeighbour(frame, width: pixels * scale, height: pixels * scale) else { continue }
             rep.size = image.size
             image.addRepresentation(rep)
         }
@@ -66,24 +65,16 @@ enum PanelArchiveIcons {
         return image
     }
 
-    /// `frame` enlarged to `width` x `height` by whole pixels: every source pixel becomes an exact
-    /// block. Copied pixel by pixel through NSBitmapImageRep, which reads the .ico frames (16 bpp,
-    /// no colour space of their own, an AND-mask alpha) as AppKit draws them; drawing the CGImage
-    /// into a bitmap context lost their transparency.
-    static func nearestNeighbour(_ frame: CGImage, width: Int, height: Int) -> CGImage? {
-        let source = NSBitmapImageRep(cgImage: frame)
-        guard let target = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
-                                            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-              source.pixelsWide > 0, source.pixelsHigh > 0 else { return nil }
-        let target2 = target.retagging(with: .sRGB) ?? target
-        for y in 0..<height {
-            for x in 0..<width {
-                let sx = x * source.pixelsWide / width, sy = y * source.pixelsHigh / height
-                let color = source.colorAt(x: sx, y: sy)?.usingColorSpace(.sRGB) ?? .clear
-                target2.setColor(color, atX: x, y: y)
-            }
-        }
-        return target2.cgImage
+    /// `frame` enlarged to `width` x `height` by whole pixels with no interpolation: every source
+    /// pixel becomes an exact block. (The .ico frames are 8-bit indexed with an 8-bit alpha;
+    /// Core Graphics decodes them when it draws, NSBitmapImageRep.colorAt cannot read them.)
+    static func nearestNeighbour(_ frame: CGImage, width: Int, height: Int) -> NSBitmapImageRep? {
+        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .none
+        ctx.setShouldAntialias(false)
+        ctx.draw(frame, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage().map(NSBitmapImageRep.init(cgImage:))
     }
 }

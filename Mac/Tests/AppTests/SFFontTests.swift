@@ -185,7 +185,11 @@ final class SFFontTests: AppHostTestCase {
                 let reps = icon.representations.compactMap { $0 as? NSBitmapImageRep }
                 let one = try XCTUnwrap(reps.first { $0.pixelsWide == points }, "\(name) 1x")
                 let ico = try XCTUnwrap(Self.icoFrame(forName: name, pixels: points), "\(name) .ico frame")
-                XCTAssertTrue(Self.samePixels(one, NSBitmapImageRep(cgImage: ico)), "\(name) \(points): the .ico's own frame")
+                XCTAssertTrue(Self.samePixels(one, try XCTUnwrap(Self.decode(ico))), "\(name) \(points): the .ico's own frame")
+                let opaque = (0..<points).reduce(0) { n, y in
+                    n + (0..<points).filter { x in (Self.pixel(one, x, y).last ?? 0) > 128 }.count
+                }
+                XCTAssertGreaterThan(opaque, points * points / 4, "\(name) \(points): the icon has its pixels")
                 for scale in [2, 3] {
                     let rep = try XCTUnwrap(reps.first { $0.pixelsWide == points * scale }, "\(name) \(scale)x")
                     var blocks = true
@@ -227,7 +231,9 @@ final class SFFontTests: AppHostTestCase {
         // The main window: Details on a folder with archives, a row selected.
         let (controller, panel) = try openPanel(on: makeFixture())
         let window = try XCTUnwrap(controller.window)
-        if let a = panel.rows.firstIndex(where: { $0.name == "arc.7z" }) {
+        panel.listFocusOverride = true
+        defer { panel.listFocusOverride = nil }
+        if let a = panel.rows.firstIndex(where: { $0.name == "backup.7z" }) {
             panel.tableView.selectRowIndexes(IndexSet(integer: a), byExtendingSelection: false)
             panel.focusedIndex = a
             panel.refreshSelectionAppearance()
@@ -696,7 +702,7 @@ final class SFFontTests: AppHostTestCase {
         let font = PanelMetrics.listFont
         let caption = after
             ? "After (sffont): the 16 px / 32 px frames, pixel-sharp" + (scale == 2 ? ", Retina 2x" : ", 1x")
-            : "Before (feel3): the 32 px frame on Retina, 32 pt smoothed" + (scale == 2 ? ", Retina 2x" : ", 1x")
+            : "Before (feel3): 16 pt shows the 32 px frame on Retina" + (scale == 2 ? ", Retina 2x" : ", 1x")
         (caption as NSString).draw(at: NSPoint(x: 6, y: height - 18),
                                    withAttributes: [.font: NSFont.boldSystemFont(ofSize: 11), .foregroundColor: NSColor.darkGray])
         for (i, name) in names.enumerated() {
@@ -716,6 +722,15 @@ final class SFFontTests: AppHostTestCase {
             label.draw(at: NSPoint(x: x + 41 - w / 2, y: y + 12), withAttributes: [.font: font, .foregroundColor: NSColor.black])
         }
         return ctx.makeImage()
+    }
+
+    /// The frame decoded by Core Graphics into 8-bit RGBA at its own size.
+    static func decode(_ frame: CGImage) -> NSBitmapImageRep? {
+        guard let ctx = CGContext(data: nil, width: frame.width, height: frame.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(frame, in: CGRect(x: 0, y: 0, width: frame.width, height: frame.height))
+        return ctx.makeImage().map(NSBitmapImageRep.init(cgImage:))
     }
 
     private static func pixel(_ rep: NSBitmapImageRep, _ x: Int, _ y: Int) -> [Int] {
