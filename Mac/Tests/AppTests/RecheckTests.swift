@@ -132,7 +132,11 @@ final class RecheckTests: AppHostTestCase {
     func testToolbarTextButtonsAreTheWindowsSize() throws {
         let c = mainWindow()
         let strip = try XCTUnwrap(Self.find(FMToolbarView.self, in: c.window?.contentView))
-        XCTAssertEqual(strip.buttonSize, NSSize(width: 42, height: 46))
+        // 42 x 46 on Windows; the width follows the widest label, "Extract" is 41 pt in SF Pro 12.2.
+        let widest = ["Add", "Extract", "Test", "Copy", "Move", "Delete", "Info"].map {
+            ceil(($0 as NSString).size(withAttributes: [.font: FMToolbarView.labelFont]).width)
+        }.max() ?? 0
+        XCTAssertEqual(strip.buttonSize, NSSize(width: max(24, widest) + 7, height: 46))
         XCTAssertEqual(strip.frame.height, 52)
     }
 

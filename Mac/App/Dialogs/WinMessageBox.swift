@@ -146,22 +146,26 @@ enum WinMessageBox {
 /// The box's client-area geometry in points (one Windows pixel each), top-left origin.
 struct WinMessageBoxLayout {
 
-    /// The text font: the dialogs' Segoe UI 9 pt stand-in (DialogMetrics.font, Helvetica Neue 11).
+    /// The text font: the dialogs' Segoe UI 9 pt stand-in (DialogMetrics.font, SF Pro 12.2).
     static var font: NSFont { DialogMetrics.font }
     /// Segoe UI 9 pt is about 3.5 % wider than Helvetica Neue 11 over 7zFM's messages (226 px for
-    /// "Are you sure you want to delete 'notes.md'?" against 218): widths are scaled by it so the
-    /// box has the Windows size and breaks its lines where Windows does.
-    static let segoeScale: CGFloat = 1.035
+    /// "Are you sure you want to delete 'notes.md'?" against 218): widths were scaled by it so the
+    /// box had the Windows size and broke its lines where Windows does. A font wider than Segoe UI
+    /// (sffont: SF Pro 12.2, `DLU.scaleX` 1.10) is measured as it is, and the box's horizontal
+    /// metrics are stretched instead, as the dialogs' are.
+    static var segoeScale: CGFloat { DLU.scaleX > 1 ? 1 : 1.035 }
     /// The widest line before a break (Windows px): 321 px still fits ("path"), a word that would
     /// reach 332 px goes to the next line ("wide1").
-    static let wrapWidth: CGFloat = 324
-    static let lineHeight: CGFloat = 13
-    /// The first baseline below the text's top (cap top 3 px down, cap height 8).
-    static let firstBaseline: CGFloat = 11
+    static var wrapWidth: CGFloat { DLU.px(324) }
+    /// 13 px lines on Windows; a taller font (SF Pro 12.2: 11.8 + 2.6) gets its own glyph height.
+    static let lineHeight: CGFloat = max(13, ceil(font.ascender - font.descender))
+    /// The first baseline below the text's top (cap top 3 px down, cap height 8): 11, or the
+    /// font's ascender when it is taller (12 for SF Pro 12.2).
+    static let firstBaseline: CGFloat = max(11, font.ascender.rounded())
     static let iconRect = NSRect(x: 21, y: 23, width: 32, height: 32)
     static let iconBlock: CGFloat = 34
-    static let buttonSize = NSSize(width: 75, height: 23)
-    static let buttonPitch: CGFloat = 83
+    static var buttonSize: NSSize { NSSize(width: DLU.px(75), height: 23) }
+    static var buttonPitch: CGFloat { DLU.px(83) }
     static let bandHeight: CGFloat = 42
 
     let lines: [String]
@@ -188,7 +192,7 @@ struct WinMessageBoxLayout {
         let content = hasIcon ? max(staticHeight, Self.iconBlock) : staticHeight
         bandTop = 23 + content + 21
         let n = CGFloat(max(buttonCount, 1))
-        let buttonsWidth = (n * Self.buttonSize.width + (n - 1) * 8.5).rounded()
+        let buttonsWidth = (n * Self.buttonSize.width + (n - 1) * (Self.buttonPitch - Self.buttonSize.width + 0.5)).rounded()
         let width = max(textX + staticWidth + rightMargin,
                         27 + buttonsWidth + 15,
                         ceil(Self.width(caption)) + 54)
@@ -426,6 +430,11 @@ final class WinMessageBoxText: NSTextField {
     static let color = WinChrome.dynamic(WinChrome.gray(0), .labelColor)
 
     override var isFlipped: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        font = WinMessageBoxLayout.font                    // what it draws in (sffont: the UI font)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let font = WinMessageBoxLayout.font

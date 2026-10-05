@@ -40,7 +40,9 @@ final class DlgFeelTests: AppHostTestCase {
     private func assertWindow(_ window: NSWindow, _ name: String, size: NSSize, resizable: Bool,
                               file: StaticString = #filePath, line: UInt = #line) {
         let content = window.contentView?.bounds.size ?? .zero
-        XCTAssertEqual(content.width, size.width, accuracy: 0.5, "\(name): client width", file: file, line: line)
+        // sffont: the widths are Windows' stretched by DLU.scaleX (SF Pro 12.2 is 10 % wider than
+        // Segoe UI); the heights are Windows' own.
+        XCTAssertEqual(content.width, DLU.px(size.width), accuracy: 2.5, "\(name): client width", file: file, line: line)
         XCTAssertEqual(content.height, size.height, accuracy: 0.5, "\(name): client height", file: file, line: line)
         XCTAssertEqual(window.styleMask.contains(.resizable), resizable, "\(name): resizable", file: file, line: line)
         if !resizable {
@@ -130,7 +132,7 @@ final class DlgFeelTests: AppHostTestCase {
             let precSet = boxes.first { $0.title == ":" && abs($0.frame.minY - 185) < 1 && $0.frame.minX < 30 }
             XCTAssertNotNil(precSet, "the precision set box")
             XCTAssertTrue(self.views(NSPopUpButton.self, in: window.contentView).contains {
-                abs($0.frame.minX - 246) < 1 && abs($0.frame.minY - 182) < 1 && abs($0.frame.width - 114) < 1
+                abs($0.frame.minX - DLU.px(246)) < 1.5 && abs($0.frame.minY - 182) < 1 && abs($0.frame.width - DLU.px(114)) < 1.5
             }, "IDC_COMPRESS_TIME_PREC 190 at 246,182 114 wide")
         }
     }
@@ -220,7 +222,7 @@ final class DlgFeelTests: AppHostTestCase {
         let page = try optionsPage(OptionsLanguagePage.self)
         let popups = views(NSPopUpButton.self, in: page.view)
         XCTAssertEqual(popups.count, 1)
-        XCTAssertEqual(popups.first?.frame.width ?? 0, 240, accuracy: 0.5)
+        XCTAssertEqual(popups.first?.frame.width ?? 0, DLU.px(240), accuracy: 1)
         XCTAssertTrue(views(NSTableView.self, in: page.view).isEmpty)
         XCTAssertEqual(page.comboTitles.first, "English : English  ---")
     }

@@ -187,14 +187,22 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
     // The property sheet as 7zFM 26.03 shows it (dlgfeel-data/win/dlg-options-*.txt): a fixed
     // 494 x 550 client area (no WS_THICKFRAME), the tab control at 6,7 482x507, the page at
     // 10,29 474x481 (the IDD_* templates' 316 x 296 DLU), and the four 75 x 23 buttons at y 520.
-    static let clientSize = NSSize(width: 494, height: 550)
-    static let tabControlRect = NSRect(x: 6, y: 7, width: 482, height: 507)
-    static let pageRect = NSRect(x: 10, y: 29, width: 474, height: 481)
+    // sffont: the horizontal metrics are stretched by DLU.scaleX with the pages (316 DLU wide), so
+    // a wider dialog font keeps Windows' proportions; at scale 1 they are the pixels above.
+    static var pageWidth: CGFloat { DLU.x(316) }
+    static var clientSize: NSSize { NSSize(width: pageWidth + 20, height: 550) }
+    static var tabControlRect: NSRect { NSRect(x: 6, y: 7, width: pageWidth + 8, height: 507) }
+    static var pageRect: NSRect { NSRect(x: 10, y: 29, width: pageWidth, height: 481) }
     static var pageSize: NSSize { pageRect.size }
-    static let okRect = NSRect(x: 170, y: 520, width: 75, height: 23)          // IDOK
-    static let cancelRect = NSRect(x: 251, y: 520, width: 75, height: 23)      // IDCANCEL
-    static let applyRect = NSRect(x: 332, y: 520, width: 75, height: 23)       // ID_APPLY_NOW 12321
-    static let helpRect = NSRect(x: 413, y: 520, width: 75, height: 23)        // IDHELP
+    /// The four 50 x 14 DLU buttons, 4 DLU apart, the last 4 DLU from the right edge.
+    private static func buttonRect(_ fromRight: Int) -> NSRect {
+        let w = DLU.x(50), gap = DLU.x(4)
+        return NSRect(x: clientSize.width - gap - w - CGFloat(fromRight) * (w + gap), y: 520, width: w, height: 23)
+    }
+    static var okRect: NSRect { buttonRect(3) }          // IDOK
+    static var cancelRect: NSRect { buttonRect(2) }      // IDCANCEL
+    static var applyRect: NSRect { buttonRect(1) }       // ID_APPLY_NOW 12321
+    static var helpRect: NSRect { buttonRect(0) }        // IDHELP
 
     private let tabView = NSTabView()
     private let tabControl = OptionsTabControl(frame: OptionsWindowController.tabControlRect)
