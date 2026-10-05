@@ -91,7 +91,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
 
     private var window: NSWindow!
     private let folderLabel = DialogKit.label("")                     // IDT_COMPRESS_ARCHIVE_FOLDER 130
-    private let archiveCombo = NSComboBox()                           // IDC_COMPRESS_ARCHIVE 100
+    private let archiveCombo = WinComboBox()                         // IDC_COMPRESS_ARCHIVE 100
     private let browseButton = NSButton()                             // IDB_COMPRESS_SET_ARCHIVE 101
     private let formatCombo = NSPopUpButton()                         // IDC_COMPRESS_FORMAT 104
     private let levelCombo = NSPopUpButton()                          // IDC_COMPRESS_LEVEL 102
@@ -104,7 +104,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
     private let memUseCombo = NSPopUpButton()                         // IDC_COMPRESS_MEM_USE 117
     private let memoryValueLabel = DialogKit.label("")                // IDT_COMPRESS_MEMORY_VALUE 113
     private let memoryDeValueLabel = DialogKit.label("", alignment: .right) // IDT_COMPRESS_MEMORY_DE_VALUE 114
-    private let volumeCombo = NSComboBox()                            // IDC_COMPRESS_VOLUME 105
+    private let volumeCombo = WinComboBox()                          // IDC_COMPRESS_VOLUME 105
     private let parametersField = NSTextField()                       // IDE_COMPRESS_PARAMETERS 111
     private let optionsButton = NSButton()                            // IDB_COMPRESS_OPTIONS 2100
     private let optionsSummary = DialogKit.label("")                  // IDT_COMPRESS_OPTIONS 141

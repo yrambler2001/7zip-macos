@@ -78,7 +78,7 @@ final class ExtractDialog: NSObject, NSTextFieldDelegate {
     private var result: Result?
 
     // Controls, with their Windows IDs.
-    private let pathCombo = NSComboBox()                    // IDC_EXTRACT_PATH 100
+    private let pathCombo = WinComboBox()                  // IDC_EXTRACT_PATH 100
     private let browseButton: NSButton                      // IDB_EXTRACT_SET_PATH 101
     private let nameEnableBox: NSButton                     // IDX_EXTRACT_NAME_ENABLE 131
     private let nameField = NSTextField()                   // IDE_EXTRACT_NAME 130

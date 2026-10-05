@@ -368,31 +368,37 @@ extension RcFormView {
     }
 }
 
-/// A drop-down list's text area as Windows has it: the text 4 px from the left edge and up to the
-/// 17 px button, so an item that fits the Windows combo ("100 ns : Windows" in 114 px) is not cut
-/// to "100 ns : Wind..." by the wider AppKit insets. The native bezel and menu stay.
+/// A drop-down list (CBS_DROPDOWNLIST) as Windows 11 draws it (WinCombo.swift, reports/feel3.md
+/// §2): the themed box in its normal / hover / focused / disabled colours, the chevron, and the
+/// text left-aligned 4 px in with its baseline 15 px below the top -- AppKit's own pop-up centres
+/// the title in a capsule. The menu that opens stays AppKit's.
 final class WinPopUpButtonCell: NSPopUpButtonCell {
 
-    static let textInset: CGFloat = 4
+    static let textInset: CGFloat = WinCombo.textX
     static let buttonWidth: CGFloat = 17
 
+    let hover = WinComboHover()
+
     override func titleRect(forBounds rect: NSRect) -> NSRect {
-        var r = super.titleRect(forBounds: rect)
-        let left = rect.minX + Self.textInset
-        let right = rect.maxX - Self.buttonWidth
-        if right - left > r.width {
-            r.size.width = right - left
-            r.origin.x = left
-        }
-        return r
+        NSRect(x: rect.minX + Self.textInset, y: rect.minY, width: max(0, rect.width - Self.textInset - Self.buttonWidth),
+               height: rect.height)
     }
 
-    override func drawTitle(_ title: NSAttributedString, withFrame frame: NSRect, in controlView: NSView) -> NSRect {
-        let r = titleRect(forBounds: controlView.bounds)
-        var f = frame
-        f.origin.x = r.minX
-        f.size.width = r.width
-        return super.drawTitle(title, withFrame: f, in: controlView)
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
+        let flipped = controlView.isFlipped
+        let window = controlView.window
+        let focused = window?.isKeyWindow == true && window?.firstResponder === controlView
+        let state: WinCombo.State = !isEnabled ? .disabled
+            : (hover.isInside || isHighlighted ? .hover : (focused ? .focused : .normal))
+        WinCombo.drawBox(cellFrame, flipped: flipped, editable: false, state: state, hovered: hover.isInside)
+        WinCombo.drawText(titleOfSelectedItem ?? "", in: cellFrame, flipped: flipped, font: font ?? DialogMetrics.font,
+                          color: isEnabled ? WinCombo.text : WinCombo.disabledText,
+                          maxX: cellFrame.maxX - Self.buttonWidth)
+        if focused, state != .disabled {
+            var r = cellFrame
+            if !flipped { r.origin.y = cellFrame.minY }
+            WinCombo.drawFocusRect(r)
+        }
     }
 
     /// Gives `popup` this cell, keeping its menu, selection, target / action and state.
@@ -412,6 +418,8 @@ final class WinPopUpButtonCell: NSPopUpButtonCell {
         cell.tag = old.tag
         cell.alignment = .left                      // CBS_DROPDOWNLIST text is left-aligned
         popup.cell = cell
+        popup.focusRingType = .none                 // the dotted focus rectangle is drawn instead
+        cell.hover.attach(to: popup)
         if selected >= 0, selected < cell.numberOfItems { cell.selectItem(at: selected) }
     }
 }

@@ -14,8 +14,8 @@ final class SplitDialog: NSObject {
     }
 
     private let window: NSWindow
-    private let pathCombo = NSComboBox()          // IDC_SPLIT_PATH 100 (MY_COMBO_WITH_EDIT)
-    private let volumeCombo = NSComboBox()        // IDC_SPLIT_VOLUME 102
+    private let pathCombo = WinComboBox()        // IDC_SPLIT_PATH 100 (MY_COMBO_WITH_EDIT)
+    private let volumeCombo = WinComboBox()      // IDC_SPLIT_VOLUME 102
     private var result: Result?
     private let filePath: String
 

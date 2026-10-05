@@ -38,7 +38,7 @@ private final class CopyMoveDialogController: NSObject {
     private static let numInfoLines = 11
 
     private let window: NSWindow
-    private let combo = NSComboBox()                    // IDC_COPY 101 (MY_COMBO_WITH_EDIT)
+    private let combo = WinComboBox()                  // IDC_COPY 101 (MY_COMBO_WITH_EDIT)
     private var result: String?
 
     init(title: String, label: String, value: String, history: [String], info: String, parent: NSWindow?) {

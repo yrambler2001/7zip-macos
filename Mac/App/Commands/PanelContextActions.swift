@@ -9,7 +9,7 @@
 // window controller, and each one calls the same command implementation the File menu, the
 // toolbar and the Finder extension already use:
 //
-//   kOpen / kOpen + type      CPanel::OpenFocusedItemAsInternal(type) -- bind the panel
+//   kOpen / kOpen + type      a new File Manager window (ContextMenu.cpp:1264, a new 7zFM)
 //   kExtract                  ExtractCommands.extractWithDialog()   (toolbar Extract 1071)
 //   kExtractHere              ExtractCommands.extractHere()
 //   kExtractTo                ExtractCommands.extractToSubfolder()
@@ -30,15 +30,28 @@ import SevenZipKit
 
 extension MainWindowController: PanelContextCommands {
 
-    /// kOpen (IDS_CONTEXT_OPEN 2322): open the archive in this panel (same process, BindToPath).
+    /// kOpen (IDS_CONTEXT_OPEN 2322). ContextMenu.cpp:1264-1275 starts a *new* 7zFM process
+    /// (`MyCreateProcess(Get7zFmPath(), "\"<_fileNames[0]>\" [-t<type>]")`), so the archive opens
+    /// in its own File Manager window, never in this panel (feel3, the user's finding 5). The
+    /// port's equivalent of a new 7zFM process is a new window (MainWindows, newwindow.md), opened
+    /// exactly as a Finder / command-line `7zFM <path>` is (`CommandExecutor.openInFileManager`).
+    /// Enter / File > Open (IDM_FILE_OPEN 540) and "Open Inside" (541) stay in the panel.
     @objc func sevenZipOpenArchive(_ sender: Any?) {
-        focusedPanel.openSelection(insideOnly: true, formatHint: nil)
+        openArchiveInNewWindow(formatHint: nil)
     }
 
-    /// kOpen with an ArcType from kOpenTypes ("*", "#", "#:e", "7z", "zip", "cab", "rar").
+    /// kOpen with an ArcType from kOpenTypes ("*", "#", "#:e", "7z", "zip", "cab", "rar"): the
+    /// same new window, with `-t<type>`.
     @objc func sevenZipOpenArchiveAs(_ sender: Any?) {
-        let hint = Self.contextTarget(sender)?.formatHint
-        focusedPanel.openSelection(insideOnly: true, formatHint: hint)
+        openArchiveInNewWindow(formatHint: Self.contextTarget(sender)?.formatHint)
+    }
+
+    /// `_fileNames[0]`: the first operated item's path.
+    func openArchiveInNewWindow(formatHint: String?) {
+        let panel = focusedPanel
+        let paths = panel.operatedRowIndices().map { panel.rows[$0].fullPath }.filter { !$0.isEmpty }
+        guard let first = paths.first else { return }
+        CommandExecutor.openInFileManager(paths: [first], formatHint: formatHint)
     }
 
     /// kExtract (IDS_CONTEXT_EXTRACT 2323).

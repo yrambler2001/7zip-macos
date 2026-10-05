@@ -389,15 +389,31 @@ extension PanelViewController {
                                                 includingResourceValuesForKeys: nil,
                                                 options: [.skipHiddenVolumes])?.map { $0.path } ?? [])
         addressDropdownPaths = entries.map { $0.path }
+        addressDropdownEntries = entries
+        // The list is AddressPopup's (feel3); NSComboBox's own list stays empty.
         pathCombo.removeAllItems()
-        for entry in entries { pathCombo.addItem(withObjectValue: entry.title) }
+    }
+
+    /// CBN_DROPDOWN from the arrow (or Alt+Down / F4): build the entries and open the Windows-
+    /// style list under the combo (PanelAddressPopup.swift).
+    func showAddressPopup() {
+        if let open = AddressPopup.current, open.isOpen {
+            open.close()
+            return
+        }
+        rebuildAddressDropdown()
+        let items = addressDropdownEntries.map {
+            AddressPopupItem(name: $0.name, level: $0.level, icon: AddressDropdown.icon(for: $0))
+        }
+        AddressPopup.show(below: pathCombo, items: items, font: PanelMetrics.listFont) { [weak self] index in
+            self?.commitAddressDropdownEntry(at: index)
+        }
     }
 
     /// CBN_SELENDOK: bind the entry's path (ComboBoxPaths[index]) and focus the list.
     func commitAddressDropdownEntry(at index: Int) {
         guard index >= 0, index < addressDropdownPaths.count else { return }
         let path = addressDropdownPaths[index]
-        pathCombo.deselectItem(at: index)                   // _headerComboBox.SetCurSel(-1)
         navigate(to: path, fallbackToRoot: false, focusListOnSuccess: true)
     }
 

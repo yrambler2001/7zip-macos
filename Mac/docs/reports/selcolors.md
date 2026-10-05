@@ -121,6 +121,9 @@ and white text: white on (0,120,212) is 4.53:1, which passes WCAG AA, and the se
 the same in both appearances. The grid becomes 12 % white. The focus dots on the list background
 use `labelColor`, which is white in Dark.
 
+**Decision final (the user, 2026-10-05, recorded by `mac/feel3`):** the inactive panel keeps the
+Windows behaviour below -- no selection drawn -- and is not to be changed.
+
 **One deliberate behaviour change, from parity:** an inactive panel and a window in the
 background now show **no** selection, exactly as 7zFM 25.01 does. Before, macOS showed a grey
 "unemphasized" selection. The status bar still counts the selection, and it comes back with the

@@ -23,7 +23,7 @@ enum ComboDialog {
 private final class ComboDialogController: NSObject {
 
     private let window: NSWindow
-    private let combo = NSComboBox()                    // IDC_COMBO 101 (MY_COMBO_WITH_EDIT)
+    private let combo = WinComboBox()                  // IDC_COMBO 101 (MY_COMBO_WITH_EDIT)
     private var result: String?
 
     init(title: String, label: String, value: String, strings: [String], parent: NSWindow?) {

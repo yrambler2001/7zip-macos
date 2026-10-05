@@ -287,7 +287,7 @@ final class RecheckTests: AppHostTestCase {
     /// Tab walks the controls in .rc template order, as on 7zFM (recheck-data/win/keys.txt).
     func testDialogTabOrderFollowsTheTemplate() {
         let copy = tabChain { _ = CopyMoveDialog.run(move: false, value: "/tmp/", history: [], info: "", parent: nil) }
-        XCTAssertEqual(copy, ["NSButton '...'", "NSButton 'OK'", "NSButton 'Cancel'", "NSComboBox '/tmp/'"])
+        XCTAssertEqual(copy, ["NSButton '...'", "NSButton 'OK'", "NSButton 'Cancel'", "WinComboBox '/tmp/'"])   // feel3: the Windows-drawn combo
         let link = tabChain {
             _ = LinkDialog.run(currentDirPrefix: TestPaths.fixtures + "/", filePath: TestPaths.fixture("test.7z"),
                                anotherPath: "/tmp", parent: nil)

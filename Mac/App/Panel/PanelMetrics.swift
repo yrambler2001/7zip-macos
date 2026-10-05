@@ -41,8 +41,8 @@ enum PanelMetrics {
     static let textFieldInset: CGFloat = 0
 
     /// The list's font: Segoe UI 9 pt metrics with tabular digits (see the header comment).
-    static let listFont: NSFont = NSFont(name: "HelveticaNeue", size: 11)
-        ?? NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+    /// The hidden `FM.ListFont` setting picks another candidate (PanelListFont.swift, feel3).
+    static var listFont: NSFont { ListFontChoice.current }
 
     /// The width the list font gives `text`.
     static func textWidth(_ text: String) -> CGFloat {

@@ -167,6 +167,11 @@ extension PanelViewController: PanelTableViewKeyHandler, NSComboBoxDelegate, NST
         case #selector(NSResponder.insertTab(_:)):
             focusList()
             return true
+        case #selector(NSResponder.moveDown(_:)) where NSApp.currentEvent?.modifierFlags.contains(.option) == true,
+             #selector(NSResponder.moveToEndOfParagraph(_:)), #selector(NSTextView.moveParagraphForwardAndModifySelection(_:)):
+            // Alt+Down (Option+Down here, which AppKit binds to the paragraph moves): CB_SHOWDROPDOWN
+            showAddressPopup()
+            return true
         default:
             return false
         }
@@ -194,7 +199,7 @@ extension PanelViewController: PanelTableViewKeyHandler, NSComboBoxDelegate, NST
 final class PanelIconView: NSView {
 
     private(set) weak var panel: PanelViewController?
-    let scrollView = NSScrollView()
+    let scrollView = WinScrollView()
     let collectionView = PanelCollectionView()
     private var mode = 0
 
@@ -238,7 +243,10 @@ final class PanelIconView: NSView {
         let layout = NSCollectionViewFlowLayout()
         switch mode {
         case 0:
-            layout.itemSize = NSSize(width: 104, height: 76)
+            // LVS_ICON: SM_CXICONSPACING x SM_CYICONSPACING = 75 x 75 at 96 dpi (feel3-data/win/
+            // icons-large.png: the icons 75 px apart both ways, the first one's cell at the
+            // list's edge).
+            layout.itemSize = NSSize(width: 75, height: 75)
             layout.scrollDirection = .vertical
         case 1:
             layout.itemSize = NSSize(width: 200, height: 20)
@@ -247,9 +255,10 @@ final class PanelIconView: NSView {
             layout.itemSize = NSSize(width: 200, height: 20)
             layout.scrollDirection = .horizontal
         }
-        layout.minimumInteritemSpacing = 2
-        layout.minimumLineSpacing = 2
-        layout.sectionInset = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        layout.minimumInteritemSpacing = mode == 0 ? 0 : 2
+        layout.minimumLineSpacing = mode == 0 ? 0 : 2
+        layout.sectionInset = mode == 0 ? NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
+                                        : NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
         // A vertically scrolling layout follows the clip view's width, a horizontal one (List
         // mode, LVS_LIST) its height.
         collectionView.autoresizingMask = layout.scrollDirection == .vertical ? [.width] : [.height]
@@ -269,12 +278,16 @@ final class PanelIconView: NSView {
         let clip = scrollView.contentView.bounds.size
         guard clip.width > 1, clip.height > 1 else { return }
         var frame = collectionView.frame
+        // The content's own extent, never the frame's old one: a frame that only ever grew kept a
+        // scroll bar after the folder got smaller, or from the 600 x 400 the view starts with
+        // (the phantom scroll bar of the user's finding 3, feel3).
+        let content = collectionView.collectionViewLayout?.collectionViewContentSize ?? .zero
         if mode == 2 {                                  // List: columns, horizontal scrolling
             frame.size.height = clip.height
-            frame.size.width = max(frame.size.width, clip.width)
+            frame.size.width = max(content.width, clip.width)
         } else {
             frame.size.width = clip.width
-            frame.size.height = max(frame.size.height, clip.height)
+            frame.size.height = max(content.height, clip.height)
         }
         if frame != collectionView.frame {
             collectionView.frame = frame
@@ -407,20 +420,165 @@ final class PanelCollectionView: NSCollectionView {
     }
 
     override func keyDown(with event: NSEvent) {
+        cancelSlowClickRename()
         if panel?.handleListKeyDown(event) == true { return }
         super.keyDown(with: event)
     }
 
     override func mouseDown(with event: NSEvent) {
+        cancelSlowClickRename()
+        cancelHoverSelect()
+        let point = convert(event.locationInWindow, from: nil)
+        // The slow second click (LVS_EDITLABELS, in every view mode on Windows; recheck2 measured
+        // it in Details): a click on the label of the item that is already the only selected and
+        // focused one starts the rename after the double-click time unless a second click follows.
+        let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        var slowClickItem = -1
+        if !Settings.singleClick, event.clickCount == 1, mods.isEmpty, let panel, !panel.usesAlternativeSelection,
+           let path = indexPathForItem(at: point), panel.selectedIndexes == IndexSet(integer: path.item),
+           panel.focusedIndex == path.item, labelRect(item: path.item)?.contains(point) == true {
+            slowClickItem = path.item
+        }
+        pendingSlowClick = slowClickItem >= 0 ? (slowClickItem, event.locationInWindow) : nil
         super.mouseDown(with: event)
         guard let panel else { return }
-        let point = convert(event.locationInWindow, from: nil)
         if let path = indexPathForItem(at: point) {
             panel.noteClickedRow(path.item)
             if event.clickCount == 2 || Settings.singleClick {
+                pendingSlowClick = nil
                 panel.activateFocusedItem(modifiers: event.modifierFlags)
             }
         }
+        // NSCollectionView tracks the click itself and returns on mouse-up, which it consumes:
+        // with the button already released the click is complete (a drag would have cleared it).
+        if let up = NSApp.currentEvent, up.type == .leftMouseUp {
+            finishSlowClick(up)
+        } else if pendingSlowClick != nil, NSEvent.pressedMouseButtons & 1 == 0 {
+            finishSlowClick(event)                      // a drag in the loop cleared it (below)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        finishSlowClick(event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        pendingSlowClick = nil
+        super.mouseDragged(with: event)
+    }
+
+    /// An item drag started inside the collection view's own click tracking: not a click.
+    override func beginDraggingSession(with items: [NSDraggingItem], event: NSEvent,
+                                       source: NSDraggingSource) -> NSDraggingSession {
+        pendingSlowClick = nil
+        return super.beginDraggingSession(with: items, event: event, source: source)
+    }
+
+    // MARK: slow click and Single-click hover in the icon views (feel3; recheck2 §5 for Details)
+
+    private var pendingSlowClick: (item: Int, at: NSPoint)?
+    private var slowClickTimer: Timer?
+    private var hoverTimer: Timer?
+    private var hoverItem = -1
+    private var hoverArea: NSTrackingArea?
+
+    /// The label rect (LVIR_LABEL) of `item` in this view's coordinates.
+    func labelRect(item: Int) -> NSRect? {
+        guard let cell = self.item(at: IndexPath(item: item, section: 0)) as? PanelCollectionItem else { return nil }
+        return cell.view.convert(cell.labelRect, to: self)
+    }
+
+    /// The icon or the label of the item under `point` (LVHT_ONITEM), else -1.
+    func hotItem(at point: NSPoint) -> Int {
+        guard let path = indexPathForItem(at: point),
+              let cell = item(at: path) as? PanelCollectionItem else { return -1 }
+        let local = cell.view.convert(point, from: self)
+        return cell.itemHitRect.contains(local) ? path.item : -1
+    }
+
+    private func finishSlowClick(_ up: NSEvent) {
+        guard let pending = pendingSlowClick else { return }
+        pendingSlowClick = nil
+        guard hypot(up.locationInWindow.x - pending.at.x, up.locationInWindow.y - pending.at.y) < 4,
+              panel?.selectedIndexes == IndexSet(integer: pending.item) else { return }
+        let item = pending.item
+        let name = panel.flatMap { item < $0.rows.count ? $0.rows[item].name : nil }
+        let timer = Timer(timeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
+            guard let self, let panel = self.panel else { return }
+            self.slowClickTimer = nil
+            guard panel.selectedIndexes == IndexSet(integer: item), panel.focusedIndex == item,
+                  item < panel.rows.count, panel.rows[item].name == name, panel.renamingRow == nil,
+                  NSEvent.pressedMouseButtons == 0 else { return }
+            panel.renameFocusedItem()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        slowClickTimer = timer
+    }
+
+    func cancelSlowClickRename() {
+        slowClickTimer?.invalidate()
+        slowClickTimer = nil
+    }
+
+    var hasPendingSlowClickRename: Bool { slowClickTimer != nil }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate,
+                                                         .activeInActiveApp, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard Settings.singleClick else { cancelHoverSelect(); return }
+        let item = hotItem(at: convert(event.locationInWindow, from: nil))
+        (item >= 0 ? NSCursor.pointingHand : NSCursor.arrow).set()
+        guard item != hoverItem else { return }
+        cancelHoverSelect()
+        hoverItem = item
+        guard item >= 0 else { return }
+        let timer = Timer(timeInterval: PanelTableView.hoverSelectDelay, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.hoverTimer = nil
+            self.hoverSelect(item)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        hoverTimer = timer
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if Settings.singleClick, hotItem(at: convert(event.locationInWindow, from: nil)) >= 0 {
+            NSCursor.pointingHand.set()
+        } else {
+            super.cursorUpdate(with: event)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        cancelHoverSelect()
+        hoverItem = -1
+    }
+
+    private func cancelHoverSelect() {
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+    }
+
+    var hasPendingHoverSelect: Bool { hoverTimer != nil }
+
+    /// LVS_EX_TRACKSELECT: the item rested on for the hover time becomes the selected and focused one.
+    func hoverSelect(_ item: Int, checkPointer: Bool = true) {
+        guard Settings.singleClick, let panel, item >= 0, item < panel.rows.count,
+              NSEvent.pressedMouseButtons == 0, panel.renamingRow == nil else { return }
+        if checkPointer, let window, hotItem(at: convert(window.mouseLocationOutsideOfEventStream, from: nil)) != item {
+            return
+        }
+        panel.setFocus(item)
     }
 
     /// The item views, in item order. AppKit's own tree for a flow-layout collection view is one
@@ -467,7 +625,7 @@ final class PanelCollectionItem: NSCollectionViewItem {
         icon.setAccessibilityElement(false)
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingMiddle
-        label.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.font = PanelMetrics.listFont                // the list's font in every view mode (Segoe UI 9)
         root.addSubview(icon)
         root.addSubview(label)
         view = root
@@ -503,11 +661,38 @@ final class PanelCollectionItem: NSCollectionViewItem {
 
     /// The label rect (LVIR_LABEL): the text's width plus 2 pt either side, centred under a large
     /// icon, left-aligned after a small one.
-    fileprivate var labelRect: NSRect {
+    var labelRect: NSRect {
         let frame = label.frame
         let width = min(frame.width, label.intrinsicContentSize.width) + 2 * PanelSelectionStyle.labelPadding
         let x = large ? frame.midX - width / 2 : frame.minX - PanelSelectionStyle.labelPadding
         return NSRect(x: x, y: frame.minY, width: width, height: frame.height).intersection(view.bounds)
+    }
+
+    /// The item's own area (LVIR_SELECTBOUNDS): the icon and the label.
+    var itemHitRect: NSRect { labelRect.union(icon.frame) }
+
+    /// In-place label edit (LVM_EDITLABEL) in the icon views: the label becomes an edit field
+    /// with the item's real name.
+    func beginLabelEdit(name: String) -> NSTextField {
+        label.stringValue = name
+        label.isEditable = true
+        label.isSelectable = true
+        label.isBordered = true
+        label.drawsBackground = true
+        label.backgroundColor = .textBackgroundColor
+        label.textColor = PanelSelectionStyle.normalText(isDeleted: false)
+        label.lineBreakMode = .byClipping
+        return label
+    }
+
+    func endLabelEdit(displayName: String) {
+        label.isEditable = false
+        label.isSelectable = false
+        label.isBordered = false
+        label.drawsBackground = false
+        label.lineBreakMode = .byTruncatingMiddle
+        label.stringValue = displayName
+        updateAppearance()
     }
 
     fileprivate var drawsFocusRectangle: Bool {

@@ -79,12 +79,13 @@ final class ListFeelInputTests: SevenZipUITestCase {
         let panel = sevenZip.panel(0)
         XCTAssertTrue(panel.waitForPath(scratch + "/sub"))
         let bar = panel.addressBar
-        let disclosure = bar.buttons.firstMatch
-        XCTAssertTrue(disclosure.waitForExistence(timeout: 10), "the combo has no drop-down button")
-        disclosure.click()
+        XCTAssertTrue(bar.waitForExistence(timeout: 10), "no address bar")
+        // The arrow, 9 pt in from the combo's right edge, opens the Windows-style list
+        // (AddressPopup, feel3): one row per entry, named after the entry, no indent spaces.
+        bar.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -9, dy: 0)).click()
         let name = (scratch as NSString).lastPathComponent
         let entry = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "(value ENDSWITH %@ OR label ENDSWITH %@) AND NOT (value BEGINSWITH '/')", " " + name, " " + name))
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'address-dropdown-' AND label == %@", name))
             .firstMatch
         if !entry.waitForExistence(timeout: 10) { _ = sevenZip.dumpTree("listfeel-dropdown") }
         XCTAssertTrue(entry.exists, "no drop-down entry for \(name)")

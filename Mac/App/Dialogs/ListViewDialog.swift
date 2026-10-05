@@ -187,7 +187,7 @@ private final class ListViewDialogController: NSObject, NSTableViewDataSource, N
             table.action = #selector(rowActivated(_:))      // LVS_EX_ONECLICKACTIVATE | LVS_EX_TRACKSELECT
         }
 
-        let scrollView = NSScrollView()
+        let scrollView = WinScrollView()
         scrollView.documentView = table
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
@@ -404,7 +404,7 @@ private final class TextViewerDialogController: NSObject {
         textView.string = text
         textView.onClose = { NSApp.stopModal() }
 
-        let scrollView = NSScrollView()
+        let scrollView = WinScrollView()
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true

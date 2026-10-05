@@ -140,7 +140,15 @@ final class AddressComboCell: NSComboBoxCell {
         return r
     }
 
-    override func drawingRect(forBounds rect: NSRect) -> NSRect { textRect(rect) }
+    /// NSComboBoxCell places the field editor inside drawingRect(forBounds:) with its own bezel
+    /// inset on top, so the edited path sat 4 px right of the drawn one -- the user's finding 7
+    /// ("clicking the address bar shifts the path to the right"). The editor's rect is moved back
+    /// by that inset (measured, Feel3Tests.testAddressTextDoesNotMoveWhenEdited).
+    static let editorShift = NSSize(width: -4, height: 0)
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        textRect(rect).offsetBy(dx: Self.editorShift.width, dy: Self.editorShift.height)
+    }
     override func titleRect(forBounds rect: NSRect) -> NSRect { textRect(rect) }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {
@@ -173,19 +181,13 @@ final class AddressComboCell: NSComboBoxCell {
         super.drawInterior(withFrame: textRect(cellFrame), in: controlView)
     }
 
-    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
-                       delegate: Any?, event: NSEvent?) {
-        super.edit(withFrame: textRect(rect), in: controlView, editor: textObj, delegate: delegate, event: event)
-    }
-
-    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText,
-                         delegate: Any?, start selStart: Int, length selLength: Int) {
-        super.select(withFrame: textRect(rect), in: controlView, editor: textObj, delegate: delegate,
-                     start: selStart, length: selLength)
-    }
+    // edit / select: NSTextFieldCell takes the field editor's frame from drawingRect(forBounds:)
+    // itself. Passing textRect here as well (as before feel3) applied the inset twice, so the
+    // path jumped right when the combo was clicked (the user's finding 7).
 }
 
-/// The combo itself: draws through `AddressComboCell` and has the band's 24 px height.
+/// The combo itself: draws through `AddressComboCell` and has the band's 24 px height. Its arrow
+/// opens the Windows-style dropped list (`AddressPopup`, feel3) instead of NSComboBox's own.
 final class AddressComboBox: NSComboBox {
     override class var cellClass: AnyClass? {
         get { AddressComboCell.self }
@@ -194,8 +196,24 @@ final class AddressComboBox: NSComboBox {
 
     var addressCell: AddressComboCell? { cell as? AddressComboCell }
 
+    /// CBN_DROPDOWN: the panel builds the entries and opens the list.
+    var onDropDown: (() -> Void)?
+
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: WinChrome.bandHeight)
+    }
+
+    /// The arrow's 18 px at the right edge.
+    func isOnArrow(_ point: NSPoint) -> Bool {
+        bounds.contains(point) && point.x >= bounds.maxX - AddressComboCell.arrowWidth
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if isOnArrow(convert(event.locationInWindow, from: nil)) {
+            onDropDown?()
+            return
+        }
+        super.mouseDown(with: event)
     }
 
     override func draw(_ dirtyRect: NSRect) {

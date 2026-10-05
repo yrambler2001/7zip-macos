@@ -132,6 +132,8 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     var lastPropertiesRoute: FinderInfo.Route?
     /// ComboBoxPaths: the path each address drop-down entry binds (PanelAddressDropdown.swift).
     var addressDropdownPaths: [String] = []
+    /// The entries behind `addressDropdownPaths` (names, levels, icon kinds) for AddressPopup.
+    var addressDropdownEntries: [AddressDropdown.Entry] = []
 
     // MARK: views
     let pathBar = PathBarView()
@@ -140,7 +142,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     /// The list's themed WS_EX_CLIENTEDGE (recheck §2): a 1 px line, 1 px of white, then the list.
     private let listFrame = PanelListFrameView()
     private let listContainer = NSView()
-    private let scrollView = NSScrollView()
+    private let scrollView = WinScrollView()
     let tableView = PanelTableView()
     private(set) var iconView: PanelIconView!
     /// Section 0 of the status bar ("N / M object(s) selected"); sections 1-3 follow it.
@@ -184,6 +186,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         pathCombo.target = self
         pathCombo.action = #selector(pathComboAction(_:))
         pathCombo.delegate = self
+        pathCombo.onDropDown = { [weak self] in self?.showAddressPopup() }
         pathCombo.font = PanelMetrics.listFont          // the GUI font, as the list (recheck §2)
         pathCombo.isBordered = false
         pathCombo.translatesAutoresizingMaskIntoConstraints = false

@@ -21,8 +21,8 @@ final class LinkDialog: NSObject {
     }
 
     private let window: NSWindow
-    private let fromCombo = NSComboBox()          // IDC_LINK_PATH_FROM 100
-    private let toCombo = NSComboBox()            // IDC_LINK_PATH_TO 101
+    private let fromCombo = WinComboBox()        // IDC_LINK_PATH_FROM 100
+    private let toCombo = WinComboBox()          // IDC_LINK_PATH_TO 101
     private let currentTarget = DialogKit.label("")  // IDT_LINK_PATH_TO_CUR 102
     private let hardRadio: NSButton
     private let symFileRadio: NSButton
