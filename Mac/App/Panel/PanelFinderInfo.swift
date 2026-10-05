@@ -75,41 +75,77 @@ enum FinderInfo {
     static let timeout: TimeInterval = 120
 
     /// Background queue only.
+    ///
+    /// feel3 (the user's finding 1: "Info opens the folder, not Get Info"): the old code sent ONE
+    /// `open` whose direct object was a *list* of `information window of <file URL>` specifiers.
+    /// That is not what AppleScript sends -- `open information window of x` is one event per item
+    /// with a single specifier (captured with OSASetSendProc, reports/feel3.md §1) -- and Finder
+    /// treated the list as a list of items to open, i.e. it opened the item's folder instead of the
+    /// information window. Now: one event per item, the exact shape AppleScript produces for
+    /// `tell application "Finder" to open information window of item (POSIX file p)`, after asking
+    /// for the Automation consent explicitly so the "7-Zip wants to control Finder" prompt appears.
     private static func sendNow(_ urls: [URL]) -> Outcome {
         let finder = NSAppleEventDescriptor(bundleIdentifier: "com.apple.finder")
         if let desc = finder.aeDesc {
-            // Without asking: a recorded refusal falls back at once instead of sending.
-            let status = AEDeterminePermissionToAutomateTarget(desc, typeWildCard, typeWildCard, false)
-            if Int(status) == notPermitted { return .denied }
+            // Ask now (askUserIfNeeded: true): the consent prompt comes up here, off the main
+            // thread; a refusal falls back to the 7-Zip list at once.
+            let status = Int(AEDeterminePermissionToAutomateTarget(desc, typeWildCard, typeWildCard, true))
+            lastPermissionStatus = status
+            if status == notPermitted || status == wouldRequireConsent { return .denied }
         }
-        let open = NSAppleEventDescriptor(eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEOpenDocuments),
-                                          targetDescriptor: finder, returnID: AEReturnID(kAutoGenerateReturnID),
-                                          transactionID: AETransactionID(kAnyTransactionID))
-        let list = NSAppleEventDescriptor.list()
-        for url in urls { list.insert(informationWindow(of: url), at: list.numberOfItems + 1) }
-        open.setParam(list, forKeyword: keyDirectObject)
-        do {
-            _ = try open.sendEvent(options: [.waitForReply], timeout: timeout)
-            let activate = NSAppleEventDescriptor(eventClass: AEEventClass(kAEMiscStandards), eventID: AEEventID(kAEActivate),
-                                                  targetDescriptor: finder, returnID: AEReturnID(kAutoGenerateReturnID),
-                                                  transactionID: AETransactionID(kAnyTransactionID))
+        let activate = NSAppleEventDescriptor(eventClass: AEEventClass(kAEMiscStandards), eventID: AEEventID(kAEActivate),
+                                              targetDescriptor: finder, returnID: AEReturnID(kAutoGenerateReturnID),
+                                              transactionID: AETransactionID(kAnyTransactionID))
+        var opened = 0
+        var lastError = 0
+        for url in urls {
+            do {
+                _ = try openEvent(for: url, target: finder).sendEvent(options: [.waitForReply], timeout: timeout)
+                opened += 1
+            } catch {
+                lastError = (error as NSError).code
+                if lastError == notPermitted { return .denied }
+            }
+        }
+        if opened > 0 {
             _ = try? activate.sendEvent(options: [.noReply], timeout: 5)
             return .shown
-        } catch {
-            let code = (error as NSError).code
-            return code == notPermitted ? .denied : .failed(code)
         }
+        return .failed(lastError)
     }
 
-    /// `information window of <file URL>`: Finder's item property 'iwnd' as an object specifier.
+    /// The status of the last consent check (diagnostics, reports/feel3.md §1).
+    static var lastPermissionStatus: Int?
+
+    /// `open information window of item (POSIX file <path>)`: aevt/odoc, the direct object one
+    /// specifier (never a list).
+    static func openEvent(for url: URL, target: NSAppleEventDescriptor) -> NSAppleEventDescriptor {
+        let open = NSAppleEventDescriptor(eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEOpenDocuments),
+                                          targetDescriptor: target, returnID: AEReturnID(kAutoGenerateReturnID),
+                                          transactionID: AETransactionID(kAnyTransactionID))
+        open.setParam(informationWindow(of: url), forKeyword: keyDirectObject)
+        return open
+    }
+
+    /// `information window of item (POSIX file <path>)`: 'obj '{want 'prop', form 'prop',
+    /// seld 'iwnd', from 'obj '{want 'cobj', form 'indx', seld <file URL>, from null}} -- the
+    /// specifier AppleScript compiles for that phrase (captured, reports/feel3.md §1).
     static func informationWindow(of url: URL) -> NSAppleEventDescriptor {
-        let spec = NSAppleEventDescriptor.record().coerce(toDescriptorType: DescType(typeObjectSpecifier))
-            ?? NSAppleEventDescriptor.record()
+        let item = objectSpecifier()
+        item.setDescriptor(NSAppleEventDescriptor(typeCode: OSType(cObject)), forKeyword: AEKeyword(keyAEDesiredClass))
+        item.setDescriptor(NSAppleEventDescriptor(enumCode: OSType(formAbsolutePosition)), forKeyword: AEKeyword(keyAEKeyForm))
+        item.setDescriptor(NSAppleEventDescriptor(fileURL: url), forKeyword: AEKeyword(keyAEKeyData))
+        item.setDescriptor(NSAppleEventDescriptor.null(), forKeyword: AEKeyword(keyAEContainer))
+        let spec = objectSpecifier()
         spec.setDescriptor(NSAppleEventDescriptor(typeCode: OSType(cProperty)), forKeyword: AEKeyword(keyAEDesiredClass))
         spec.setDescriptor(NSAppleEventDescriptor(enumCode: OSType(formPropertyID)), forKeyword: AEKeyword(keyAEKeyForm))
         spec.setDescriptor(NSAppleEventDescriptor(typeCode: fourCharCode("iwnd")), forKeyword: AEKeyword(keyAEKeyData))
-        spec.setDescriptor(NSAppleEventDescriptor(fileURL: url), forKeyword: AEKeyword(keyAEContainer))
+        spec.setDescriptor(item, forKeyword: AEKeyword(keyAEContainer))
         return spec
+    }
+
+    private static func objectSpecifier() -> NSAppleEventDescriptor {
+        NSAppleEventDescriptor.record().coerce(toDescriptorType: DescType(typeObjectSpecifier)) ?? NSAppleEventDescriptor.record()
     }
 
     static func fourCharCode(_ text: String) -> OSType {
