@@ -214,6 +214,42 @@ context with font smoothing off (`Feel3FontTests.drawUnsmoothed`), all of them r
 fix. A user who has set `AppleFontSmoothing` to 1–3 would see heavier text in *every* app, 7-Zip
 included; that is the system's choice, not the port's.
 
+**The empty `arial-bywidth` (fontimg, second pass).** The first regeneration wrote
+`feel3-font-arial-bywidth.png` with a header and no rows. Not a timing race: the 12 row views
+existed, and the table or its clip view drawn on its own was complete, but in about one run in
+three one capture drew the scroll view **without its rows' clip view** (macOS 26's scroll view also
+holds the header's scroll pocket and backdrop views), and it stayed so on every redraw of that
+window -- `cacheDisplay` and `displayIgnoringOpacity` alike. The test now draws the two parts itself,
+each once (`Feel3FontTests.drawList`: the rows' clip view, then the header's clip view over it), and
+asserts that the Mac half has row ink (> 2 000 px below the header) before it writes an image;
+six runs in a row were green.
+
+**Weight, Windows vs Mac (measured on the final images).** Ink (darkness summed over the Size,
+Modified and Created columns below the header) divided by the number of pixel rows that carry
+ink, i.e. ink per unit of glyph height; the Windows half is 47.9 at 1x and 95.9 at 2x:
+
+| image | Mac 1x | Mac / Windows 1x | Mac 2x | Mac / Windows 2x |
+|---|---|---|---|---|
+| current (Helvetica Neue 11) | 61.8 | **1.29** | 113.0 | **1.18** |
+| current-byheight = helvetica-neue-byheight | 55.4 | 1.16 | 103.0 | 1.07 |
+| helvetica-neue-bywidth | 58.4 | 1.22 | 116.5 | 1.22 |
+| sf-pro-byheight | 55.9 | 1.17 | 105.4 | 1.10 |
+| sf-pro-bywidth | 59.8 | 1.25 | 111.1 | 1.16 |
+| arial-byheight | 55.3 | 1.15 | 105.1 | 1.10 |
+| arial-bywidth | 59.7 | 1.25 | 118.3 | 1.23 |
+| lucida-grande-byheight | 45.7 | 0.95 | 93.6 | 0.98 |
+| lucida-grande-bywidth | 50.4 | 1.05 | 95.0 | 0.99 |
+
+(The by-height rows cut the dates to "11…", so they carry a little less text; their ratios are
+slightly low.) So the Mac text **is** heavier than Windows' in most candidates, 1.2–1.3x at 1x
+for the width-matched Helvetica / SF / Arial, and that is what the app draws: the capture matches
+the screen (the XCUITest row above: 1 260 on screen vs 1 276 for this rendering, smoothing on
+would be 1 460). Two real causes, neither a capture artefact: ClearType hints Segoe UI's stems to
+one crisp pixel column (colour fringes, no gray spread) where the Mac's grayscale antialiasing,
+unhinted, spreads a 0.9–1.1 px stem over two columns; and Helvetica Neue, SF and Arial have
+heavier stems for their size than Segoe UI. At 2x the gap narrows (1.07–1.23). Lucida Grande is
+the one candidate as light as Windows (0.95–1.05).
+
 **The setting.** `defaults write com.yrambler2001.7zip FM.ListFont <key>` (next launch), key one of
 `helvetica-neue-byheight`, `helvetica-neue-bywidth`, `sf-pro-byheight`, `sf-pro-bywidth`,
 `arial-byheight`, `arial-bywidth`, `lucida-grande-byheight`, `lucida-grande-bywidth`, or any
