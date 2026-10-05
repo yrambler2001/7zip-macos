@@ -94,7 +94,7 @@ final class SplitDialog: NSObject {
     /// Shows the dialog; nil when the user cancelled.
     static func run(filePath: String, path: String, parent: NSWindow? = nil) -> Result? {
         let dialog = SplitDialog(filePath: filePath, path: path, parent: parent)
-        NSApp.runModal(for: dialog.window)
+        DialogKit.runModal(for: dialog.window)
         dialog.window.orderOut(nil)
         return dialog.result
     }

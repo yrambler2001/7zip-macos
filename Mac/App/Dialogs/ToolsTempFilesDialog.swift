@@ -503,7 +503,7 @@ final class ToolsTempFilesDialog: NSObject, NSTableViewDataSource, NSTableViewDe
         var title = Lang.text(910, "Delete Temporary Files...")
         while title.hasSuffix(".") { title.removeLast() }
         let dialog = ToolsTempFilesDialog(title: title, tempRoot: TestSupport.temporaryDirectory, parent: parent)
-        NSApp.runModal(for: dialog.window)
+        DialogKit.runModal(for: dialog.window)
         dialog.window.orderOut(nil)
     }
 }

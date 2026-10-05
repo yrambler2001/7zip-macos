@@ -101,7 +101,7 @@ enum BrowseDialog {
             // Only the panel's own session may be stopped, never the caller's dialog.
             if NSApp.modalWindow === panel { NSApp.stopModal() }
         }
-        NSApp.runModal(for: panel)
+        DialogKit.runModal(for: panel)
         // The handler runs inside the nested loop; should AppKit have ended that loop when the
         // sheet was ordered out, give the queued handler a moment to deliver the response.
         var attempts = 0

@@ -137,7 +137,17 @@ enum WinCombo {
 }
 
 /// Lets a cell follow the mouse: the owner of the control's tracking area.
-final class WinComboHover: NSObject {
+///
+/// An `NSResponder`, not a plain `NSObject` (reports/okcancel.md). AppKit sends a tracking area's
+/// owner the Objective-C selectors `mouseEntered:` / `mouseExited:`. As an `NSObject` with
+/// `@objc func mouseEntered(with:)` this class answered `mouseEnteredWith:` instead, so the first
+/// time the mouse crossed a combo of a key dialog AppKit raised "unrecognized selector". Inside
+/// `NSApp.runModal(for:)` that exception unwound the modal session (caught by the context menu's
+/// tracking session or by `-[NSApplication run]`) and left the dialog on screen with no session:
+/// OK / Cancel called `stopModal()` for nothing, while Help and the close box still worked --
+/// "SOMETIMES OK and Cancel don't work". Overriding the responder methods makes the selectors
+/// right by construction, and NSResponder answers every other tracking-area message too.
+final class WinComboHover: NSResponder {
     weak var control: NSControl?
     private(set) var isInside = false
 
@@ -148,8 +158,8 @@ final class WinComboHover: NSObject {
         control.addTrackingArea(area)
     }
 
-    @objc func mouseEntered(with event: NSEvent) { isInside = true; control?.needsDisplay = true }
-    @objc func mouseExited(with event: NSEvent) { isInside = false; control?.needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { isInside = true; control?.needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { isInside = false; control?.needsDisplay = true }
 }
 
 /// CBS_DROPDOWN: an NSComboBox drawn as the Windows edit-with-list. Used by every dialog combo

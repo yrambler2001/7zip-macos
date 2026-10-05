@@ -62,7 +62,7 @@ private final class ComboDialogController: NSObject {
     func run() -> String? {
         window.makeKeyAndOrderFront(nil)
         combo.selectText(nil)
-        NSApp.runModal(for: window)
+        DialogKit.runModal(for: window)
         window.orderOut(nil)
         return result
     }

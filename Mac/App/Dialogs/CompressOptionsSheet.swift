@@ -61,7 +61,7 @@ final class CompressOptionsSheet: NSObject {
         // A modal dialog of its own over the Add to Archive dialog (DoModal with the dialog as
         // owner), with its own caption -- not a sheet.
         DialogKit.center(sheet.window, over: parent)
-        NSApp.runModal(for: sheet.window)
+        DialogKit.runModal(for: sheet.window)
         sheet.window.orderOut(nil)
         guard sheet.accepted else { return false }
         state = sheet.state

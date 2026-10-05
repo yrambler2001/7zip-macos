@@ -583,7 +583,7 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
     static func run(totalMode: Bool = false, parent: NSWindow? = nil) {
         let dialog = BenchmarkDialog(totalMode: totalMode, parent: parent)
         dialog.isModal = true
-        NSApp.runModal(for: dialog.window)
+        DialogKit.runModal(for: dialog.window)
         dialog.isModal = false
         dialog.bench.requestStop()
         dialog.bench.waitUntilFinished()

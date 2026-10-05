@@ -169,7 +169,7 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         }
         if !finishHandled || sync.messageCount != 0 {
             isModal = true
-            NSApp.runModal(for: progressDialog.window)
+            DialogKit.runModal(for: progressDialog.window)
             isModal = false
         }
 

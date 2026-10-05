@@ -22,7 +22,7 @@
 //     (SC_CLOSE absent from its system menu);
 //   * "&Yes" / "&No" answer the Y / N keys; Ctrl+C copies the box as text.
 //
-// Modal to the app (`NSApp.runModal(for:)`), always owned by a visible window when the app has one
+// Modal to the app (`DialogKit.runModal(for:)`), always owned by a visible window when the app has one
 // (`DialogKit.owner`), and safe without one: it is an ordinary titled window that its own buttons,
 // Esc, the close box, Cmd+W and the test reset (`TestResetCoordinator.closeTransientUI`) all end --
 // never an ownerless `NSAlert` (Mac/docs/reports/modalfix.md, infohang.md).
@@ -325,7 +325,7 @@ final class WinMessageBoxWindow: NSWindow {
     func runModal() -> WinMessageBox.Result {
         for observer in WinMessageBox.observers { observer(self) }
         placeOnOwnersScreen()
-        if result == nil { _ = NSApp.runModal(for: self) }
+        if result == nil { _ = DialogKit.runModal(for: self) }
         if isVisible { orderOut(nil) }
         ownerWindow?.makeKeyAndOrderFront(nil)
         return result ?? boxButtons.escapeResult ?? .no
