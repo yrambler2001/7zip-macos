@@ -4,8 +4,10 @@
 // (`wincompare-listfeel-list-win.png`, 760 x 200 px at 96 dpi): one image at 1x (1 Windows px =
 // 1 Mac pt) and one at 2x (the Windows pixels doubled, the Mac rendered at Retina scale).
 //
-// Writes Mac/docs/reports/screenshots/feel3-font-<candidate>-<byheight|bywidth>[-2x].png and
-// feel3-font-current[-2x].png (the default, Helvetica Neue 11).
+// Writes Mac/docs/reports/screenshots/feel3-font-<candidate>-<byheight|bywidth>[-2x].png,
+// feel3-font-current[-2x].png (the default, Helvetica Neue 11) and feel3-font-current-byheight[-2x].png
+// (the default family matched by height, i.e. the helvetica-neue-byheight font).
+// The Mac text is drawn without font smoothing, as the app's windows show it (drawUnsmoothed).
 
 import AppKit
 import XCTest
@@ -93,13 +95,26 @@ final class Feel3FontTests: AppHostTestCase {
         let list: NSView = panel.tableView.enclosingScrollView ?? panel.tableView
         var rect = list.convert(list.bounds, to: content)
         rect = NSRect(x: rect.minX, y: rect.maxY - 200, width: 760, height: 200)
-        guard let raw = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 760 * scale, pixelsHigh: 200 * scale,
-                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 32),
-              let rep = raw.retagging(with: .sRGB) else { return nil }
-        rep.size = rect.size
-        content.cacheDisplay(in: rect, to: rep)
-        return rep.cgImage
+        return Self.drawUnsmoothed(content, rect: rect, scale: scale)
+    }
+
+    /// `rect` of `view` drawn at `scale` the way the screen shows it: **without font smoothing**.
+    /// `cacheDisplay(in:to:)` draws into a bitmap context that keeps Core Graphics' default font
+    /// smoothing on, which on macOS 10.14+ is stem darkening -- every glyph dilated by a fraction
+    /// of a device pixel, bold-looking at 1x. The window's layer backing stores (the app on
+    /// screen) draw the list's text without it: an XCUITest screenshot of a row matched this
+    /// rendering and not cacheDisplay's (reports/feel3.md §4, "Why the first images looked bold").
+    static func drawUnsmoothed(_ view: NSView, rect: NSRect, scale: Int) -> CGImage? {
+        let s = CGFloat(scale)
+        guard let ctx = CGContext(data: nil, width: Int(rect.width * s), height: Int(rect.height * s),
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.scaleBy(x: s, y: s)
+        ctx.translateBy(x: -rect.minX, y: -rect.minY)
+        ctx.setAllowsFontSmoothing(false)
+        ctx.setShouldSmoothFonts(false)
+        view.displayIgnoringOpacity(rect, in: NSGraphicsContext(cgContext: ctx, flipped: false))
+        return ctx.makeImage()
     }
 
     private func windowsCapture() -> CGImage? {
@@ -121,6 +136,7 @@ final class Feel3FontTests: AppHostTestCase {
         ctx.setFillColor(CGColor(gray: 1, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
         ctx.interpolationQuality = .none
+        ctx.setAllowsFontSmoothing(false)                // as the screen draws (drawUnsmoothed)
         // CG is bottom-up: Windows block on top.
         let winY = height - captionH - 200 * s
         ctx.draw(windows, in: CGRect(x: 0, y: winY, width: 760 * s, height: 200 * s))
@@ -147,6 +163,14 @@ final class Feel3FontTests: AppHostTestCase {
         var shots: [(font: NSFont, caption: String, name: String)] = []
         if let current = ListFontChoice.font(name: ListFontChoice.defaultFontName, size: ListFontChoice.defaultSize) {
             shots.append((current, "Helvetica Neue 11 (the current default)", "feel3-font-current"))
+        }
+        // The current family matched by height: the same font and size as helvetica-neue-byheight
+        // (the default family is Helvetica Neue), asked for under its own name.
+        if let c = ListFontChoice.candidates.first(where: { $0.key == "helvetica-neue-byheight" }),
+           c.fontName == ListFontChoice.defaultFontName,
+           let font = ListFontChoice.font(name: c.fontName, size: c.size) {
+            shots.append((font, c.label + " pt (the current family) matched by height (cap + x-height = 15 px)",
+                          "feel3-font-current-byheight"))
         }
         for c in ListFontChoice.candidates {
             guard let font = ListFontChoice.font(name: c.fontName, size: c.size) else { continue }

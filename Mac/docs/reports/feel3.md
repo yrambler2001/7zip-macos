@@ -175,6 +175,7 @@ Images, Windows above and the Mac below, the same list (the Windows capture of `
 
 ```
 Mac/docs/reports/screenshots/feel3-font-current.png                     -2x.png
+Mac/docs/reports/screenshots/feel3-font-current-byheight.png            -byheight-2x.png
 Mac/docs/reports/screenshots/feel3-font-helvetica-neue-byheight.png     -byheight-2x.png
 Mac/docs/reports/screenshots/feel3-font-helvetica-neue-bywidth.png      -bywidth-2x.png
 Mac/docs/reports/screenshots/feel3-font-sf-pro-byheight.png             -byheight-2x.png
@@ -184,6 +185,34 @@ Mac/docs/reports/screenshots/feel3-font-arial-bywidth.png               -bywidth
 Mac/docs/reports/screenshots/feel3-font-lucida-grande-byheight.png      -byheight-2x.png
 Mac/docs/reports/screenshots/feel3-font-lucida-grande-bywidth.png       -bywidth-2x.png
 ```
+
+`current-byheight` is the current family (Helvetica Neue) matched by height, i.e. Helvetica Neue
+12.2: its Mac block is **pixel-identical** to `helvetica-neue-byheight` (checked at 1x and 2x),
+only the caption differs.
+
+**Why the first images looked bold (fontimg).** The user saw the Mac text of the 1x images as bold.
+It was a rendering artefact of the images, not the app. `Feel3FontTests` rendered the list with
+`NSView.cacheDisplay(in:to:)`, whose bitmap context keeps Core Graphics' default **font smoothing**
+on; on macOS 10.14+ that is stem darkening, every glyph dilated by a fixed fraction of a *device*
+pixel, so at 1x (where a stem is about one pixel) the text turns visibly heavier, and at 2x
+slightly. The header, drawn by its own cell, escaped it, which is why sizes and dates looked bolder
+than "Name / Size". Measured on the same row ("b.bin", fixed dates), ink in the text area at 2x:
+
+| rendering | ink | pixels > 75 % dark |
+|---|---|---|
+| **the screen** (XCUITest screenshot of the row, the real app) | **1 260** | **993** |
+| our context, font smoothing off | 1 276 | 1 074 |
+| `cacheDisplay` / font smoothing on (the old images) | 1 460 | 1 254 |
+
+The window's layer backing stores draw the list's text **without** font smoothing (the system
+setting `AppleFontSmoothing` is unset here, and the list's layers are not opaque), and that choice
+does not depend on the scale: on a 1x display the app draws the same unsmoothed, grayscale-antialiased
+glyphs, only at 1x. (`CALayer.render(in:)` is no witness: it re-draws into the caller's context and
+takes that context's smoothing.) The images are now drawn with `displayIgnoringOpacity(_:in:)` into a
+context with font smoothing off (`Feel3FontTests.drawUnsmoothed`), all of them regenerated at 1x and
+2x (the 2x ones had the same defect, smaller); the default font is unchanged and the app needed no
+fix. A user who has set `AppleFontSmoothing` to 1–3 would see heavier text in *every* app, 7-Zip
+included; that is the system's choice, not the port's.
 
 **The setting.** `defaults write com.yrambler2001.7zip FM.ListFont <key>` (next launch), key one of
 `helvetica-neue-byheight`, `helvetica-neue-bywidth`, `sf-pro-byheight`, `sf-pro-bywidth`,
