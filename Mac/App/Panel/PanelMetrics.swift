@@ -16,6 +16,11 @@
 //     "vol.7z.001" 50.1 against 51) and tabular digits by default, so dates and sizes line up in
 //     their columns and a date fits the 100 px default width as it does on Windows. SF Pro at
 //     11 pt is 5 % wider, and 17 % wider with monospaced digits (101 pt for the date).
+//   * sffont: the default is now SF Pro 12.2 (the user's decision, PanelListFont.swift); the
+//     columns other than the name use its tabular-digit form (`listDigitsFont`), and a time
+//     column starts as wide as a full date needs (PanelColumnsModel.defaultWidth). The row stays
+//     19 px: SF Pro 12.2's line is 15 pt (ascender 11.8, descender 2.6), 2 pt clear above and
+//     below it (SFFontTests.testRowsHoldTheFontsLine).
 
 import Cocoa
 
@@ -43,6 +48,17 @@ enum PanelMetrics {
     /// The list's font: Segoe UI 9 pt metrics with tabular digits (see the header comment).
     /// The hidden `FM.ListFont` setting picks another candidate (PanelListFont.swift, feel3).
     static var listFont: NSFont { ListFontChoice.current }
+
+    /// The list font with tabular digits: the Details columns other than the name, whose sizes,
+    /// times and CRCs line up as Segoe UI's tabular digits do on Windows.
+    static var listDigitsFont: NSFont { ListFontChoice.withTabularDigits(listFont) }
+
+    /// A time column's default width: "2024-01-15 11:30" in `listDigitsFont` plus Windows' 6 px
+    /// on each side (88 + 12 = 100 on Windows; 111 + 12 = 123 in SF Pro 12.2), never below 100.
+    static var timeColumnWidth: Int {
+        let date = ceil(("2024-01-15 11:30" as NSString).size(withAttributes: [.font: listDigitsFont]).width)
+        return max(PanelColumnsModel.otherWidth, Int(date + 2 * subitemPadding))
+    }
 
     /// The width the list font gives `text`.
     static func textWidth(_ text: String) -> CGFloat {

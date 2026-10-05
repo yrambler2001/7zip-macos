@@ -14,7 +14,15 @@
 //
 // `defaults write com.yrambler2001.7zip FM.ListFont <key>` picks one at the next launch:
 // a candidate key below, or any "<font name>:<size>" ("Arial:12.5", "system:12"). No value or an
-// unknown one keeps the default, Helvetica Neue 11.
+// unknown one keeps the default.
+//
+// The default (sffont, the user's decision): **SF Pro, the system font, at 12.2 pt** --
+// "sf-pro-byheight", Segoe UI 9's rendered height (cap 8.6 + x-height 6.4 = 15) in the macOS UI
+// face -- for the whole 7-Zip UI: list, header, status bar, address bar, toolbar labels and, through
+// `DialogMetrics.font`, every dialog. It is ~10 % wider than Segoe UI (reports/sffont.md §1), so the
+// dialogs' dialog-unit grid is widened by the same ratio (`DLU.scaleX`) and the time columns start
+// wide enough for a full date (`PanelColumnsModel.defaultWidth`). The previous default, Helvetica
+// Neue 11, is the candidate "helvetica-neue-11".
 
 import AppKit
 
@@ -29,10 +37,14 @@ struct ListFontCandidate {
 enum ListFontChoice {
 
     static let settingsKey = "FM.ListFont"
-    static let defaultFontName = "HelveticaNeue"
-    static let defaultSize: CGFloat = 11
+    static let defaultFontName = "system"
+    static let defaultSize: CGFloat = 12.2
+    /// The default before sffont (listfeel, feel3): Helvetica Neue 11, Segoe UI's widths.
+    static let previousDefaultFontName = "HelveticaNeue"
+    static let previousDefaultSize: CGFloat = 11
 
     static let candidates: [ListFontCandidate] = [
+        ListFontCandidate(key: "helvetica-neue-11", fontName: "HelveticaNeue", size: 11, label: "Helvetica Neue 11"),
         ListFontCandidate(key: "helvetica-neue-byheight", fontName: "HelveticaNeue", size: 12.2, label: "Helvetica Neue 12.2"),
         ListFontCandidate(key: "helvetica-neue-bywidth", fontName: "HelveticaNeue", size: 11.5, label: "Helvetica Neue 11.5"),
         ListFontCandidate(key: "sf-pro-byheight", fontName: "system", size: 12.2, label: "SF Pro 12.2"),
@@ -60,6 +72,22 @@ enum ListFontChoice {
     static func font(name: String, size: CGFloat) -> NSFont? {
         if name.lowercased() == "system" { return NSFont.systemFont(ofSize: size) }
         return NSFont(name: name, size: size)
+    }
+
+    /// `font` with tabular (monospaced) digits, for the columns whose numbers must line up (sizes,
+    /// times, CRCs): Segoe UI's digits are tabular, SF Pro's are proportional by default
+    /// (`NSFont.monospacedDigitSystemFont` for the system font, the number-spacing feature for any
+    /// other face; a face without the feature is returned as it is).
+    static func withTabularDigits(_ font: NSFont) -> NSFont {
+        if font.familyName == NSFont.systemFont(ofSize: font.pointSize).familyName {
+            return NSFont.monospacedDigitSystemFont(ofSize: font.pointSize, weight: .regular)
+        }
+        // kNumberSpacingType 6, kMonospacedNumbersSelector 0 (SFNTLayoutTypes.h).
+        let descriptor = font.fontDescriptor.addingAttributes([
+            .featureSettings: [[NSFontDescriptor.FeatureKey.typeIdentifier: 6,
+                                NSFontDescriptor.FeatureKey.selectorIdentifier: 0]],
+        ])
+        return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
     }
 
     static func resolve(_ value: String?) -> NSFont {

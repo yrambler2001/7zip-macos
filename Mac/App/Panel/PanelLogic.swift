@@ -208,9 +208,20 @@ struct PanelColumnsModel {
     /// port used to start time columns at 120 pt and hex columns at 160-470 pt because its 13 pt
     /// list font did not fit a date into 100 pt; the list font now has Segoe UI 9 pt metrics
     /// (`PanelMetrics.listFont`), so "2024-01-15 11:30" fits as it does on Windows.
+    ///
+    /// sffont: with SF Pro 12.2 (tabular digits) the date is 111 pt, so a time column starts at the
+    /// date's width plus Windows' two 6 px margins (88 + 12 = 100 on Windows), never below 100:
+    /// the full date is never cut at the default width.
     static func defaultWidth(for info: SZPropertyInfo) -> Int {
-        info.propID == .name ? nameWidth : otherWidth
+        if info.propID == .name { return nameWidth }
+        if info.varType == .fileTime { return timeWidth }
+        return otherWidth
     }
+
+    /// A full "yyyy-mm-dd hh:mm" date in the columns' font plus the margins on both sides; set by
+    /// the panel from its font (`PanelMetrics.timeColumnWidth`) before it builds a column model.
+    /// This file is also compiled into the unit tests, which have no font: 100 there.
+    static var timeWidth = otherWidth
 
     var columns: [PanelColumn]
     /// The folder's own property order (`_columns`, PanelItems.cpp:127-195). The header's column
@@ -253,6 +264,9 @@ struct PanelColumnsModel {
                 var column = built.remove(at: index)
                 column.visible = column.isName ? true : stored.visible
                 column.width = max(24, stored.width)
+                // A time column still at the old 100 px default (saved before sffont) would cut
+                // the date in SF Pro: it gets the new default.
+                if column.varType == .fileTime, stored.width == Self.otherWidth { column.width = Self.timeWidth }
                 ordered.append(column)
             }
             // Columns the stored layout did not know about keep their defaults and stay in the

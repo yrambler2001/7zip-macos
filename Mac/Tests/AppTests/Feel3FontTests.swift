@@ -225,18 +225,21 @@ final class Feel3FontTests: AppHostTestCase {
         let windows = try XCTUnwrap(windowsCapture(), "wincompare-listfeel-list-win.png")
         let folder = makeFixture()
         var shots: [(font: NSFont, caption: String, name: String)] = []
-        if let current = ListFontChoice.font(name: ListFontChoice.defaultFontName, size: ListFontChoice.defaultSize) {
+        // "current" is the default feel3 compared against, Helvetica Neue 11 (sffont made SF Pro 12.2
+        // the default; the images stay what the user chose from).
+        if let current = ListFontChoice.font(name: ListFontChoice.previousDefaultFontName,
+                                             size: ListFontChoice.previousDefaultSize) {
             shots.append((current, "Helvetica Neue 11 (the current default)", "feel3-font-current"))
         }
         // The current family matched by height: the same font and size as helvetica-neue-byheight
         // (the default family is Helvetica Neue), asked for under its own name.
         if let c = ListFontChoice.candidates.first(where: { $0.key == "helvetica-neue-byheight" }),
-           c.fontName == ListFontChoice.defaultFontName,
+           c.fontName == ListFontChoice.previousDefaultFontName,
            let font = ListFontChoice.font(name: c.fontName, size: c.size) {
             shots.append((font, c.label + " pt (the current family) matched by height (cap + x-height = 15 px)",
                           "feel3-font-current-byheight"))
         }
-        for c in ListFontChoice.candidates {
+        for c in ListFontChoice.candidates where c.key != "helvetica-neue-11" {
             guard let font = ListFontChoice.font(name: c.fontName, size: c.size) else { continue }
             let how = c.key.hasSuffix("byheight") ? "matched by height (cap + x-height = 15 px)"
                                                   : "matched by width (summed advances = Segoe UI's)"

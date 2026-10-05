@@ -268,17 +268,18 @@ final class Feel3Tests: AppHostTestCase {
 
     // MARK: 8. archive icons
 
-    /// 7-Zip's per-format icons for the extensions it registers: 16 pt with the .ico's 16 and 32 px
-    /// frames, 32 pt with its 32 px frame; none for other extensions.
+    /// 7-Zip's per-format icons for the extensions it registers: 16 pt from the .ico's 16 px frame,
+    /// 32 pt from its 32 px frame, each enlarged by whole pixels for 2x / 3x (sffont: the
+    /// low-resolution frames, pixel-sharp; SFFontTests checks the pixels); none for other extensions.
     func testArchiveIconsPerExtension() throws {
         for (name, ico) in [("a.7z", "7z"), ("a.zip", "zip"), ("b.rar", "rar"), ("x.tgz", "gz"), ("v.001", "split"),
                             ("d.iso", "iso"), ("e.zst", "zst")] {
             let small = try XCTUnwrap(PanelArchiveIcons.icon(forName: name, large: false), name)
             XCTAssertEqual(small.size, NSSize(width: 16, height: 16))
-            XCTAssertEqual(Set(small.representations.map(\.pixelsWide)), [16, 32], "\(name) -> \(ico).ico frames")
+            XCTAssertEqual(Set(small.representations.map(\.pixelsWide)), [16, 32, 48], "\(name) -> \(ico).ico frames")
             let large = try XCTUnwrap(PanelArchiveIcons.icon(forName: name, large: true))
             XCTAssertEqual(large.size, NSSize(width: 32, height: 32))
-            XCTAssertTrue(large.representations.contains { $0.pixelsWide == 32 })
+            XCTAssertEqual(Set(large.representations.map(\.pixelsWide)), [32, 64, 96])
         }
         XCTAssertNil(PanelArchiveIcons.icon(forName: "a.txt", large: false))
         XCTAssertNil(PanelArchiveIcons.icon(forName: "noext", large: false))
@@ -462,16 +463,18 @@ final class Feel3Tests: AppHostTestCase {
 
     // MARK: list font setting
 
-    /// FM.ListFont picks one of the candidates; the default stays Helvetica Neue 11.
+    /// FM.ListFont picks one of the candidates; the default is SF Pro 12.2 (sffont).
     func testListFontSetting() {
-        XCTAssertEqual(ListFontChoice.resolve(nil).fontName, "HelveticaNeue")
-        XCTAssertEqual(ListFontChoice.resolve(nil).pointSize, 11)
+        let system = NSFont.systemFont(ofSize: 12.2)
+        XCTAssertEqual(ListFontChoice.resolve(nil).familyName, system.familyName)
+        XCTAssertEqual(ListFontChoice.resolve(nil).pointSize, 12.2, accuracy: 0.01)
         for candidate in ListFontChoice.candidates {
             let font = ListFontChoice.resolve(candidate.key)
             XCTAssertEqual(font.pointSize, candidate.size, accuracy: 0.01, candidate.key)
         }
         XCTAssertEqual(ListFontChoice.resolve("Arial:12.5").pointSize, 12.5, "a free family:size value")
-        XCTAssertEqual(ListFontChoice.resolve("nonsense").fontName, "HelveticaNeue", "unknown values fall back")
+        XCTAssertEqual(ListFontChoice.resolve("nonsense").familyName, system.familyName, "unknown values fall back")
+        XCTAssertEqual(ListFontChoice.resolve("helvetica-neue-11").fontName, "HelveticaNeue", "the previous default")
     }
 
     // MARK: -

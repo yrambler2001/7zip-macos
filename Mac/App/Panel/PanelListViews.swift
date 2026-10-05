@@ -89,7 +89,8 @@ extension PanelViewController {
         cell.identifier = identifier
         cell.isNameCell = isName
         let text = NSTextField(labelWithString: "")
-        text.font = PanelMetrics.listFont
+        // The name in the list font, the other columns with tabular digits (sffont).
+        text.font = isName ? PanelMetrics.listFont : PanelMetrics.listDigitsFont
         text.lineBreakMode = .byTruncatingTail
         text.alignment = alignment
         text.translatesAutoresizingMaskIntoConstraints = false

@@ -315,6 +315,12 @@ final class BenchmarkDialog: NSObject, SZBenchmarkDelegate, NSWindowDelegate {
         form.add(featureLabel, rc, 109)
         form.add(sys1Label, rc, 107)
         form.add(sys2Label, rc, 108)
+        // The machine's own description (uname, the CPU's name and features) is longer on a Mac
+        // than Windows' and has no room to grow: its last visible line ends in an ellipsis rather
+        // than half a line (sffont).
+        for label in [cpuLabel, versionLabel, featureLabel, sys1Label, sys2Label] {
+            label.cell?.truncatesLastVisibleLine = true
+        }
         form.add(logLabel, rc, 160)
         form.add(helpButton, rc, 9)
         form.add(cancelButton, rc, 2)

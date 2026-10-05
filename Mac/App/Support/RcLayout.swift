@@ -59,14 +59,40 @@ enum DLU {
     static let baseX = 6
     static let baseY = 13
 
+    /// Segoe UI 9 pt's "A".."Z" + "a".."z" on the PC (GetTextExtentPoint32: 192 + 155 px,
+    /// feel3-data/win/font-segoe.txt): the text Windows fits into the 6 x 13 grid.
+    static let segoeAlphabetWidth: CGFloat = 347
+
+    /// sffont: how much wider than Windows the dialogs are laid out horizontally. The dialog font
+    /// (SF Pro 12.2 by default) is wider than Segoe UI 9 -- 381.5 pt for the same alphabet, x1.10 --
+    /// so every x and width of a template is stretched by that ratio, as Windows itself would do
+    /// with a wider dialog font (its base units come from the font's average character width):
+    /// the dialog keeps Windows' proportions and every label keeps the room it has on Windows.
+    /// Never below 1 (a narrower FM.ListFont, e.g. Helvetica Neue 11, keeps Windows' exact
+    /// pixels). Rounded to 1 %. The heights stay Windows': SF Pro 12.2's line is 15 pt, Segoe
+    /// UI's 15 px.
+    static let scaleX: CGFloat = {
+        let font = DialogMetrics.font
+        let width = ("ABCDEFGHIJKLMNOPQRSTUVWXYZ" as NSString).size(withAttributes: [.font: font]).width
+            + ("abcdefghijklmnopqrstuvwxyz" as NSString).size(withAttributes: [.font: font]).width
+        return max(1, (width / segoeAlphabetWidth * 100).rounded() / 100)
+    }()
+
     /// Windows' MulDiv: a * b / c rounded half away from zero.
     static func mulDiv(_ a: Int, _ b: Int, _ c: Int) -> Int {
         let p = a * b
         return p >= 0 ? (p + c / 2) / c : -((-p + c / 2) / c)
     }
 
-    static func x(_ v: Int) -> CGFloat { CGFloat(mulDiv(v, baseX, 4)) }
+    /// MulDiv(v, baseX, 4), stretched by `scaleX` (identical to MulDiv when it is 1).
+    static func x(_ v: Int) -> CGFloat {
+        scaleX == 1 ? CGFloat(mulDiv(v, baseX, 4)) : (CGFloat(v * baseX) * scaleX / 4).rounded()
+    }
     static func y(_ v: Int) -> CGFloat { CGFloat(mulDiv(v, baseY, 8)) }
+
+    /// A horizontal distance measured in Windows pixels (a hand-placed control, a column width),
+    /// stretched as the template's are.
+    static func px(_ windowsPixels: CGFloat) -> CGFloat { (windowsPixels * scaleX).rounded() }
 }
 
 /// One template in points, top-left origin (a flipped container), exactly the pixels Windows uses.
@@ -99,8 +125,9 @@ struct RcDialog {
 
 enum DialogMetrics {
     /// 7zFM 26.03 draws its dialog text in Segoe UI 9 pt (the captures: cap height 9, "Compression
-    /// level:" 98 px). macOS has no Segoe UI; Helvetica Neue 11 has its advance widths to within a
-    /// pixel (the same choice as the list, PanelMetrics.listFont, reports/listfeel.md section 2).
+    /// level:" 98 px). macOS has no Segoe UI; the dialogs use the list's font, SF Pro 12.2 by
+    /// default (sffont: Segoe's rendered height in the macOS UI face; `DLU.scaleX` gives its extra
+    /// width room), or whatever FM.ListFont picks.
     static let font: NSFont = PanelMetrics.listFont
     static let boldFont: NSFont = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
 
@@ -134,9 +161,170 @@ class RcFormView: NSView {
     /// resizable dialogs move their controls here, as their CDialog::OnSize does).
     var onResize: ((NSSize) -> Void)?
 
+    /// What `growTextIntoFreeSpace` changed: each control's frame before and after, and its font
+    /// before it was stepped down.
+    private var grown: [ObjectIdentifier: (original: NSRect, applied: NSRect, font: NSFont?)] = [:]
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         onResize?(newSize)
+        growTextIntoFreeSpace()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { growTextIntoFreeSpace() }
+    }
+
+    /// A dialog changes its texts after it is built (a drop-down's selection, a relabel on a
+    /// format change, a value): before each display the pass runs again when any control's text,
+    /// visibility or frame differs from what the last pass left.
+    override func viewWillDraw() {
+        if textSignature() != lastSignature { growTextIntoFreeSpace() }
+        super.viewWillDraw()
+    }
+
+    private var lastSignature = ""
+
+    private func textSignature() -> String {
+        var parts: [String] = []
+        parts.reserveCapacity(subviews.count)
+        for view in subviews {
+            let text: String
+            switch view {
+            case let p as NSPopUpButton: text = p.titleOfSelectedItem ?? ""
+            case let b as NSButton: text = b.title
+            case let f as NSTextField: text = f.stringValue
+            default: continue
+            }
+            parts.append("\(view.isHidden)\(view.frame)\(text)")
+        }
+        return parts.joined(separator: "|")
+    }
+
+    // MARK: text wider than its template rect (sffont)
+
+    /// The room a control's text needs beyond its frame: a static's text on its line, a button's
+    /// title beyond the rect AppKit draws it in (`titleRect(forBounds:)`), 0 when it fits.
+    static let pushTitleMargin: CGFloat = 9
+
+    static func overflow(of view: NSView) -> CGFloat {
+        if let field = view as? NSTextField {
+            guard !field.isEditable, !field.isBezeled, let cell = field.cell,
+                  !field.stringValue.isEmpty, !field.stringValue.contains("\n") else { return 0 }
+            // A path or value that is cut on purpose keeps its frame.
+            if [.byTruncatingTail, .byTruncatingMiddle, .byTruncatingHead].contains(field.lineBreakMode)
+                || cell.truncatesLastVisibleLine { return 0 }
+            // Only a one-line static grows; a taller one wraps inside its rect, as on Windows.
+            guard field.frame.height < 2 * RcPlace.lineHeight - 1 else { return 0 }
+            let needed = ceil(cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: 100_000, height: 100_000)).width)
+            return max(0, needed - field.frame.width)
+        }
+        if let popup = view as? NSPopUpButton, popup.cell is WinPopUpButtonCell {
+            // A drop-down list's selected item beside the chevron (WinPopUpButtonCell).
+            let title = popup.titleOfSelectedItem ?? ""
+            guard !title.isEmpty else { return 0 }
+            let width = ceil((title as NSString).size(withAttributes: [.font: popup.font ?? DialogMetrics.font]).width)
+            return max(0, width + WinPopUpButtonCell.textInset + WinPopUpButtonCell.buttonWidth - popup.frame.width)
+        }
+        if let button = view as? NSButton, !(button is NSPopUpButton), let cell = button.cell as? NSButtonCell {
+            guard !button.title.isEmpty else { return 0 }
+            let title = ceil(button.attributedTitle.size().width)
+            if cell.bezelStyle == .rounded && button.isBordered {
+                // A push button draws its title whole down to about 9 pt of bezel on each side
+                // (measured: "..." in 31 pt, "Abbrechen" in 81 pt).
+                return max(0, title + 2 * pushTitleMargin - button.frame.width)
+            }
+            // A check box or radio button: the title starts where titleRect puts it (after the box
+            // and its gap) and has the rest of the frame.
+            let room = button.bounds.width - cell.titleRect(forBounds: button.bounds).minX
+            return max(0, title - room)
+        }
+        return 0
+    }
+
+    /// A translated label, check box or button whose text is wider than its .rc rect -- longer
+    /// than the English it was laid out for, or set in SF Pro, which is wider than Segoe UI -- takes
+    /// the free room beside it: to the right for left-aligned text, to the left for right-aligned
+    /// text (RTEXT), never past a sibling on the same line, past the group box it sits in, or past
+    /// the form's 4 DLU edge. What Windows clips stays readable where there is room; where there is
+    /// none the control keeps its rect. Runs whenever the form is sized (OnSize re-places controls
+    /// on their rects first) and when it is put in a window.
+    func growTextIntoFreeSpace() {
+        // Undo the previous pass first (the text may have changed since: a language switch
+        // relabels the Options pages in place), unless OnSize has re-placed the control.
+        for (key, change) in grown {
+            guard let view = subviews.first(where: { ObjectIdentifier($0) == key }) else { continue }
+            if view.frame == change.applied { view.frame = change.original }
+            if let font = change.font, let control = view as? NSControl { control.font = font }
+        }
+        grown = [:]
+        let edge = DLU.x(4)
+        let views = subviews.filter { !$0.isHidden }
+        for view in views where view.frame.width > 4 && view.frame.height > 4 {   // placed controls only
+            let overflow = Self.overflow(of: view)
+            guard overflow > 0 else { continue }
+            let f = view.frame
+            var minX: CGFloat = edge, maxX = bounds.width - edge
+            for other in views where other !== view {
+                let o = other.frame
+                // Only what shares the control's line: overlapping rows, more than a pixel.
+                guard o.maxY > f.minY + 1, o.minY < f.maxY - 1 else { continue }
+                if other is WinGroupBox, o.minX <= f.minX, o.maxX >= f.maxX {
+                    // The group box the control sits in: stay inside its frame.
+                    minX = max(minX, o.minX + DLU.x(4))
+                    maxX = min(maxX, o.maxX - DLU.x(4))
+                    continue
+                }
+                if o.minX >= f.maxX - 1 { maxX = min(maxX, o.minX - 1) }
+                else if o.maxX <= f.minX + 1 { minX = max(minX, o.maxX + 1) }
+            }
+            let alignment = (view as? NSTextField)?.alignment ?? .left
+            var r = f
+            if alignment == .right {
+                let grow = min(overflow, max(0, f.minX - minX))
+                r.origin.x -= grow
+                r.size.width += grow
+            } else if alignment == .center {
+                let grow = min(overflow, max(0, f.minX - minX), max(0, maxX - f.maxX) * 2)
+                r.origin.x -= (grow / 2).rounded(.down)
+                r.size.width += grow
+            } else {
+                r.size.width += min(overflow, max(0, maxX - f.maxX))
+            }
+            defer { if view.frame != f || grown[ObjectIdentifier(view)]?.font != nil {
+                grown[ObjectIdentifier(view)] = (f, view.frame, grown[ObjectIdentifier(view)]?.font)
+            } }
+            if r != f {
+                view.frame = r
+                (view as? NSTextField)?.preferredMaxLayoutWidth = r.width - 2 * RcPlace.labelInset
+            }
+            guard Self.overflow(of: view) > 0 else { continue }
+            // Still too long (a translation that Windows clips too). A one-line static takes a
+            // second line when the room below it is free ...
+            if let field = view as? NSTextField, let cell = field.cell {
+                let two = NSRect(x: r.minX, y: r.minY, width: r.width, height: ceil(2 * RcPlace.lineHeight))
+                let fits = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: r.width, height: 100_000)).height <= two.height
+                let free = !views.contains { other in
+                    other !== view && other.frame.intersects(two)
+                        && !(other is WinGroupBox && other.frame.minX <= r.minX && other.frame.maxX >= r.maxX)
+                        && !(other.frame.maxY <= r.maxY)                  // what is above it or on its line
+                }
+                if fits && free {
+                    field.frame = two
+                    continue
+                }
+            }
+            // ... else its font steps down, 0.2 pt at a time to 10 pt, until the text fits.
+            guard let control = view as? NSControl, let base = control.font else { continue }
+            grown[ObjectIdentifier(view)] = (f, view.frame, base)
+            var size = base.pointSize
+            while Self.overflow(of: view) > 0, size > 10.05 {
+                size -= 0.2
+                control.font = NSFontManager.shared.convert(base, toSize: size)
+            }
+        }
+        lastSignature = textSignature()
     }
 }
 
@@ -201,9 +389,18 @@ enum RcPlace {
     // `labelInset` in from its frame, so the frame starts that much to the left.
     static let labelInset: CGFloat = 2
     // The first baseline of a static's 9 pt Segoe UI line is 11 px below the rect's top on Windows
-    // (cap top 2 px below, cap height 9). The label's frame top is moved so Helvetica Neue's
-    // baseline lands there.
-    static let labelTop: CGFloat = 1
+    // (cap top 2 px below, cap height 9). The label's frame top is moved so the dialog font's
+    // baseline lands there: 1 for Helvetica Neue 11 (listfeel / dlgfeel), -1 for SF Pro 12.2,
+    // whose 15 pt line puts the baseline 12.1 pt below the frame's top (sffont).
+    static let labelTop: CGFloat = {
+        let font = DialogMetrics.font
+        let line = lineHeight
+        let baseline = font.ascender + (line - (font.ascender - font.descender)) / 2
+        return (11 - baseline).rounded()
+    }()
+
+    /// The dialog font's line: 12 pt for Helvetica Neue 11, 15 pt for SF Pro 12.2 (Segoe UI's 15 px).
+    static let lineHeight: CGFloat = NSLayoutManager().defaultLineHeight(for: DialogMetrics.font)
 
     static func makeLabel(_ text: String, alignment: NSTextAlignment = .left) -> NSTextField {
         let f = NSTextField(labelWithString: text)
@@ -222,11 +419,12 @@ enum RcPlace {
         return f
     }
 
-    /// A one-line static is 13 px; its frame is 14 high so the first line's descenders show and
-    /// nothing of a wrapped second line does. A taller static keeps its height.
+    /// A one-line static is 13 px; its frame is one line of the font high (at least 14) so the
+    /// first line's descenders show and nothing of a wrapped second line does. A taller static
+    /// keeps its height.
     static func labelFrame(_ r: NSRect) -> NSRect {
         NSRect(x: r.minX - labelInset, y: r.minY + labelTop, width: r.width + 2 * labelInset,
-               height: r.height <= 13 ? 14 : r.height)
+               height: r.height <= 13 ? max(14, ceil(lineHeight)) : r.height)
     }
 
     /// LTEXT / RTEXT / CTEXT (SS_LEFT ...): Windows breaks the text at word boundaries inside the
@@ -234,7 +432,10 @@ enum RcPlace {
     /// the words that fit on its first line, never an ellipsis.
     static func label(_ f: NSTextField, _ r: NSRect) {
         let bold = f.font?.fontDescriptor.symbolicTraits.contains(.bold) ?? false
-        f.font = bold ? DialogMetrics.boldFont : DialogMetrics.font
+        // An RTEXT is a value (sizes, speeds, times in the progress and benchmark windows): its
+        // digits are tabular, as Segoe UI's are, so a changing number does not jitter (sffont).
+        f.font = bold ? DialogMetrics.boldFont
+            : (f.alignment == .right ? ListFontChoice.withTabularDigits(DialogMetrics.font) : DialogMetrics.font)
         f.cell?.wraps = true
         f.cell?.truncatesLastVisibleLine = false
         f.lineBreakMode = .byWordWrapping
@@ -342,6 +543,7 @@ extension RcPlace {
             window.contentMaxSize = size
         }
         DialogKit.center(window, over: parent)
+        (form as? RcFormView)?.growTextIntoFreeSpace()
         (form as? RcFormView)?.applyTemplateTabOrder(in: window)
     }
 }

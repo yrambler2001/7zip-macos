@@ -605,6 +605,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         fsIconCache.removeAll(keepingCapacity: true)
         if snap.folderType != folderTypeOfColumns {
             saveColumnLayout()                              // SaveListViewInfo before rebuilding
+            PanelColumnsModel.timeWidth = PanelMetrics.timeColumnWidth   // sffont: the font's date width
             columnsModel = PanelColumnsModel(properties: snap.columns, folderType: snap.folderType,
                                              isFileSystem: snap.isFileSystem,
                                              hiddenByDefault: snap.hiddenByDefault,
