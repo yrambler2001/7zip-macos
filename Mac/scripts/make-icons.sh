@@ -6,6 +6,8 @@
 # result.  See Mac/docs/api/icons.md for the naming scheme and the extension -> icon mapping.
 #
 #   Mac/scripts/make-icons.sh                 extract, draw, assemble, contact sheet, verify
+#                                             ("draw" draws nothing: it enlarges .ico frames
+#                                             nearest-neighbour by integer factors)
 #   Mac/scripts/make-icons.sh --stage draw    one stage only (extract|draw|assemble|sheet|verify)
 #   Mac/scripts/make-icons.sh --dump 7z       ASCII-dump one upstream .ico
 #
@@ -20,7 +22,9 @@
 # Outputs:
 #   Mac/Resources/Assets.xcassets/AppIcon.appiconset/      10 slots, 7 distinct pixel sizes
 #   Mac/Resources/Assets.xcassets/doc-<name>.imageset/      27 image sets (mac 1x/2x)
-#   Mac/Resources/Icons/doc-<name>.icns                     27 .icns, full 16..1024 pyramid
+#   Mac/Resources/Icons/doc-<name>.icns                     27 format .icns + doc-fm.icns, 16..1024;
+#                                                           the verify stage fails unless every size
+#                                                           is an .ico frame enlarged x1..x32
 #   Mac/docs/reports/screenshots/icons-contact-sheet.png    every icon at 128pt on a checkerboard
 #   Mac/build/icons/                                        scratch: decoded frames, manifest, PNGs
 set -eu

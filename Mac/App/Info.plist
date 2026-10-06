@@ -856,7 +856,7 @@
 				<string>tlz</string>
 			</array>
 			<key>CFBundleTypeIconFile</key>
-			<string>doc-7z</string>
+			<string>doc-fm</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
