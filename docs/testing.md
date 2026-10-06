@@ -19,6 +19,23 @@ Mac/scripts/verify.sh                                    # clean build + every s
 
 Logs go to `Mac/build/test-<target>.log`, result bundles to `Mac/build/results-<target>.xcresult`.
 
+## The Intel slice (Rosetta)
+
+The release is universal. `-A x86_64` runs any suite on the x86_64 slice under Rosetta 2 (install it
+once: `softwareupdate --install-rosetta --agree-to-license`), built into
+`Mac/build/DerivedData-x86_64` so the native build stays:
+
+```sh
+Mac/scripts/test.sh -A x86_64          # unit tests on x86_64
+Mac/scripts/test.sh -A x86_64 -H       # app-hosted tests on x86_64
+```
+
+## No network
+
+No test reaches the network. The update check (`UpdateCheckTests`) runs against a stubbed
+`UpdateFetching`, and the app never starts a check of its own in a test process (`SZ_TEST_SUPPORT`,
+an XCTest host, or any copy of the app with a test bundle identifier).
+
 ## UI tests need permissions
 
 XCUITest drives the app through the accessibility system, so it needs the machine:

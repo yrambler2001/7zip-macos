@@ -36,8 +36,11 @@ final class AboutDialog: NSObject {
         // SS_REALSIZEIMAGE: the static takes the image's own size (110 x 63 in the capture).
         logo.frame.size = wordmark?.size ?? NSSize(width: 64, height: 64)
 
-        // IDT_ABOUT_VERSION 101 = "7-Zip <MY_VERSION> (<cpu>)"; IDT_ABOUT_DATE 102 = MY_DATE
-        form.add(RcPlace.makeLabel(SZBenchmark.versionWithCPUText), rc, 101)
+        // IDT_ABOUT_VERSION 101 = "7-Zip <MY_VERSION> (<cpu>)", with the port's version in it
+        // (pub3): "7-Zip 26.03 for macOS 1.0.0 (arm64)". IDT_ABOUT_DATE 102 = MY_DATE
+        let version = RcPlace.makeLabel(Self.versionText)
+        version.setAccessibilityIdentifier("aboutVersion")
+        form.add(version, rc, 101)
         form.add(RcPlace.makeLabel(SZBenchmark.engineDateText), rc, 102)
         // static LTEXT MY_COPYRIGHT (-1, the second static)
         form.add(RcPlace.makeLabel(SZBenchmark.engineCopyrightText), rc, -1, 1)
@@ -66,6 +69,15 @@ final class AboutDialog: NSObject {
         form.add(DialogKit.button(Lang.text(401, "OK"), target: self, action: #selector(okClicked), key: "\r"), rc, 1)
 
         RcPlace.install(form, in: window, size: rc.size, parent: parent)
+    }
+
+    /// IDT_ABOUT_VERSION's text: MY_VERSION_CPU with "7-Zip <upstream>" replaced by the port's
+    /// name, "7-Zip 26.03 for macOS 1.0.0 (arm64)" (pub3).
+    static var versionText: String {
+        let engine = SZBenchmark.versionWithCPUText
+        let prefix = "7-Zip \(PortVersion.upstream)"
+        guard engine.hasPrefix(prefix) else { return PortVersion.displayName }
+        return PortVersion.displayName + engine.dropFirst(prefix.count)
     }
 
     @objc private func homePageClicked() {

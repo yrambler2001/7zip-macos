@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
-	<string>26.03</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>2603</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSExtension</key>
@@ -30,6 +30,6 @@
 		<string>$(PRODUCT_MODULE_NAME).FinderSync</string>
 	</dict>
 	<key>NSHumanReadableCopyright</key>
-	<string>7-Zip Copyright (c) 1999-2026 Igor Pavlov. macOS port Copyright (c) 2026 Yurii Synyshyn.</string>
+	<string>7-Zip Copyright (c) 1999-2026 Igor Pavlov. macOS port © 2026 Yurii Synyshyn (yrambler2001).</string>
 </dict>
 </plist>

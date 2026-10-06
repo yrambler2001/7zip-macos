@@ -25,8 +25,14 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
   command-line grammar.
 - Quarantine propagation on extraction (the macOS counterpart of Zone.Identifier), Dock-tile
   progress, drag and drop with Finder and between panels.
-- Distribution as an ad-hoc signed disk image and a Homebrew cask; an update check against GitHub
-  Releases.
+- A universal app (Apple Silicon and Intel): the arm64 slice keeps upstream's ARM64 assembler
+  LZMA decoder, the x86_64 slice uses 7-Zip's C code paths, as upstream's clang builds do.
+- Distribution as an ad-hoc signed disk image, `7-Zip-26.03-macOS-1.0.0.dmg`, and a Homebrew cask.
+- An update check against GitHub Releases: at File Manager startup at most once a day (off in
+  Options ▸ macOS ▸ Check for updates at startup) and from Help ▸ Check for Updates…, with
+  Download / Later / Skip This Version. Nothing is downloaded or installed automatically.
+- Versioning: one source of truth, `Mac/VERSION`; the build number is the commit count;
+  `Mac/scripts/bump-version.sh` raises the version and opens a changelog section.
 
 ### Changed in upstream sources
 
@@ -34,4 +40,4 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
   behaves correctly on macOS; Windows behaviour is unchanged. See
   [Mac/docs/upstream-patches.md](Mac/docs/upstream-patches.md).
 
-[1.0.0]: https://github.com/yrambler2001/7zip-macos/releases
+[1.0.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.0.0

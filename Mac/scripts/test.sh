@@ -18,6 +18,9 @@
 #                          run that executes no test at all exits 4 instead of reading as a pass)
 #   -c, --config <CFG>     Debug (default) or Release
 #   -k, --keep-prefs       do not clear com.yrambler2001.7zip before an input-shard run
+#   -A, --arch <ARCH>      run on this architecture (default: the host's, `uname -m`). `-A x86_64`
+#                          on Apple Silicon runs the tests under Rosetta 2, with a DerivedData of its
+#                          own (Mac/build/DerivedData-x86_64) so the native build is not replaced
 #   -h, --help             this text
 #
 # Sharding (ai/api/harness.md). Every XCUITest target is built against an app target with its
@@ -33,7 +36,7 @@
 # Mac/build/prefs-backup.plist, cleared (Lang forced to English) and imported back afterwards.
 # Screenshot attachments are exported from the result bundles into Mac/build/screenshots/.
 # A test that hangs is failed by XCTest rather than stalling the run (-test-timeouts-enabled).
-# Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA.
+# Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA, BUILD_NUMBER.
 # Logs: Mac/build/test-<target>.log. Exit: 0 when everything passed, else xcodebuild's code.
 set -euo pipefail
 
@@ -56,6 +59,7 @@ TARGETS=""
 KEEP_PREFS=0
 SHARDED=0
 JOBS=4
+ARCH="$(uname -m)"
 # A test that hangs must fail fast instead of stalling the whole run; the per-class allowance is
 # `SevenZipUITestCase.timeAllowance` and this is the default for anything that does not set one.
 TIMEOUT_ARGS=(-test-timeouts-enabled YES
@@ -73,6 +77,7 @@ while [ $# -gt 0 ]; do
     -o|--only) ONLY="${2:?--only needs a value}"; shift ;;
     -c|--config) CONFIG="${2:?--config needs a value}"; shift ;;
     -k|--keep-prefs) KEEP_PREFS=1 ;;
+    -A|--arch) ARCH="${2:?--arch needs a value}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "test.sh: unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
@@ -131,6 +136,14 @@ if [ -n "$ONLY" ]; then
 fi
 
 mkdir -p "$MAC/build"
+# The host's architecture builds into the shared DerivedData (build.sh's); another one (Rosetta)
+# gets its own, so switching does not throw the native build away.
+DD="$MAC/build/DerivedData"
+[ "$ARCH" = "$(uname -m)" ] || DD="$MAC/build/DerivedData-$ARCH"
+# Versions (pub3): the build number for Mac/Version.xcconfig, as build.sh writes it.
+# shellcheck source=version.sh
+. "$MAC/scripts/version.sh"
+write_build_number_xcconfig
 if [ ! -d "$MAC/Tests/Fixtures" ] || [ -z "$(ls -A "$MAC/Tests/Fixtures" 2>/dev/null)" ]; then
   echo "Fixtures missing; run Mac/scripts/make-fixtures.sh" >&2
   exit 2
@@ -235,7 +248,7 @@ check_no_foreign_started() {
 
 # Quit what the run left of *this tree's* test builds (apps and runners), never anything else.
 quit_test_processes() {
-  local products="$MAC/build/DerivedData/Build/Products/" pids
+  local products="$DD/Build/Products/" pids
   pids="$(ps -axo pid=,comm= 2>/dev/null \
     | awk -v p="$products" '{ pid = $1; sub(/^[ \t]*[0-9]+[ \t]+/, "") } index($0, p) == 1 && /\.app\/Contents\/MacOS\// { print pid }')"
   [ -n "$pids" ] || return 0
@@ -278,7 +291,7 @@ restore_prefs() {
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
 unregister_test_apps() {
-  local products="$MAC/build/DerivedData/Build/Products/$CONFIG" app
+  local products="$DD/Build/Products/$CONFIG" app
   [ -x "$LSREGISTER" ] || return 0
   for app in 7-Zip-Host.app 7-Zip-Probe1.app 7-Zip-Probe2.app; do
     [ -d "$products/$app" ] || continue
@@ -406,7 +419,7 @@ run_target() {
   local attempt
   for attempt in 1 2; do
     xcodebuild -project "$MAC/7-Zip.xcodeproj" -scheme "$target" -configuration "$CONFIG" \
-      -derivedDataPath "$MAC/build/DerivedData" -destination 'platform=macOS,arch=arm64' \
+      -derivedDataPath "$DD" -destination "platform=macOS,arch=$ARCH" \
       -resultBundlePath "$bundle" "${TIMEOUT_ARGS[@]}" "${COMMON_SETTINGS[@]}" \
       ${only_args[@]+"${only_args[@]}"} ${XCODEBUILD_EXTRA:-} test >"$log" 2>&1
     rc=$?
@@ -430,7 +443,7 @@ build_for_testing() {
   set +e
   # shellcheck disable=SC2046
   xcodebuild -project "$MAC/7-Zip.xcodeproj" -scheme "$ALL_SCHEME" -configuration "$CONFIG" \
-    -derivedDataPath "$MAC/build/DerivedData" -destination 'platform=macOS,arch=arm64' \
+    -derivedDataPath "$DD" -destination "platform=macOS,arch=$ARCH" \
     "${COMMON_SETTINGS[@]}" ${XCODEBUILD_EXTRA:-} build-for-testing >"$log" 2>&1
   rc=$?
   set -e
@@ -439,7 +452,7 @@ build_for_testing() {
     grep -E ": error:|\*\* BUILD" "$log" | head -10 >&2 || true
     return $rc
   fi
-  XCTESTRUN="$(ls -t "$MAC/build/DerivedData/Build/Products"/*.xctestrun 2>/dev/null | head -1)"
+  XCTESTRUN="$(ls -t "$DD/Build/Products"/*.xctestrun 2>/dev/null | head -1)"
   if [ -z "$XCTESTRUN" ]; then
     echo "test.sh: build-for-testing produced no .xctestrun" >&2
     return 1
@@ -459,7 +472,7 @@ run_shard() {
   local attempt
   for attempt in 1 2; do
     xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
-      -destination 'platform=macOS,arch=arm64' -resultBundlePath "$bundle" \
+      -destination "platform=macOS,arch=$ARCH" -resultBundlePath "$bundle" \
       "${TIMEOUT_ARGS[@]}" "${only_args[@]}" >"$log" 2>&1
     rc=$?
     automation_mode_flake "$rc" "$log" "$attempt" || break

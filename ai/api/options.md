@@ -95,6 +95,9 @@ public; every write posts the notifications of section 4.
 | `FM.OptionsPage` | Int | 0 | `optionsLastPage` (not a Windows value: which Options tab to reopen) |
 | `FM.Theme` | String | absent = `system` | `Settings.theme: AppTheme` (`system` / `light` / `dark`; macOS only, Options > macOS, `Support/AppTheme.swift`; written -> `NSApp.appearance` at once) |
 | `FM.FirstLaunchIntegration` | Bool | absent | marker of `FirstLaunchIntegration` (macOS only: the first launch of an installed copy turned the Finder integration on) |
+| `FM.CheckUpdates` | Bool | absent = true | `Settings.checkUpdates` (macOS only, Options > macOS "Check for updates at startup", `Support/UpdateCheck.swift`, pub3) |
+| `FM.UpdateLastCheck` | Int | absent | `Settings.updateLastCheck: Date?` (seconds since 1970 of the last startup check; at most one per 24 h) |
+| `FM.UpdateSkippedVersion` | String | absent | `Settings.updateSkippedVersion` (the port version "Skip This Version" was pressed for; not offered at startup again) |
 
 `HKCU\Software\7-Zip\Extraction` (01b §5.4)
 
@@ -275,4 +278,6 @@ Language (pageID 0, title "macOS"), laid out from its own DLU template with `RcP
 (`RcDialog(template:)`). It holds the Theme drop-down (`FM.Theme`, lang IDs 9900-9903, "System"
 falls back to 2200) and a "Show grid lines" checkbox bound to `FM.ShowGrid`, the same value as the
 Settings page's IDX_SETTINGS_SHOW_GRID 2505; the two checkboxes mirror each other through
-`OptionsGridLines.toggled` while the sheet is open. See `reports/theme.md`.
+`OptionsGridLines.toggled` while the sheet is open. See `reports/theme.md`. Since pub3 it also has
+"Check for updates at startup" (control 9930, lang 9950, `FM.CheckUpdates`, default on; see
+`reports/pub3.md`).

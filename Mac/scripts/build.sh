@@ -12,9 +12,13 @@
 #   -T, --for-testing      build-for-testing the 7-Zip-AllTests scheme, so every test target and
 #                          every app copy is compiled once and the shards can then be run with
 #                          `test.sh --shards` (or xcodebuild test-without-building) without a rebuild
+#   -a, --arch <ARCH>      the destination architecture (default: the host's, `uname -m`). Debug
+#                          builds only that slice; Release always builds the universal app
+#                          (arm64 + x86_64, ONLY_ACTIVE_ARCH=NO in Mac/project.yml)
 #   -q, --quiet            print only the verdict line
 #   -h, --help             this text
 # Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA (extra args),
+#      BUILD_NUMBER (CFBundleVersion; default the commit count of HEAD, Mac/scripts/version.sh),
 #      SIGN_IDENTITY (default "-" = ad-hoc; a Developer ID name also turns the hardened runtime on),
 #      DEVELOPMENT_TEAM (team identifier, only meaningful with a real SIGN_IDENTITY).
 # Exit: 0 on success, xcodebuild's code on failure (2 on bad usage).
@@ -32,6 +36,7 @@ CLEAN=0
 CLEAN_ALL=0
 TARGET=""
 QUIET=0
+ARCH="$(uname -m)"
 while [ $# -gt 0 ]; do
   case "$1" in
     Debug|Release) CONFIG="$1" ;;
@@ -41,6 +46,7 @@ while [ $# -gt 0 ]; do
     -K|--clean-all) CLEAN_ALL=1 ;;
     -t|--target) TARGET="${2:?--target needs a value}"; shift ;;
     -T|--for-testing) FOR_TESTING=1 ;;
+    -a|--arch) ARCH="${2:?--arch needs a value}"; shift ;;
     -q|--quiet) QUIET=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "build.sh: unknown argument '$1'" >&2; usage >&2; exit 2 ;;
@@ -115,6 +121,13 @@ else
   say "== signing: $SIGN_IDENTITY (hardened runtime on)"
 fi
 
+# Versions (pub3): MARKETING_VERSION comes from Mac/VERSION through Mac/Version.xcconfig; the build
+# number is written next to it for the xcconfig's optional include.
+# shellcheck source=version.sh
+. "$MAC/scripts/version.sh"
+write_build_number_xcconfig
+say "== version: $VERSION_NAME (build $BUILD_NUMBER)"
+
 ACTION=build
 if [ "$FOR_TESTING" = 1 ]; then ACTION=build-for-testing; fi
 say "== xcodebuild $ACTION ($CONFIG) -> $LOG"
@@ -125,7 +138,7 @@ say "== xcodebuild $ACTION ($CONFIG) -> $LOG"
 finderext_snapshot
 set +e
 xcodebuild -project "$MAC/7-Zip.xcodeproj" "${SCHEME_ARGS[@]}" -configuration "$CONFIG" \
-  -destination 'platform=macOS,arch=arm64' \
+  -destination "platform=macOS,arch=$ARCH" \
   "${SIGN_ARGS[@]}" ${XCODEBUILD_EXTRA:-} "$ACTION" >"$LOG" 2>&1
 RC=$?
 set -e

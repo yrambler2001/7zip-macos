@@ -48,8 +48,9 @@ Requires **macOS 14 (Sonoma) or newer**, on Apple Silicon or Intel (the release 
 
 ### Disk image
 
-Download `7-Zip-…dmg` from [Releases](https://github.com/yrambler2001/7zip-macos/releases), open it
-and drag **7-Zip** onto **Applications**.
+Download `7-Zip-26.03-macOS-1.0.0.dmg` (the version in the name changes with each release) from
+[Releases](https://github.com/yrambler2001/7zip-macos/releases), open it and drag **7-Zip** onto
+**Applications**. The app is universal: one download for Apple Silicon and Intel Macs.
 
 ### Homebrew
 
@@ -110,9 +111,16 @@ sandboxed and only see the files you selected.
 
 ## Updates
 
-The app checks GitHub Releases for a newer version at startup and from **Help ▸ Check for
-Updates**; it only reads the public release list. Homebrew users can also `brew upgrade --cask
-7zip-macos`.
+When the File Manager starts, at most once a day, the app asks GitHub whether a newer release
+exists; **Help ▸ Check for Updates…** asks at any time. If there is one, a message box shows the
+new version and the first lines of its release notes, with **Download** (opens the release page in
+your browser), **Later** and **Skip This Version**. Nothing is downloaded or installed by the app.
+Homebrew users can also `brew upgrade --cask 7zip-macos`.
+
+**Privacy:** the app contacts `api.github.com` once a day at startup
+(`GET /repos/yrambler2001/7zip-macos/releases/latest`, with nothing but the standard `Accept` and
+`User-Agent` headers) and makes no other network request. Turn it off in **Options ▸ macOS ▸
+Check for updates at startup**; Finder commands (7-Zip's right-click menu) never check.
 
 ## Differences from 7-Zip on Windows
 
@@ -144,7 +152,7 @@ reports are kept in [`ai/`](ai/README.md); commits written by an agent carry `Co
 
 ## License
 
-7-Zip is Copyright (C) 1999-2026 Igor Pavlov; the macOS port is Copyright (C) 2026 yrambler2001.
+7-Zip is Copyright (C) 1999-2026 Igor Pavlov; the macOS port is Copyright (C) 2026 Yurii Synyshyn (yrambler2001).
 Both are under the **GNU LGPL 2.1 or later**, with parts under the BSD 3-clause and 2-clause
 licences and the RAR code under the unRAR license restriction — see [LICENSE](LICENSE),
 [DOC/License.txt](DOC/License.txt) and [NOTICE](NOTICE) (bundled assets, trademarks, upstream

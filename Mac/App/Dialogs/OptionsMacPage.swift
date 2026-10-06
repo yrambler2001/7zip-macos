@@ -12,6 +12,8 @@
 //                               off by default as on a fresh Windows install). Both checkboxes
 //                               mirror each other while the sheet is open
 //                               (`OptionsGridLines.toggled`), and either page's Apply writes it.
+//   [x] Check for updates at startup  pub3: FM.CheckUpdates (default on), UpdateCheck.swift; lang
+//                               9950. Help > Check for Updates... checks whatever it says.
 //
 // Apply / OK write what changed; the theme takes effect at once (`AppTheme` follows FM.Theme), the
 // grid through OptionsPostApply's panel refresh, as the Settings page's checkbox does.
@@ -46,6 +48,7 @@ final class OptionsMacPage: OptionsPageBase {
         static let themeLabel = 9900        // LTEXT "Theme:"
         static let themeCombo = 9910        // COMBOBOX, CBS_DROPDOWNLIST
         static let showGrid = 9920          // checkbox, lang 2505 "Show &grid lines"
+        static let checkUpdates = 9930      // checkbox, lang 9950 "Check for updates at startup" (pub3)
     }
 
     /// The page template in DLUs, in the IDD_SETTINGS style (m = 8, rows from y 8).
@@ -53,6 +56,7 @@ final class OptionsMacPage: OptionsPageBase {
         RcControl(id: ID.themeLabel, kind: .ltext, x: 8, y: 10, width: 76, height: 8, text: "Theme:"),
         RcControl(id: ID.themeCombo, kind: .comboList, x: 88, y: 8, width: 120, height: 64, text: ""),
         RcControl(id: ID.showGrid, kind: .check, x: 8, y: 30, width: 300, height: 10, text: "Show &grid lines"),
+        RcControl(id: ID.checkUpdates, kind: .check, x: 8, y: 46, width: 300, height: 10, text: "Check for updates at startup"),
     ])
 
     override var rc: RcDialog { RcDialog(template: Self.template) }
@@ -60,8 +64,10 @@ final class OptionsMacPage: OptionsPageBase {
     let themeLabel = RcPlace.makeLabel(AppTheme.labelText)
     let themePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private(set) var gridBox: NSButton!
+    private(set) var updatesBox: NSButton!
     private var themeChanged = false
     private var gridChanged = false
+    private var updatesChanged = false
     private var gridObserver: NSObjectProtocol?
 
     deinit {
@@ -85,6 +91,10 @@ final class OptionsMacPage: OptionsPageBase {
         form.add(themeLabel, rc, ID.themeLabel)
         form.add(themePopup, rc, ID.themeCombo)
         form.add(gridBox, rc, ID.showGrid)
+        updatesBox = OptionsUI.checkbox(UpdateCheck.LangID.checkAtStartup, "Check for updates at startup",
+                                        self, #selector(updatesClicked(_:)))
+        updatesBox.setAccessibilityIdentifier("optionsMacCheckUpdates")
+        form.add(updatesBox, rc, ID.checkUpdates)
         gridObserver = NotificationCenter.default.addObserver(
             forName: OptionsGridLines.toggled, object: nil, queue: nil) { [weak self] note in
             guard let self, note.object as AnyObject? !== self, let on = note.userInfo?["on"] as? Bool else { return }
@@ -97,8 +107,10 @@ final class OptionsMacPage: OptionsPageBase {
     override func pageDidLoad() {
         selectTheme(Settings.theme)
         gridBox.state = Settings.showGrid ? .on : .off
+        updatesBox.state = Settings.checkUpdates ? .on : .off
         themeChanged = false
         gridChanged = false
+        updatesChanged = false
         relabelPage()
     }
 
@@ -107,6 +119,7 @@ final class OptionsMacPage: OptionsPageBase {
         for (i, theme) in AppTheme.allCases.enumerated() { themePopup.item(at: i)?.title = theme.title }
         themePopup.needsDisplay = true
         gridBox.title = Lang.text(2505, "Show grid lines")
+        updatesBox.title = UpdateCheck.checkAtStartupText
     }
 
     var selectedTheme: AppTheme {
@@ -128,6 +141,11 @@ final class OptionsMacPage: OptionsPageBase {
         changed()
     }
 
+    @objc func updatesClicked(_ sender: Any?) {
+        updatesChanged = true
+        changed()
+    }
+
     // MARK: OnApply
 
     override func applyPage() -> Bool {
@@ -138,6 +156,10 @@ final class OptionsMacPage: OptionsPageBase {
         if gridChanged {
             Settings.showGrid = gridBox.state == .on
             gridChanged = false
+        }
+        if updatesChanged {
+            Settings.checkUpdates = updatesBox.state == .on
+            updatesChanged = false
         }
         return true
     }

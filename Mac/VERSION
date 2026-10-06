@@ -1,0 +1,12 @@
+// Mac/VERSION -- the single source of truth for the port's version (pub3).
+//
+// Read by Xcode (included from Mac/Version.xcconfig, so this file is xcconfig syntax) and by the
+// scripts (Mac/scripts/version.sh). Change it with Mac/scripts/bump-version.sh, not by hand.
+//
+// PORT_VERSION      the macOS port's own semantic version: CFBundleShortVersionString of the app
+//                   and every extension, the release tag v<PORT_VERSION>, the update check.
+// UPSTREAM_VERSION  the 7-Zip engine the port is built on (must equal MY_VERSION in C/7zVersion.h).
+//
+// User-visible name: "7-Zip <UPSTREAM_VERSION> for macOS <PORT_VERSION>".
+PORT_VERSION = 1.0.0
+UPSTREAM_VERSION = 26.03
