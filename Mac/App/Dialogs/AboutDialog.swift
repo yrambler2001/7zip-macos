@@ -100,7 +100,7 @@ final class AboutDialog: NSObject {
         }
         let dialog = AboutDialog(parent: parent)
         let monitor = dialog.installHelpKeyMonitor()
-        NSApp.runModal(for: dialog.window)
+        DialogKit.runModal(for: dialog.window)
         if let monitor { NSEvent.removeMonitor(monitor) }
         dialog.window.orderOut(nil)
     }

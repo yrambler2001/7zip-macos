@@ -19,6 +19,7 @@ FOUNDATION_EXPORT const unsigned char SevenZipKitVersionString[];
 #import <SevenZipKit/SZRootFolder.h>
 #import <SevenZipKit/SZArchiveOpener.h>
 #import <SevenZipKit/SZLang.h>
+#import <SevenZipKit/SZObjCException.h>
 #import <SevenZipKit/SZSettings.h>
 #import <SevenZipKit/SZProgressDelegate.h>
 // tools scope (alphabetical)

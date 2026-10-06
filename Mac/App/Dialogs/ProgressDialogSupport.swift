@@ -312,7 +312,7 @@ final class DialogWindow: NSWindow {
 
     // MARK: closing a modal dialog (Mac/docs/reports/infohang.md)
     //
-    // Every dialog here is run with `NSApp.runModal(for:)` and ends its session from its own
+    // Every dialog here is run with `DialogKit.runModal(for:)` and ends its session from its own
     // buttons. The title-bar close button (and Cmd+W) did not: AppKit closed the window and left
     // the modal session running for a window nobody could see, so every click on the main window
     // was refused and the menus stayed disabled -- the app looked hung ("I clicked Info, closed it
@@ -384,6 +384,41 @@ final class DialogWindow: NSWindow {
             if let found = cancelButton(in: subview) { return found }
         }
         return nil
+    }
+}
+
+// MARK: - running a dialog modally (Mac/docs/reports/okcancel.md)
+
+extension DialogKit {
+
+    /// The exceptions `runModal(for:)` caught, newest last (logged; read by tests).
+    private(set) static var caughtModalExceptions: [String] = []
+
+    /// `NSApp.runModal(for:)` that keeps its session through an Objective-C exception -- the
+    /// DoModal of every dialog in the port.
+    ///
+    /// An exception raised by any event handler inside the modal loop unwinds `runModal` itself.
+    /// AppKit catches it further out -- the context menu's `NSMenuTrackingSession` when the dialog
+    /// came from a context-menu verb, `-[NSApplication run]` otherwise -- logs it and goes on,
+    /// with the dialog still on screen and **no modal session**: its OK / Cancel end a session
+    /// that no longer exists (`stopModal()` does nothing), so the buttons look dead while Help
+    /// (which only opens a page) and the close box (which also orders the window out) still work.
+    /// That is how the selector bug in `WinComboHover` reached the user. Here the exception is
+    /// caught at the session's own boundary, logged, and the session resumes for the same window,
+    /// which is what `-[NSApplication run]` does for the main loop. A window the exception left
+    /// off screen ends the dialog as IDCANCEL.
+    @discardableResult
+    static func runModal(for window: NSWindow) -> NSApplication.ModalResponse {
+        var response = NSApplication.ModalResponse.abort
+        while true {
+            let exception = SZCatchException { response = NSApp.runModal(for: window) }
+            guard let exception else { return response }
+            let line = "\(exception.name.rawValue): \(exception.reason ?? "")"
+            caughtModalExceptions.append(line)
+            NSLog("7-Zip: exception inside the modal session of '%@', session resumed: %@\n%@", window.title, line,
+                  exception.callStackSymbols.prefix(24).joined(separator: "\n"))
+            guard window.isVisible else { return .cancel }
+        }
     }
 }
 

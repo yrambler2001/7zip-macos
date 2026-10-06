@@ -63,7 +63,7 @@ final class CompressDialogController: NSObject, NSTextFieldDelegate, NSComboBoxD
         }
         controller.buildWindow()
         controller.loadInitialState()
-        NSApp.runModal(for: controller.window)
+        DialogKit.runModal(for: controller.window)
         controller.window.orderOut(nil)
         return controller.result
     }

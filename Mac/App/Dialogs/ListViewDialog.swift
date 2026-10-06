@@ -61,7 +61,7 @@ enum ListViewDialog {
 
     static func run(_ options: ListViewDialogOptions, parent: NSWindow?) -> ListViewDialogResult {
         let dialog = ListViewDialogController(options: options, parent: parent)
-        NSApp.runModal(for: dialog.window)
+        DialogKit.runModal(for: dialog.window)
         dialog.window.orderOut(nil)
         return dialog.result
     }
@@ -356,7 +356,7 @@ enum TextViewerDialog {
     /// Shows `text` under `title` modally on the main thread.
     static func show(title: String, text: String, parent: NSWindow?) {
         let dialog = TextViewerDialogController(title: title, text: text, parent: parent)
-        NSApp.runModal(for: dialog.window)
+        DialogKit.runModal(for: dialog.window)
         dialog.window.orderOut(nil)
     }
 }

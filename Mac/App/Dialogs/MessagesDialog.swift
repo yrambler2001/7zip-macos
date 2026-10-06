@@ -41,7 +41,7 @@ final class MessagesDialog: NSObject {
     static func show(messages: [String], parent: NSWindow? = nil) {
         guard !messages.isEmpty else { return }
         let dialog = MessagesDialog(messages: messages, parent: parent)
-        NSApp.runModal(for: dialog.window)
+        DialogKit.runModal(for: dialog.window)
         dialog.window.orderOut(nil)
     }
 }
