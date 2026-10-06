@@ -1,11 +1,11 @@
-// TestReset.swift -- the app side of `Mac/docs/test-support-contract.md`: animation suppression and
+// TestReset.swift -- the app side of `ai/test-support-contract.md`: animation suppression and
 // `sevenzip://test/reset`, the command that returns a running app to a known state without quitting.
 //
 // Why it exists: the UI suite cost 28.7 s per test because every test quit and relaunched the app,
 // so the assertions were a rounding error next to process launch. A reset replaces the relaunch.
 //
 // Why it lives in `Integration`: the reset is one more route into the command layer
-// (`Mac/docs/api/finder.md` section 1), delivered by the same `sevenzip://` URL channel as every
+// (`ai/api/finder.md` section 1), delivered by the same `sevenzip://` URL channel as every
 // other out-of-process command, and parsed by the same `CommandURL`.
 //
 // Nothing here does anything unless `SZ_TEST_SUPPORT=1` was in the environment at launch
@@ -113,7 +113,7 @@ enum TestAnimations {
 /// acknowledgement is therefore **unconditional**: a reset that could not settle still bumps the
 /// generation, still writes the ack, and leaves a note beside it naming the step that stalled and what
 /// was still up. A test then fails with that message instead of timing out with nothing, which is the
-/// difference between a diagnosis and a shrug (`Mac/docs/reports/fastui.md` section 6.10).
+/// difference between a diagnosis and a shrug (`ai/reports/fastui.md` section 6.10).
 enum TestResetCoordinator {
 
     /// Number of completed resets. Published as the main window's accessibility value and written
@@ -242,7 +242,7 @@ enum TestResetCoordinator {
 
     /// Ends the innermost modal session **without raising**.
     ///
-    /// This is the fix for the wedge of `Mac/docs/reports/fastui.md` section 6.10, and the reason the
+    /// This is the fix for the wedge of `ai/reports/fastui.md` section 6.10, and the reason the
     /// reset used to give up for good rather than after 15 s. `NSApp.abortModal()` is documented to
     /// raise `NSAbortModalException`, and both callers of `closeTransientUI` run inside a
     /// `CFRunLoopTimer` callback (the settle ticker, and `TestResetWatcher.poll` by way of `begin`).
@@ -339,7 +339,7 @@ enum TestResetCoordinator {
         }
         if let language = request.language {
             // The Options > Language page applies the switch live and posts the group notification
-            // before the key is written (`Mac/docs/api/options.md` section 4); writing the key is
+            // before the key is written (`ai/api/options.md` section 4); writing the key is
             // what posts it here, and the reload below is the "applied" half.
             Settings.language = language
         }
@@ -438,7 +438,7 @@ enum TestResetCoordinator {
 /// different bundle than the one the test launched: with two extra probe bundles registered on this
 /// machine, `urlForApplication(toOpen:)` named a probe, and every reset a UI test sent went to it
 /// instead of the app under test. `open(_:withApplicationAt:)` *can* aim, and does (the
-/// out-of-process driver in `Mac/docs/reports/resetcmd.md` uses it), but a **sandboxed** XCUITest
+/// out-of-process driver in `ai/reports/resetcmd.md` uses it), but a **sandboxed** XCUITest
 /// runner cannot reliably resolve a bundle URL outside its container to aim with.
 ///
 /// So when a state directory is set, the app also watches `<SZ_STATE_DIR>/reset-request` and treats

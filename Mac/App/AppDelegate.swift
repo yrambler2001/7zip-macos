@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var hasFinishedLaunching = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // Test support (Mac/docs/api/resetcmd.md) comes first: `prepareForLaunch` may point the
+        // Test support (ai/api/resetcmd.md) comes first: `prepareForLaunch` may point the
         // settings domain at the instance's own state directory, so it has to run before anything
         // reads a setting, and the animation defaults have to be registered before any window is
         // created. Both are no-ops unless SZ_TEST_SUPPORT=1 is in the environment.
@@ -51,12 +51,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hasFinishedLaunching = true
         // 7zFM.exe "%1" from Explorer starts a process whose one window shows the archive: when
         // Finder launched the app to open documents, their windows already exist and no empty
-        // window is added (Mac/docs/reports/newwindow.md).
+        // window is added (ai/reports/newwindow.md).
         let args = Array(CommandLine.arguments.dropFirst())
         let startPath = args.first.flatMap { $0.hasPrefix("-") ? nil : $0 }
         // A launch made for a 7zG command (a Finder menu item, a Quick Action, a `sevenzip://` URL,
         // a Dock drop, a 7zG argv) has no file-manager window at all, as 7zG.exe has none
-        // (Mac/docs/reports/gmode.md; GMode.swift).
+        // (ai/reports/gmode.md; GMode.swift).
         let forCommand = GMode.launchedForCommand || SevenZipCommandLineEntry.isCommandMode
         var needsWindow = Self.needsLaunchWindow(documentWindows: MainWindows.controllers.count,
                                                  startPath: startPath, forCommand: forCommand)
@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         // Test support: the aimable delivery channel for `sevenzip://test/reset`
-        // (Mac/docs/api/resetcmd.md section 5). A no-op unless SZ_TEST_SUPPORT=1 and SZ_STATE_DIR
+        // (ai/api/resetcmd.md section 5). A no-op unless SZ_TEST_SUPPORT=1 and SZ_STATE_DIR
         // are both set, and it is started last so the window already exists when the first reset
         // arrives.
         TestResetWatcher.startIfNeeded()
@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Whether `applicationDidFinishLaunching` creates the default window. Not when the launch
     /// was for documents -- Launch Services delivers a Finder double-click's open-documents event
-    /// *before* `applicationDidFinishLaunching` (measured, Mac/docs/reports/newwindow.md), so their
+    /// *before* `applicationDidFinishLaunching` (measured, ai/reports/newwindow.md), so their
     /// windows exist by then -- unless a 7zFM argv path also asks for a window of its own. Never for
     /// a launch made for a command (`forCommand`): that is 7zG.exe, which has no file-manager window.
     static func needsLaunchWindow(documentWindows: Int, startPath: String?, forCommand: Bool = false) -> Bool {
@@ -106,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The reopen Apple event (`kAEReopenApplication`). Two gestures send it, and the user wants
-    /// them to differ (Mac/docs/reports/appfeel.md §1):
+    /// them to differ (ai/reports/appfeel.md §1):
     ///
     /// * a **Dock click** shows the windows that are open, as every Mac app does: nothing new when
     ///   a file-manager window is visible (the activation brings it forward), else the last
@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !SevenZipCommandLineEntry.isCommandMode else { return true }
         // While a shell command runs (7zG mode), the Dock icon stands for 7zG's dialog: bring that
-        // forward, never a file-manager window (Mac/docs/reports/gmode.md).
+        // forward, never a file-manager window (ai/reports/gmode.md).
         if GMode.isActive {
             (NSApp.modalWindow ?? NSApp.keyWindow)?.makeKeyAndOrderFront(nil)
             return false

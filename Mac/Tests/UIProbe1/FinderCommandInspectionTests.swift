@@ -15,7 +15,7 @@
 // click-is-the-specification cases (Cancel means `E_ABORT`, so nothing is extracted and the process
 // ends) stay in the input shard, in `FinderIntegrationTests`.
 //
-// Parity references: 03-shell-integration-inventory.md sections 1.4, 2.4, 6.4; Mac/docs/api/finder.md.
+// Parity references: 03-shell-integration-inventory.md sections 1.4, 2.4, 6.4; ai/api/finder.md.
 
 import AppKit
 import XCTest

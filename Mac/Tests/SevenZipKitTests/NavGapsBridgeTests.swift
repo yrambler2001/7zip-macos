@@ -1,4 +1,4 @@
-// NavGapsBridgeTests.swift -- the bridge half of `mac/navgaps` (Mac/docs/reports/navgaps.md):
+// NavGapsBridgeTests.swift -- the bridge half of `mac/navgaps` (ai/reports/navgaps.md):
 //
 //   * the per-level open error text (GetFolderError, FileFolderPluginOpen.cpp:96-217) on a failed
 //     open, and CFfpOpen::Encrypted (01 §6.7, PROGRESS 155);

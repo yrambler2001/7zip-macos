@@ -1,6 +1,6 @@
 // PanelIcons.swift -- the panel's icon rule (SetItemText, PanelListNotify.cpp:152-522, and
 // LoadFullPathAndShow, PanelFolderChange.cpp:406-520): the real icon (IFolderGetSystemIconIndex,
-// which the bridge leaves to the app -- Mac/docs/requests.md) for volume and root items, and for
+// which the bridge leaves to the app -- ai/requests.md) for volume and root items, and for
 // file-system items when ShowRealFileIcons is on; the icon by extension otherwise. The address bar shows the Computer, volume or archive-file icon.
 
 import AppKit

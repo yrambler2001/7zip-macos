@@ -1,7 +1,7 @@
 // SZObjCException.h -- lets Swift survive an Objective-C exception raised inside a block.
 //
 // Swift cannot catch an NSException. The app needs to in exactly one place: around
-// `NSApp.runModal(for:)` (`DialogKit.runModal`, Mac/docs/reports/okcancel.md). An exception
+// `NSApp.runModal(for:)` (`DialogKit.runModal`, ai/reports/okcancel.md). An exception
 // raised by any event handler inside a dialog's modal loop unwinds `runModal` itself; AppKit then
 // catches it further out (the context menu's tracking session, or `-[NSApplication run]`), logs
 // it and carries on -- with the dialog still on screen and no modal session, so its OK / Cancel

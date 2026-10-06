@@ -1,4 +1,4 @@
-// TestSupport.swift -- the test-side half of `Mac/docs/test-support-contract.md`: which app
+// TestSupport.swift -- the test-side half of `ai/test-support-contract.md`: which app
 // instance a shard drives, the environment it launches with, and the `sevenzip://test/reset`
 // command that returns a running instance to a known state instead of quitting it.
 //
@@ -56,7 +56,7 @@ public enum TestShard {
     /// `urlForApplication(withBundleIdentifier:)`, returned **`/Applications/7-Zip.app`** once the
     /// installed copy owned the registrations (finderfix unregisters the builds after every run), so
     /// "aimed" reopens and URLs went to the user's 7-Zip -- the three `NewWindowUITests` failures of
-    /// Mac/docs/reports/gmode.md §5. It got that far because the bundle walk below stopped one
+    /// ai/reports/gmode.md §5. It got that far because the bundle walk below stopped one
     /// level short: on macOS the test bundle is `<Config>/<Target>-Runner.app/Contents/PlugIns/
     /// <Target>.xctest`, four levels under `<Config>`, not three. nil means "not found", and every
     /// caller treats that as a failure rather than falling back to an unaimed request.
@@ -272,7 +272,7 @@ public extension SevenZipApp {
                            + ")" + (stallNote(ack: ack).map { "; stall note: " + $0 } ?? ""))
         }
         // A reset that could not settle still acknowledges, and says why in `<ack>.stall` (written
-        // before the ack, removed by a clean reset; `Mac/docs/api/resetcmd.md`, "The stall note").
+        // before the ack, removed by a clean reset; `ai/api/resetcmd.md`, "The stall note").
         // The app is then *not* in the known state the test asked for, so it is a failure -- with the
         // step that stalled named, instead of whatever the next assertion trips over.
         if let note = stallNote(ack: ack, generation: acknowledged) {
@@ -294,7 +294,7 @@ public extension SevenZipApp {
     /// The stall note of a reset (`<ack>.stall`, else `<SZ_STATE_DIR>/reset-stall`), trimmed, when
     /// there is one -- and, with `generation`, only when its first field ("7: step 4 ...") names that
     /// generation, so a note about an earlier reset is never read as this one's
-    /// (`Mac/docs/api/resetcmd.md`, "The stall note"; requests.md: modalfix -> harness).
+    /// (`ai/api/resetcmd.md`, "The stall note"; requests.md: modalfix -> harness).
     func stallNote(ack: String, generation: Int? = nil) -> String? {
         let candidates = [ack + ".stall",
                           (TestShard.stateDirectory(for: owner) as NSString).appendingPathComponent("reset-stall")]
@@ -334,7 +334,7 @@ public extension SevenZipApp {
     /// Two channels, both aimed:
     ///
     /// 1. **`<SZ_STATE_DIR>/reset-request`** -- the app watches that file and treats its contents as
-    ///    the URL (`Mac/docs/api/resetcmd.md` section 5). The state directory belongs to exactly one
+    ///    the URL (`ai/api/resetcmd.md` section 5). The state directory belongs to exactly one
     ///    instance, so a request left there cannot reach another; the watcher is a `Timer` in
     ///    `.common` mode, so it also arrives while `NSApp.runModal` is on the stack, which no Apple
     ///    event does. Any `sevenzip://` URL works, not only a reset.
@@ -371,7 +371,7 @@ public extension SevenZipApp {
     /// Channel 1: the URL as the contents of `<SZ_STATE_DIR>/reset-request`.
     ///
     /// Returns true only when the app **took** the request: it removes the file before acting on it
-    /// (`Mac/docs/api/resetcmd.md` section 5), so its disappearance is a delivery receipt. A
+    /// (`ai/api/resetcmd.md` section 5), so its disappearance is a delivery receipt. A
     /// successful *write* is not — on an app without the watcher the file would simply sit there and
     /// the command would silently never run, which is how three URL-driven tests failed the first
     /// time this channel was tried on a branch whose app side was not merged yet. When the file is

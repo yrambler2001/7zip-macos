@@ -19,7 +19,7 @@
 // exactly the product name. Lang id 0 *is* "7-Zip" in every valid lang file
 // (`CPP/Common/Lang.cpp` refuses a file whose id 0 is anything else), so an item that asks for id
 // 0 gets "7-Zip" as soon as a translation is loaded. That is a known product bug filed in
-// `Mac/docs/requests.md`, not a reason for a red suite.
+// `ai/requests.md`, not a reason for a red suite.
 
 import AppKit
 import SevenZipKit

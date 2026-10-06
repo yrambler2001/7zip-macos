@@ -1,7 +1,7 @@
 // ResetCommandTests.swift -- `sevenzip://test/reset` driven through the real app: both completion
 // signals, what a reset actually resets, and the measurement that justifies the whole exercise.
 //
-// Owned by `mac/resetcmd` (the app side of `Mac/docs/test-support-contract.md`); the suite proper
+// Owned by `mac/resetcmd` (the app side of `ai/test-support-contract.md`); the suite proper
 // belongs to `mac/fastui`. It is therefore deliberately **self-contained**: a bare `XCTestCase` with
 // its own `XCUIApplication`, no `SevenZipUITestCase`, no `SevenZipApp`, no `TestPaths`, so a rewrite
 // of the harness cannot break it and this file cannot get in the harness's way.
@@ -13,7 +13,7 @@
 //   * selection and view mode really do go back to their defaults;
 //   * the reset is refused when `SZ_TEST_SUPPORT` is not set.
 //
-// The measurement (`testMeasureResetAgainstRelaunch`) prints both numbers; `Mac/docs/api/resetcmd.md`
+// The measurement (`testMeasureResetAgainstRelaunch`) prints both numbers; `ai/api/resetcmd.md`
 // records them.
 
 import XCTest
@@ -63,7 +63,7 @@ final class ResetCommandTests: XCTestCase {
         // replacing it, so a leftover from an earlier test would be used with the earlier test's
         // environment (measured: "Running Background" activation failures and a generation of "1"
         // where "0" was expected). The harness's own `launch()` does the same thing for the same
-        // reason -- see `Mac/docs/api/harness.md` section 1a.
+        // reason -- see `ai/api/harness.md` section 1a.
         if application.state != .notRunning {
             application.terminate()
             _ = waitFor(timeout: 15) { application.state == .notRunning }
@@ -101,7 +101,7 @@ final class ResetCommandTests: XCTestCase {
     /// So the URL is written into `<SZ_STATE_DIR>/reset-request`, which belongs to exactly this
     /// instance and which this process owns (`SZ_STATE_DIR` is inside the runner's own temp
     /// directory). Same URL, same parser, delivery that cannot go to the wrong app -- and it gets
-    /// through while the app is inside a modal session. See `Mac/docs/api/resetcmd.md` section 5.
+    /// through while the app is inside a modal session. See `ai/api/resetcmd.md` section 5.
     @discardableResult
     private func sendReset(_ parameters: [String: String], timeout: TimeInterval = 45)
         -> (generation: Int, seconds: TimeInterval)? {
@@ -143,7 +143,7 @@ final class ResetCommandTests: XCTestCase {
     }
 
     /// `sevenzip:///run?argv=<base64url JSON array>` -- the ordinary command route
-    /// (`Mac/docs/api/finder.md` section 5), used here to start a long real operation.
+    /// (`ai/api/finder.md` section 5), used here to start a long real operation.
     private func runURL(argv: [String]) -> URL {
         let json = try! JSONSerialization.data(withJSONObject: argv)
         let blob = json.base64EncodedString()
@@ -278,7 +278,7 @@ final class ResetCommandTests: XCTestCase {
     ///
     /// The long operation is a real one, started through the same channel: `sevenzip:///run` with
     /// `h -scrcSHA256 /Applications`, which is `7zG h` inside the running file manager and puts up
-    /// the Progress dialog (`Mac/docs/api/finder.md` section 1.2) for as long as it takes to hash
+    /// the Progress dialog (`ai/api/finder.md` section 1.2) for as long as it takes to hash
     /// every file under `/Applications` -- tens of seconds here, and no file-access permission, so
     /// an unattended run cannot be stopped by a TCC prompt. Driving it through the menus instead
     /// would mostly test the menus.
@@ -429,7 +429,7 @@ final class ResetCommandTests: XCTestCase {
         XCTAssertFalse(on.isEmpty)
     }
 
-    /// Prints the two numbers `Mac/docs/api/resetcmd.md` reports: what a reset costs against what a
+    /// Prints the two numbers `ai/api/resetcmd.md` reports: what a reset costs against what a
     /// relaunch costs, both measured the way a test pays for them.
     func testMeasureResetAgainstRelaunch() {
         let seed = seedFile(["Lang": "-", "FM.PanelPath0": fixtures,

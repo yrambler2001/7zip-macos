@@ -1,4 +1,4 @@
-// Feel3Tests.swift -- the feel3 findings (Mac/docs/reports/feel3.md): Finder Get Info's event,
+// Feel3Tests.swift -- the feel3 findings (ai/reports/feel3.md): Finder Get Info's event,
 // combo boxes drawn as Windows 11's, no phantom scroll bars, the address text that must not move
 // when the combo is clicked, the address drop-down's rows, 7-Zip's archive icons, Open archive in a
 // new window, Option+Space, the list font setting.

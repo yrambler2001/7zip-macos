@@ -99,7 +99,7 @@ enum CommandExecutor {
         // **Deliberate difference.** `Main2` sets `g_DisableUserQuestions` only *after* `Parse1`
         // (GUI.cpp:157-159), so a switch-syntax error still opens a message box even with `-y`.
         // The port honours `-y` from the start, which is what the switch says and what an
-        // unattended run needs; see Mac/docs/api/finder.md.
+        // unattended run needs; see ai/api/finder.md.
         suppressMessages = argv.contains { $0.lowercased() == "-y" }
         defer { suppressMessages = false }
 
@@ -172,7 +172,7 @@ enum CommandExecutor {
     // MARK: - Open in the file manager (7zFM argv)
 
     /// Every path gets a window of its own, like one `7zFM.exe "%1"` per archive (03 section 6.2,
-    /// 01 section 9 #32; user decision, Mac/docs/reports/newwindow.md): an archive opened from
+    /// 01 section 9 #32; user decision, ai/reports/newwindow.md): an archive opened from
     /// Finder never replaces what a window already shows. A failed open closes that window, as the
     /// 7zFM process ends when `WM_CREATE` fails -- and when it was the only window, the app quits
     /// with it.
@@ -748,7 +748,7 @@ enum CommandExecutor {
     /// `parent` used to be accepted and ignored: every message was app-modal with no owner window,
     /// which is right for 7zG (a command line in a process with no window) and wrong the moment the
     /// app *has* a window -- a URL command that failed then raised an alert nothing owned, the same
-    /// wedge as `Mac/docs/reports/fastui.md` section 6.10. `ErrorAlert.run` makes it a sheet of
+    /// wedge as `ai/reports/fastui.md` section 6.10. `ErrorAlert.run` makes it a sheet of
     /// `parent` when there is one and keeps it synchronous, so the callers' `return`-after-message
     /// flow is unchanged.
     static func showError(_ text: String, parent: NSWindow?) {

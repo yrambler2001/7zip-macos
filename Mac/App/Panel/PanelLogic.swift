@@ -204,7 +204,7 @@ struct PanelColumnsModel {
 
     /// Default width of a new column: GetColumnWidth (PanelItems.cpp:44-51) gives kpidName 160 px
     /// and every other column, raw properties included, 100 px -- measured on a fresh-default
-    /// 7zFM 26.03 for the file-system, 7z and zip folders (Mac/docs/reports/listfeel.md §2). The
+    /// 7zFM 26.03 for the file-system, 7z and zip folders (ai/reports/listfeel.md §2). The
     /// port used to start time columns at 120 pt and hex columns at 160-470 pt because its 13 pt
     /// list font did not fit a date into 100 pt; the list font now has Segoe UI 9 pt metrics
     /// (`PanelMetrics.listFont`), so "2024-01-15 11:30" fits as it does on Windows.

@@ -41,7 +41,7 @@ enum PanelDragDrop {
     ///
     /// Named after the **running** bundle identifier, not a literal: the general pasteboard is
     /// system-wide, so two copies of the app built with different identifiers would otherwise
-    /// treat each other's copy and cut as their own (`Mac/docs/test-support-contract.md`, "Running
+    /// treat each other's copy and cut as their own (`ai/test-support-contract.md`, "Running
     /// several instances at once"). For the shipped identifier the strings are unchanged.
     static let internalType =
         NSPasteboard.PasteboardType("\(SevenZipBundle.runningAppIdentifier).panel-items")
@@ -76,7 +76,7 @@ enum PanelDragDrop {
     static func makeTempDirectory(prefix: String = "7zE") -> String? {
         let name = prefix + String(format: "%08X", UInt32.random(in: 0...UInt32.max))
         // Per-instance temp root, so two instances cannot see each other's 7zE folders
-        // (Mac/docs/api/resetcmd.md section 3).
+        // (ai/api/resetcmd.md section 3).
         let path = (TestSupport.temporaryDirectory as NSString).appendingPathComponent(name)
         do {
             try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
@@ -376,7 +376,7 @@ extension PanelViewController: NSFilePromiseProviderDelegate {
     /// caller above.
     /// `rememberedPassword` is what the panel was given when it opened this archive chain
     /// (CFolderLink, PanelNavigation.passwordForArchive); passing it means a drag out of an
-    /// archive that is already unlocked does not raise a second prompt (Mac/docs/requests.md,
+    /// archive that is already unlocked does not raise a second prompt (ai/requests.md,
     /// `cleanup` -> `extract`).
     func extractForPromise(engineIndex: Int, toDirectory directory: String) -> Bool {
         guard let folder = currentFolderForContext() else { return false }

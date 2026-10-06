@@ -1,5 +1,5 @@
 // SelColorsTests.swift -- selection, focus and grid colours of the panel list and of every other
-// list in the app (Mac/docs/reports/selcolors.md). Rows are rendered in each state, Light and Dark,
+// list in the app (ai/reports/selcolors.md). Rows are rendered in each state, Light and Dark,
 // and every visible cell text is measured against what is really drawn behind it: the WCAG
 // contrast of the text's most distinct pixel against the cell's dominant colour must be >= 4.5.
 // The bug this guards: with "Full row select" off, a selected row's Size / Modified / ... cells

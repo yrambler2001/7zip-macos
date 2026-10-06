@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # verify.sh -- the one command to run before reporting a scope done: clean build, unit tests,
-# app-hosted tests, UI tests, a dated summary in Mac/docs/reports/verify-latest.md. Non-zero on
+# app-hosted tests, UI tests, a dated summary in Mac/build/verify-latest.md. Non-zero on
 # any failure.
 # Works from any directory.
 #
@@ -12,7 +12,7 @@
 #                          (capital S: -s stays --scope, as it always was)
 #   -c, --config <CFG>     Debug (default) or Release
 #   -s, --scope <NAME>     name the scope in the summary (default: the git branch)
-#   -o, --out <PATH>       summary file (default Mac/docs/reports/verify-latest.md)
+#   -o, --out <PATH>       summary file (default Mac/build/verify-latest.md)
 #   -h, --help             this text
 # Unless --no-ui is given it takes the shared app-launch lock (<worktrees>/.app-lock) for the whole
 # run, so two agents never drive the app at once; it waits up to 15 minutes, breaks a lock older
@@ -31,7 +31,7 @@ NO_UI=0
 SHARDS=0
 CONFIG="Debug"
 SCOPE=""
-OUT="$MAC/docs/reports/verify-latest.md"
+OUT="$MAC/build/verify-latest.md"
 while [ $# -gt 0 ]; do
   case "$1" in
     -f|--fast) FAST=1 ;;
@@ -47,7 +47,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$SCOPE" ] || SCOPE="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 
-# --- shared app-launch lock (held for the whole run; Mac/docs/api/harness.md) -------------------
+# --- shared app-launch lock (held for the whole run; ai/api/harness.md) -------------------
 APP_LOCK="${SEVENZIP_APP_LOCK:-$(
   if [ -d "$ROOT/.worktrees" ]; then echo "$ROOT/.worktrees/.app-lock"
   elif [ "$(basename "$(dirname "$ROOT")")" = ".worktrees" ]; then echo "$(dirname "$ROOT")/.app-lock"
@@ -163,7 +163,7 @@ PARITY="$("$MAC/scripts/parity-check.sh" 2>/dev/null || echo '(parity-check fail
   echo "|---|---|---|---|"
   printf '%s\n' "$RESULTS" | sed '/^$/d'
   echo
-  echo "## Parity (Mac/docs/PROGRESS.md)"
+  echo "## Parity (ai/PROGRESS.md)"
   echo
   echo '```'
   printf '%s\n' "$PARITY"
@@ -172,7 +172,7 @@ PARITY="$("$MAC/scripts/parity-check.sh" 2>/dev/null || echo '(parity-check fail
   echo "Logs: \`Mac/build/build-$CONFIG.log\`, \`Mac/build/test-SevenZipKitTests.log\`,"
   echo "\`Mac/build/test-SevenZipAppTests.log\`, \`Mac/build/test-7-ZipUITests.log\`,"
   echo "\`Mac/build/test-7-ZipUITestsProbe1.log\`, \`Mac/build/test-7-ZipUITestsProbe2.log\`."
-  echo "Screenshots: \`Mac/docs/reports/screenshots/\`."
+  echo "Screenshots: \`Mac/build/screenshots/\`."
 } >"$OUT"
 
 echo "== summary -> $OUT"

@@ -40,7 +40,7 @@ final class HostTargetTests: AppHostTestCase {
     /// bundle with Launch Services the moment it is launched, and `NSWorkspace.open(URL)` hands a
     /// `sevenzip://` URL to whichever registered bundle owns the scheme -- with the probes registered
     /// that turned out to be a probe, and eleven UI tests of another scope that used an unaimed
-    /// `NSWorkspace.open` were answered by it and failed (`Mac/docs/api/resetcmd.md` section 5). So the
+    /// `NSWorkspace.open` were answered by it and failed (`ai/api/resetcmd.md` section 5). So the
     /// copies use `Mac/Tests/AppVariants/Info.plist`, which is `Mac/App/Info.plist` with the URL
     /// schemes, the 40 document types, their 23 type declarations and the five Services removed --
     /// and nothing else. This fails if either half drifts.
@@ -80,7 +80,7 @@ final class HostTargetTests: AppHostTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: TestPaths.fixture("test.7z")),
                       "fixtures at \(TestPaths.fixtures)")
         XCTAssertNotNil(TestPaths.repoRoot, "the worktree root was not found")
-        XCTAssertTrue(TestPaths.screenshots.hasSuffix("Mac/docs/reports/screenshots"),
+        XCTAssertTrue(TestPaths.screenshots.hasSuffix("Mac/build/screenshots"),
                       "screenshots go to \(TestPaths.screenshots)")
     }
 }

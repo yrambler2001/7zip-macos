@@ -1,4 +1,4 @@
-// RecheckProbeTests.swift -- the Mac half of the `recheck` measurements (Mac/docs/reports/recheck.md):
+// RecheckProbeTests.swift -- the Mac half of the `recheck` measurements (ai/reports/recheck.md):
 // the whole main window on a fresh default, rendered at 1x with its frame, plus a view-tree dump
 // and the menu bar with key equivalents, written to Mac/build/recheck/out. Runs only when
 // Mac/build/recheck/PROBE and the fixture folder Mac/build/recheck/cmp exist, so normal runs skip it.

@@ -33,7 +33,7 @@ enum CommandURL {
     /// box on. Only fixed codes are accepted, so a URL cannot make the app display arbitrary text.
     static let errorPath = "/error"
 
-    /// The test-support host (`Mac/docs/test-support-contract.md`). `sevenzip://test/reset?<query>`
+    /// The test-support host (`ai/test-support-contract.md`). `sevenzip://test/reset?<query>`
     /// returns a running app to a known state without quitting. Rejected outright unless
     /// `SZ_TEST_SUPPORT=1` is in the environment, so a shipped app has no such command.
     static let testHost = "test"
@@ -290,7 +290,7 @@ enum CommandURL {
 
 // ---------------------------------------------------------------------------
 
-/// The parsed form of `sevenzip://test/reset?<query>` (`Mac/docs/test-support-contract.md`).
+/// The parsed form of `sevenzip://test/reset?<query>` (`ai/test-support-contract.md`).
 ///
 /// Every parameter is optional and an absent one means "leave that alone", except that selection,
 /// sort order, view mode and flat mode always go back to their defaults. Foundation only, so the
@@ -300,7 +300,7 @@ enum CommandURL {
 /// rather than failing the whole command, because the acknowledgement file has to be written for
 /// every reset a test issues -- a reset that refused to run would show up as a timeout with no
 /// explanation. The warnings are logged by the app (`TestResetCoordinator`). See
-/// `Mac/docs/api/resetcmd.md` section 4 for why this is the one place the contract is read
+/// `ai/api/resetcmd.md` section 4 for why this is the one place the contract is read
 /// leniently.
 struct TestResetRequest: Equatable {
 

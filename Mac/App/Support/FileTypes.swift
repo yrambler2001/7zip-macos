@@ -12,7 +12,7 @@
 //
 // Plain data on purpose: no AppKit, no engine calls. The `finder` scope generates the
 // CFBundleDocumentTypes / UTImportedTypeDeclarations entries from `FileTypes.all`; the Options >
-// System page renders one row per entry. Shape documented in Mac/docs/api/options.md.
+// System page renders one row per entry. Shape documented in ai/api/options.md.
 
 import Foundation
 import UniformTypeIdentifiers

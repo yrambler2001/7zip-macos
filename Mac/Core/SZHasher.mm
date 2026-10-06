@@ -48,7 +48,7 @@ static NSString *SZLangText(uint32_t id, NSString *fallback)
 /// AddSizeValue as HashGUI.cpp's AddSizeValuePair links it: the non-static one of
 /// OverwriteDialog.cpp:68-88 (App.cpp's is file-local), i.e. IDS_FILE_SIZE around the *plain*
 /// number, then " : N KiB" from 1 KiB (MiB from 10 MiB, GiB from 10 GiB). 7zFM 25.01 shows
-/// "1234 bytes : 1 KiB" for a 1 234-byte file (Mac/docs/reports/wincompare.md).
+/// "1234 bytes : 1 KiB" for a 1 234-byte file (ai/reports/wincompare.md).
 static NSString *SZSizeValueString(uint64_t size)
 {
     NSString *tmpl = SZLangText(kLangID_FileSize, @"{0} bytes");

@@ -1,4 +1,4 @@
-// AppFeelTests.swift -- appfeel (Mac/docs/reports/appfeel.md), in process:
+// AppFeelTests.swift -- appfeel (ai/reports/appfeel.md), in process:
 //
 //  1. a reopen Apple event from the Dock shows the open windows, one from anywhere else opens a new
 //     window, and one with no sender falls back to showing (user request 7);

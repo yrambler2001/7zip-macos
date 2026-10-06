@@ -2,7 +2,7 @@
 // the dumps the `wincompare` scope took of the real 7zFM 25.01 on Windows (Win32 control walk,
 // GetMenuItemInfo, LVM_GETITEMTEXT), so the two can be diffed line by line.
 //
-// Mac/docs/reports/wincompare.md explains how the Windows half was captured. Nothing here asserts:
+// ai/reports/wincompare.md explains how the Windows half was captured. Nothing here asserts:
 // it only describes. The assertions that came out of the comparison live in WinCompareTests.
 
 import AppKit

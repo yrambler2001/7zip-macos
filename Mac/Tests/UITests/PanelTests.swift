@@ -3,8 +3,8 @@
 // rename, create folder, delete to the Trash and the list context menu.
 //
 // They use the `harness` scope's helpers (`SevenZipUITestCase`, `SevenZipApp`, `SevenZipPanel`,
-// `SettingsDomain`, `TestPaths`; see Mac/docs/api/harness.md). Everything they assert was verified
-// by hand in the running app first (Mac/docs/reports/panel.md).
+// `SettingsDomain`, `TestPaths`; see ai/api/harness.md). Everything they assert was verified
+// by hand in the running app first (ai/reports/panel.md).
 //
 // Every case here clicks, double-clicks or types, so the class belongs to the **input shard** and
 // runs alone: macOS delivers a synthesized event to whatever application is frontmost. The app is
@@ -50,7 +50,7 @@ final class PanelTests: SevenZipUITestCase {
         // the `alert.runModal()` branch instead of `beginSheetModal(for:)` and puts up an
         // **app-modal alert attached to nothing**. The app is then wedged: the next test's reset
         // never settles, never acknowledges, and every accessibility query takes seconds. Measured
-        // with a stack sample; filed for `panel` and `resetcmd` in Mac/docs/requests.md. The test's
+        // with a stack sample; filed for `panel` and `resetcmd` in ai/requests.md. The test's
         // own part of it is this: do not delete a directory the app under test is still showing.
         addTeardownBlock { [weak sevenZip] in
             if let app = sevenZip, app.isRunning, app.testSupportIsImplemented {

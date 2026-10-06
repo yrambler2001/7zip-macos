@@ -1,4 +1,4 @@
-// OpsGapsTests.swift -- the operation-level gaps of `Mac/docs/parity.md` closed by `mac/opsgaps`,
+// OpsGapsTests.swift -- the operation-level gaps of `ai/parity.md` closed by `mac/opsgaps`,
 // asserted in the app's own process (`SevenZipAppTests`, see AppHostTestCase):
 //
 //   * bundled HTML help: every Windows kHelpTopic resolves to a page inside the app bundle, anchors
@@ -162,7 +162,7 @@ final class OpsGapsTests: AppHostTestCase {
     }
 
     /// The tile as the Dock draws it, in the three TBPFLAG colours (screencapture is denied here, so
-    /// the view is rendered in process): `Mac/docs/reports/screenshots/opsgaps-dock-tile.png`.
+    /// the view is rendered in process): `Mac/build/screenshots/opsgaps-dock-tile.png`.
     func testDockTileRendering() {
         let strip = NSView(frame: NSRect(x: 0, y: 0, width: 3 * 128, height: 128))
         for (i, (fraction, state)) in [(0.35, ProgressDockTile.State.normal), (0.6, .paused), (0.8, .error)].enumerated() {

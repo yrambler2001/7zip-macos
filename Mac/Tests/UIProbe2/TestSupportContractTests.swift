@@ -1,4 +1,4 @@
-// TestSupportContractTests.swift -- asserts `Mac/docs/test-support-contract.md` itself, which is
+// TestSupportContractTests.swift -- asserts `ai/test-support-contract.md` itself, which is
 // what makes the rest of the suite fast.
 //
 // The app side is `mac/resetcmd`'s (`Mac/App/Integration/TestReset.swift`), merged into `macos`, so

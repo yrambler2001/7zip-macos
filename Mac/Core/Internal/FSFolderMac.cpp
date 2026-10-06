@@ -1,6 +1,6 @@
 // FSFolderMac.cpp -- see FSFolderMac.h.
 // Modelled on UI/FileManager/FSFolder.cpp and FSFolderCopy.cpp (Windows); every deliberate
-// difference is listed in Mac/docs/api/fsfolder.md.
+// difference is listed in ai/api/fsfolder.md.
 
 #include "FSFolderMac.h"
 

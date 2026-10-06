@@ -1,4 +1,4 @@
-// ArchGapsTests.swift -- the archive-engine gaps of `Mac/docs/parity.md` "Unfinished" items 7 and
+// ArchGapsTests.swift -- the archive-engine gaps of `ai/parity.md` "Unfinished" items 7 and
 // 13, asserted in the app's own process (`SevenZipAppTests`, see AppHostTestCase):
 //
 //   * raw properties (IArchiveGetRawProps) are panel columns and Properties lines (01 §3.2, §3.11);

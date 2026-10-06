@@ -218,7 +218,7 @@ enum FinderMenuModel {
     /// copy keeps an item's title, image, tag and action but **not** its `representedObject` or
     /// target. The action message Finder sends back to the extension therefore carries a fresh
     /// item whose `representedObject` is nil -- measured: `invoke` received `rep=nil, tag=0` for
-    /// "Add to archive..." and "Open archive" (Mac/docs/reports/finderfix.md). So the command is
+    /// "Add to archive..." and "Open archive" (ai/reports/finderfix.md). So the command is
     /// found again from what does survive: the tree is rebuilt for the current selection, the tag
     /// picks the item, and the title must agree. A tag that does not match (the settings changed
     /// between showing the menu and the click) falls back to the unique item with that title.

@@ -1,4 +1,4 @@
-// PanelWindowlessErrorTests.swift -- the defect of `Mac/docs/reports/fastui.md` section 6.10, as a
+// PanelWindowlessErrorTests.swift -- the defect of `ai/reports/fastui.md` section 6.10, as a
 // test: a panel closed at runtime stays alive in `MainWindowController.panels` with no window, and
 // when its folder disappears the failed reload used to put up an **app-modal** `NSAlert` attached to
 // nothing. Nothing could dismiss it: the reset could not settle past it, no click could reach it,
@@ -154,7 +154,7 @@ final class PanelWindowlessErrorTests: AppHostTestCase {
 
         XCTAssertFalse(sighting.isOtherModal,
                        "a panel with no window opened a modal session that is not a message box "
-                       + "(Mac/docs/reports/fastui.md 6.10)")
+                       + "(ai/reports/fastui.md 6.10)")
         if sighting.window != nil {
             XCTAssertTrue(sighting.owner === controller.window,
                           "an error a panel reports must be owned by the window that owns the panel")

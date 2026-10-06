@@ -1,4 +1,4 @@
-// ThemeTests.swift -- the theme scope (Mac/docs/reports/theme.md): Options > macOS (Theme, Show
+// ThemeTests.swift -- the theme scope (ai/reports/theme.md): Options > macOS (Theme, Show
 // grid lines), the forced Light / Dark themes through the setting, the contrast of every text in
 // the main window and the dialogs under each, the screenshots, and the first-launch Finder
 // integration decision (pure logic, no PlugInKit call ever reaches the machine).

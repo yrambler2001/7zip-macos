@@ -3,7 +3,7 @@
 #
 # The assets under Mac/Resources/Assets.xcassets and Mac/Resources/Icons are *generated*, never
 # hand-edited: run this after touching the generator or the association table and commit the
-# result.  See Mac/docs/api/icons.md for the naming scheme and the extension -> icon mapping.
+# result.  See ai/api/icons.md for the naming scheme and the extension -> icon mapping.
 #
 #   Mac/scripts/make-icons.sh                 extract, draw, assemble, contact sheet, verify
 #                                             ("draw" draws nothing: it enlarges .ico frames
@@ -25,7 +25,7 @@
 #   Mac/Resources/Icons/doc-<name>.icns                     27 format .icns + doc-fm.icns, 16..1024;
 #                                                           the verify stage fails unless every size
 #                                                           is an .ico frame enlarged x1..x32
-#   Mac/docs/reports/screenshots/icons-contact-sheet.png    every icon at 128pt on a checkerboard
+#   Mac/build/screenshots/icons-contact-sheet.png    every icon at 128pt on a checkerboard
 #   Mac/build/icons/                                        scratch: decoded frames, manifest, PNGs
 set -eu
 

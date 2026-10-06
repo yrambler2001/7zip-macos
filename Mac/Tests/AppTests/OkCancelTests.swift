@@ -1,4 +1,4 @@
-// OkCancelTests.swift -- the okcancel scope (Mac/docs/reports/okcancel.md): "I right-clicked a row,
+// OkCancelTests.swift -- the okcancel scope (ai/reports/okcancel.md): "I right-clicked a row,
 // chose 7-Zip > Add to archive... / Compress and email..., and SOMETIMES OK and Cancel don't work,
 // while Help and the red close button work."
 //

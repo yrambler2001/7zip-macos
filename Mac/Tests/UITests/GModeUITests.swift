@@ -1,4 +1,4 @@
-// GModeUITests.swift -- "7zG mode" through the real input path (Mac/docs/reports/gmode.md).
+// GModeUITests.swift -- "7zG mode" through the real input path (ai/reports/gmode.md).
 //
 // Finder's 7-Zip menu, the Quick Actions and the Services reach the app as a `sevenzip://` URL that
 // Launch Services delivers (`ExtensionHandoff`). Here the test runner sends the same URL the same

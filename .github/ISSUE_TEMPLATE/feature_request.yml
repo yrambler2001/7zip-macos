@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an improvement to the Mac app
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The task you want to get done, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: windows
+    attributes:
+      label: How does 7-Zip on Windows handle it?
+      description: The Mac app follows the Windows File Manager; say whether this exists there, or why the Mac should differ.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour

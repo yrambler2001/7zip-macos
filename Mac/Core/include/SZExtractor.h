@@ -10,7 +10,7 @@
 //
 // THREADING: +extractArchives... BLOCKS for the whole operation and must run off the main
 // thread. While it blocks, the id<SZProgressDelegate> is called on that worker thread
-// (see SZProgressDelegate.h and Mac/docs/api/opsinfra.md). Drive it from Swift with
+// (see SZProgressDelegate.h and ai/api/opsinfra.md). Drive it from Swift with
 // OperationRunner, which is itself the delegate.
 
 #ifndef SZ_EXTRACTOR_H

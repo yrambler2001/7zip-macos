@@ -310,7 +310,7 @@ final class DialogWindow: NSWindow {
         super.center()
     }
 
-    // MARK: closing a modal dialog (Mac/docs/reports/infohang.md)
+    // MARK: closing a modal dialog (ai/reports/infohang.md)
     //
     // Every dialog here is run with `DialogKit.runModal(for:)` and ends its session from its own
     // buttons. The title-bar close button (and Cmd+W) did not: AppKit closed the window and left
@@ -387,7 +387,7 @@ final class DialogWindow: NSWindow {
     }
 }
 
-// MARK: - running a dialog modally (Mac/docs/reports/okcancel.md)
+// MARK: - running a dialog modally (ai/reports/okcancel.md)
 
 extension DialogKit {
 

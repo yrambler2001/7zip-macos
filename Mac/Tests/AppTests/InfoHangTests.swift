@@ -1,5 +1,5 @@
 // InfoHangTests.swift -- "I clicked Info, closed it and the app became unresponsive"
-// (Mac/docs/reports/infohang.md). Opens Properties (IDM_PROPERTIES 551, toolbar Info) and every
+// (ai/reports/infohang.md). Opens Properties (IDM_PROPERTIES 551, toolbar Info) and every
 // other dialog the toolbar opens, closes each one every way a user can, and checks that the modal
 // session really ended: `NSApp.modalWindow` is nil and the main window takes actions again.
 

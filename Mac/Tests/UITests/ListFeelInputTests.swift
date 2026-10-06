@@ -1,4 +1,4 @@
-// ListFeelInputTests.swift -- the list's mouse behaviour with real input (Mac/docs/reports/
+// ListFeelInputTests.swift -- the list's mouse behaviour with real input (ai/reports/
 // listfeel.md §6, §8): the rubber band as 7zFM 26.03 draws it with "Full row select" off, and the
 // address bar's drop-down navigating on a pick. The geometry is in the app-hosted ListFeelTests.
 // Input shard: it clicks and drags.

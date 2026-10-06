@@ -2,7 +2,7 @@
 // ReloadToolbars, 01 §1.3), instead of an NSToolbar: macOS 26 puts every NSToolbarItem in a
 // rounded glass capsule, and 7zFM's toolbar is a flat TBSTYLE_FLAT strip under the menu.
 //
-// What the real thing looks like (Mac/docs/reports/winmatch.md §3, measured on 7zFM 25.01 at
+// What the real thing looks like (ai/reports/winmatch.md §3, measured on 7zFM 25.01 at
 // 96 dpi, `winmatch-data/win/tb-*.txt`):
 //   * one strip across the window, a 2 px etched line on top (no CCS_NODIVIDER), 4 px below;
 //   * no separators: AddButton appends the archive buttons and the standard buttons back to back;

@@ -3,7 +3,7 @@
 // A Dock click on the running app and a second launch from Finder / Spotlight / Launchpad /
 // `open -a` all reach the app as the same reopen Apple event (`kAEReopenApplication`, 'aevt'/'rapp')
 // and end in `applicationShouldHandleReopen`. The user wants them to differ (user request 7,
-// Mac/docs/reports/appfeel.md):
+// ai/reports/appfeel.md):
 //
 //   * a Dock click shows the windows that are open (the macOS convention), and
 //   * a launch from anywhere else opens a new window, as a second 7zFM.exe does on Windows

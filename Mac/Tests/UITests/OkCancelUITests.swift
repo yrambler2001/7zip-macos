@@ -1,4 +1,4 @@
-// OkCancelUITests.swift -- the user's report, with real input (Mac/docs/reports/okcancel.md):
+// OkCancelUITests.swift -- the user's report, with real input (ai/reports/okcancel.md):
 // "I right-clicked a table row, chose 7-Zip > Add to archive... and 7-Zip > Compress and email...,
 // and SOMETIMES the OK and Cancel buttons don't work, while Help works and the red close button
 // works."

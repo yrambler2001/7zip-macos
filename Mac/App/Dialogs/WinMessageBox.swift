@@ -1,5 +1,5 @@
 // WinMessageBox.swift -- Windows' MessageBoxW as 7zFM 26.03 shows it on Windows 11 at 96 dpi, the one
-// message box of the app (Mac/docs/reports/recheck2.md section 2).
+// message box of the app (ai/reports/recheck2.md section 2).
 //
 // 7zFM asks every question and reports every error with `::MessageBoxW(owner, text, caption, flags)`
 // (01 §2.8, 01b §4.19): MB_OK / MB_OKCANCEL / MB_YESNO / MB_YESNOCANCEL, with MB_ICONSTOP,
@@ -25,7 +25,7 @@
 // Modal to the app (`DialogKit.runModal(for:)`), always owned by a visible window when the app has one
 // (`DialogKit.owner`), and safe without one: it is an ordinary titled window that its own buttons,
 // Esc, the close box, Cmd+W and the test reset (`TestResetCoordinator.closeTransientUI`) all end --
-// never an ownerless `NSAlert` (Mac/docs/reports/modalfix.md, infohang.md).
+// never an ownerless `NSAlert` (ai/reports/modalfix.md, infohang.md).
 //
 // The user's exceptions: the native title bar and native push buttons.
 

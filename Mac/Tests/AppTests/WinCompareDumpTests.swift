@@ -1,5 +1,5 @@
 // WinCompareDumpTests.swift -- the macOS half of the side-by-side comparison with the real 7zFM
-// (Mac/docs/reports/wincompare.md). It drives the app's own windows over the same fixture folder
+// (ai/reports/wincompare.md). It drives the app's own windows over the same fixture folder
 // the Windows half used and writes text dumps to Mac/build/wincompare/out plus the paired
 // screenshots `wincompare-<area>-mac.png`.
 //

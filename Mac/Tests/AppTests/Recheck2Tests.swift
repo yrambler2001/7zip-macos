@@ -1,4 +1,4 @@
-// Recheck2Tests.swift -- the `recheck2` fixes (Mac/docs/reports/recheck2.md), each against what
+// Recheck2Tests.swift -- the `recheck2` fixes (ai/reports/recheck2.md), each against what
 // 7zFM 26.03 does on Windows 11 at 96 dpi (recheck2-data/win/):
 //
 //   * WinMessageBox: geometry of the measured MessageBoxW cases, the keys and the close box, the

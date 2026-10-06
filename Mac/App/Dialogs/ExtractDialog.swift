@@ -8,7 +8,7 @@
 // and IDC_EXTRACT_OVERWRITE_MODE 103); 7zFM has no radio group here.
 //
 // Settings: every value is read from and written back to the `Extraction.*` keys through
-// `Settings` with the Windows tri-state (CBoolPair) semantics -- see Mac/docs/api/options.md
+// `Settings` with the Windows tri-state (CBoolPair) semantics -- see ai/api/options.md
 // and NExtract::CInfo::Load/Save (UI/Common/ZipRegistry.cpp:103-175).
 
 import AppKit

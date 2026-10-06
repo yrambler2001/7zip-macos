@@ -1,4 +1,4 @@
-// RecheckTests.swift -- regression tests for the `recheck` fixes (Mac/docs/reports/recheck.md),
+// RecheckTests.swift -- regression tests for the `recheck` fixes (ai/reports/recheck.md),
 // each against a number measured on fresh-default 7zFM 26.03 on Windows 11 at 96 dpi
 // (recheck-data/win/).
 

@@ -207,7 +207,7 @@ enum FinderSettingsBridge {
 enum LaunchServicesRegistration {
 
     /// One stamp per bundle identifier, so two copies of the app built with different identifiers
-    /// (`Mac/docs/test-support-contract.md`, "Running several instances at once") do not ping-pong:
+    /// (`ai/test-support-contract.md`, "Running several instances at once") do not ping-pong:
     /// each launch used to see the other's stamp, re-run `lsregister` and rewrite the key. The
     /// default identifier keeps the original key, so an existing installation is not re-registered.
     private static var stampKey: String {

@@ -1,4 +1,4 @@
-// PanelGapsTests.swift -- the panel-side gaps of `Mac/docs/parity.md` "Unfinished" items 1, 5, 6 and
+// PanelGapsTests.swift -- the panel-side gaps of `ai/parity.md` "Unfinished" items 1, 5, 6 and
 // 9, asserted in the app's own process (`SevenZipAppTests`, see AppHostTestCase):
 //
 //   * the 7-Zip block of the item context menu (01 §2.9) is backed by a handler for every verb it

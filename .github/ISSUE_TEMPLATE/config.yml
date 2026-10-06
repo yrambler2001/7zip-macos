@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/yrambler2001/7zip-macos/security/advisories/new
+    about: Report security problems privately (see SECURITY.md).
+  - name: 7-Zip engine problem (upstream)
+    url: https://www.7-zip.org
+    about: Problems that also happen with 7-Zip on Windows or the console 7zz belong to the 7-Zip project.

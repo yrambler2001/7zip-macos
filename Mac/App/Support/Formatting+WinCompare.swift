@@ -9,7 +9,7 @@ extension Formatting {
     /// results (HashGUI.cpp AddSizeValuePair) use: IDS_FILE_SIZE 3504 "{0} bytes" around the
     /// *plain* number, then " : N KiB" (or MiB from 10 MiB, GiB from 10 GiB) once it reaches
     /// 1 KiB. 7zFM 25.01 shows "1234 bytes : 1 KiB" for the 1 234-byte fixture
-    /// (Mac/docs/reports/wincompare.md). Not to be confused with App.cpp's file-local
+    /// (ai/reports/wincompare.md). Not to be confused with App.cpp's file-local
     /// AddSizeValue (grouped digits, no unit), which the Copy dialog uses.
     static func sizeValue(_ value: UInt64) -> String {
         var s = Lang.format(Lang.get(3504, "{0} bytes"), String(value))

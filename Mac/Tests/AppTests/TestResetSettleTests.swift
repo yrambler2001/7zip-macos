@@ -1,4 +1,4 @@
-// TestResetSettleTests.swift -- the reset half of `Mac/docs/reports/fastui.md` section 6.10.
+// TestResetSettleTests.swift -- the reset half of `ai/reports/fastui.md` section 6.10.
 //
 // Two defects, one symptom. When an app-modal `NSAlert` was up, step 1 of `sevenzip://test/reset`
 // called `NSApp.abortModal()`, which is documented to **raise** `NSAbortModalException`. Both callers
@@ -71,7 +71,7 @@ final class TestResetSettleTests: AppHostTestCase {
         savedTimeout = TestResetCoordinator.settleTimeout
         savedTestSupport = ProcessInfo.processInfo.environment["SZ_TEST_SUPPORT"]
         // Read with getenv on every access, so this reaches the coordinator's own guard
-        // (`Mac/docs/api/resetcmd.md` section 1). The host app is not launched with it.
+        // (`ai/api/resetcmd.md` section 1). The host app is not launched with it.
         setenv("SZ_TEST_SUPPORT", "1", 1)
         // Step 3 calls `OptionsPostApply.reloadLangItems()`, which used to throw on the toolbar of a
         // closed window; `mac/optgaps` made it skip windows that are neither visible nor miniaturized
@@ -203,7 +203,7 @@ final class TestResetSettleTests: AppHostTestCase {
     /// behind a long engine call, or starved because an app-modal session owns the main thread -- never
     /// delivers it, so `finish` was never reached. Measured on the unfixed code with this exact
     /// fixture: "no reset acknowledgement within 25 s (generation was 0, is now 0)", which is the
-    /// failure `Mac/docs/reports/fastui.md` section 6.10 reports verbatim. The ack must arrive anyway,
+    /// failure `ai/reports/fastui.md` section 6.10 reports verbatim. The ack must arrive anyway,
     /// and it must say that step 4 is what stalled.
     func testAStalledPanelRebuildStillAcknowledges() {
         TestResetCoordinator.settleTimeout = 2
