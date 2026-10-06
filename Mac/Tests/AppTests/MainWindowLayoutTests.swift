@@ -11,7 +11,7 @@
 // is synthesized input and the defect it covers is the round trip through
 // `splitViewDidResizeSubviews` -> `captureSplitterRatio` -> the settings domain.
 //
-// The defect all of this guards (Mac/docs/reports/polish.md): `showSecondPanel` used to place the
+// The defect all of this guards (ai/reports/polish.md): `showSecondPanel` used to place the
 // divider from a `DispatchQueue.main.async` block, and whether that block or the split view's own
 // layout pass ran first was a coin toss. When the block won, `setPosition(_:ofDividerAt:)` ran
 // against a subview that had just been inserted and was still zero points wide, and NSSplitView

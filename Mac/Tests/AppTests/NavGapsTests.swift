@@ -1,4 +1,4 @@
-// NavGapsTests.swift -- the panel half of `mac/navgaps` (Mac/docs/reports/navgaps.md), in the app's
+// NavGapsTests.swift -- the panel half of `mac/navgaps` (ai/reports/navgaps.md), in the app's
 // own process (`SevenZipAppTests`, see AppHostTestCase):
 //
 //   * an archive whose inner level cannot be opened is entered, then the level text is shown

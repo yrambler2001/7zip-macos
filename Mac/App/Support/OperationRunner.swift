@@ -277,7 +277,7 @@ final class OperationRunner: NSObject, SZProgressDelegate, ProgressDialogDelegat
         }
     }
 
-    // MARK: cancelling from outside the dialog (test support, Mac/docs/api/resetcmd.md)
+    // MARK: cancelling from outside the dialog (test support, ai/api/resetcmd.md)
 
     /// Every runner whose `execute` has not returned yet. Appended and removed on the main thread
     /// only -- `run` is main-thread-only by contract, so no lock is needed.

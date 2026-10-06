@@ -1,5 +1,5 @@
 // WinMatchTests.swift -- the `winmatch` changes, each pinned to what the real 7zFM 25.01 does
-// (Mac/docs/reports/winmatch.md): the flat toolbar strip, a fresh folder with focus but no
+// (ai/reports/winmatch.md): the flat toolbar strip, a fresh folder with focus but no
 // selection, the .rc English, the Extract dialog without a summary, the progress window without
 // an extra status line, F1 in About. Also writes the Mac half of the paired toolbar screenshots,
 // `screenshots/wincompare-toolbar-<state>-mac.png`.

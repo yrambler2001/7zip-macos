@@ -1,7 +1,7 @@
 // FinderHandoffTests.swift -- the finderfix unit tests: everything between a click in Finder and
 // the `sevenzip://` URL the app receives, without Finder.
 //
-// The shipped defect (Mac/docs/reports/finderfix.md): the 7-Zip submenu showed in Finder but its
+// The shipped defect (ai/reports/finderfix.md): the 7-Zip submenu showed in Finder but its
 // items did nothing, and neither did the "Extract with 7-Zip" Quick Action.
 //  * Finder copies an extension's menu and drops `representedObject`; the click arrived with
 //    `representedObject == nil, tag == 0`. -> Items are numbered by tag and resolved again

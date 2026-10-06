@@ -1,5 +1,5 @@
 // PanelMetrics.swift -- the Details list's geometry and font, measured on a fresh-default 7zFM
-// 26.03 at 96 dpi (Mac/docs/reports/listfeel.md §2, `listfeel-data/win1/fresh-fs.geom.txt`,
+// 26.03 at 96 dpi (ai/reports/listfeel.md §2, `listfeel-data/win1/fresh-fs.geom.txt`,
 // LVM_GETITEMRECT / LVM_GETSUBITEMRECT / HDM_GETITEMRECT, and pixel measurements of the captures).
 // One Windows pixel is one point here.
 //

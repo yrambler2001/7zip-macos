@@ -5,7 +5,7 @@
 // **One app per class, not one per test.** Measured before this change: 52 UI tests, 1490 s, 28.7 s
 // each, and the assertions were a rounding error next to the launch. So the app is launched once
 // per test class and returned to a known state between tests through `sevenzip://test/reset`
-// (`Mac/docs/test-support-contract.md`), waiting for the acknowledgement the contract specifies.
+// (`ai/test-support-contract.md`), waiting for the acknowledgement the contract specifies.
 // Everything a reset cannot express still relaunches, and says so:
 //
 //   * `seed: .keep` and `relaunch()` -- the *point* of those is that the app quit and came back;
@@ -142,7 +142,7 @@ open class SevenZipUITestCase: XCTestCase {
                         arguments: arguments, environment: environment)
     }
 
-    /// Screenshot into `Mac/docs/reports/screenshots/<screenshotPrefix>-<name>.png`.
+    /// Screenshot into `Mac/build/screenshots/<screenshotPrefix>-<name>.png`.
     @discardableResult
     public func screenshot(_ name: String) -> URL? {
         sevenZip.screenshot(name, prefix: screenshotPrefix, test: self)

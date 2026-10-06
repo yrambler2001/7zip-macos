@@ -36,7 +36,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     /// that panel 0 gets. This value is authoritative: the divider position is always derived from
     /// it, and it is only ever recomputed from the live subview frames after the user has dragged
     /// the divider. Deriving it during a layout pass is what collapsed the split, because a
-    /// subview that has just been inserted still has a zero-width frame (Mac/docs/reports/polish.md).
+    /// subview that has just been inserted still has a zero-width frame (ai/reports/polish.md).
     private var splitterRatio = 0.5
     private var isApplyingSplitter = false
     /// kPanelSizeMin (App.cpp): neither panel may be narrower than this.
@@ -51,7 +51,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
 
     /// PanelDelegate: the window a panel belongs to even while its view is out of the split view, so
     /// a closed panel still has a sheet parent instead of raising an ownerless app-modal alert
-    /// (`ErrorAlert`, `Mac/docs/reports/fastui.md` section 6.10).
+    /// (`ErrorAlert`, `ai/reports/fastui.md` section 6.10).
     var panelHostWindow: NSWindow? { window }
 
     // Toolbar item identifiers (App.cpp g_ArchiveButtons / g_StandardButtons)
@@ -283,7 +283,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     /// Puts the divider where `splitterRatio` says, never closer than kPanelSizeMin to either
     /// edge. `adjustSubviews()` first, because `setPosition(_:ofDividerAt:)` needs subview frames
     /// that already add up to the split view's width: called with a freshly inserted, zero-width
-    /// subview it collapses *both* panels to zero (measured -- see Mac/docs/reports/polish.md).
+    /// subview it collapses *both* panels to zero (measured -- see ai/reports/polish.md).
     ///
     /// Only these two calls. Assigning the arranged subviews' frames by hand as a fallback looks
     /// safe and is not: the panels are constraint-driven, so a raw frame is not propagated to
@@ -369,7 +369,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
         focusedPanel.focusList()
     }
 
-    // MARK: - Test support: rebuild the window's state in place (Mac/docs/api/resetcmd.md)
+    // MARK: - Test support: rebuild the window's state in place (ai/api/resetcmd.md)
 
     /// Step 4 of `sevenzip://test/reset`. Everything the window itself owns comes back from the
     /// (possibly just replaced) settings domain, the panel count becomes what the request asks for,
@@ -597,7 +597,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSSplitV
     /// IDM_ABOUT 961 -> CAboutDialog (IDD_ABOUT 2900). The Wave 1 placeholder here was the
     /// standard macOS About panel, and `ToolsCommands.install()` retargeted both menu items at
     /// the real dialog once the app had launched -- which renamed them in the accessibility tree
-    /// (Mac/docs/requests.md, `tools` -> `panel`). The item now points straight at the dialog.
+    /// (ai/requests.md, `tools` -> `panel`). The item now points straight at the dialog.
     @objc func helpAbout(_ sender: Any?) {
         AboutDialog.show(parent: window)
     }

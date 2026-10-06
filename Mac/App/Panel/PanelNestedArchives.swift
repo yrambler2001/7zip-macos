@@ -15,7 +15,7 @@
 // closes in turn.
 //
 // The bridge half is SZArchive.tempFilePath / tempFileWasChanged / writeBackIntoOuterFolder
-// (Mac/docs/api/panel.md, archgaps note).
+// (ai/api/panel.md, archgaps note).
 
 import AppKit
 import SevenZipKit

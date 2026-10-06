@@ -1,5 +1,5 @@
 // SplitViewTests.swift -- the divider **drag** and what it persists (01 section 1.2,
-// 01b section 5.7; `polish` scope, Mac/docs/reports/polish.md).
+// 01b section 5.7; `polish` scope, ai/reports/polish.md).
 //
 // The other three cases of this class moved to `SevenZipAppTests/MainWindowLayoutTests`: "the split
 // is even on first use", "a stored splitterPos is restored" and "the split survives the minimum

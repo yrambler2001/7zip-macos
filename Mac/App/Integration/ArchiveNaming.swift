@@ -201,7 +201,7 @@ enum ArchiveNaming {
     }
 
     /// `GetQuotedReducedString`: reduce, escape `&` for the Win32 menu, then quote. macOS menus
-    /// have no `&` mnemonic, so the doubling is **not** applied — see `Mac/docs/api/finder.md`.
+    /// have no `&` mnemonic, so the doubling is **not** applied — see `ai/api/finder.md`.
     static func quotedReducedString(_ s: String) -> String { "\"" + reduceString(s) + "\"" }
 
     // MARK: - kExtractExcludeExtensions (ContextMenu.cpp:494-516)

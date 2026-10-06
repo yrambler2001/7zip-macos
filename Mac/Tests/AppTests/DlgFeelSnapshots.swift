@@ -1,7 +1,7 @@
 // DlgFeelSnapshots.swift -- the Mac halves of the dlgfeel paired captures: every dialog rendered
 // at 1x in the light appearance, the content view only (the client area of the Windows capture),
 // written to Mac/build/dlgfeel/<name>.png and, for the paired set, to
-// Mac/docs/reports/screenshots/wincompare-dlgfeel-<name>-mac.png (reports/dlgfeel.md).
+// Mac/build/screenshots/wincompare-dlgfeel-<name>-mac.png (reports/dlgfeel.md).
 
 import AppKit
 import SevenZipKit
@@ -65,7 +65,7 @@ final class DlgFeelSnapshots: AppHostTestCase {
 
     private var fixtures: String { TestPaths.fixtures }
     private var archive: String { TestPaths.fixture("test.7z") }
-    /// The paired captures go to Mac/docs/reports/screenshots only when Mac/build/dlgfeel/PAIRED
+    /// The paired captures go to Mac/build/screenshots only when Mac/build/dlgfeel/PAIRED
     /// exists (a flag file, because xcodebuild does not pass the shell's environment on).
     private var paired: Bool { FileManager.default.fileExists(atPath: DlgSnap.buildDirectory + "/PAIRED") }
 

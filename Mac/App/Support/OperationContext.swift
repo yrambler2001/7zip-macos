@@ -7,7 +7,7 @@
 //
 //  Main thread only. `folder` is owned by the panel's serial queue, so a command
 //  must not call folder methods on the main thread; hand it to an operation that
-//  runs off-main (see Mac/docs/api/opsinfra.md).
+//  runs off-main (see ai/api/opsinfra.md).
 
 import AppKit
 import SevenZipKit

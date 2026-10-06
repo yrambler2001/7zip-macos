@@ -2,7 +2,7 @@
 // the three environment switches, the `sevenzip://test/reset` URL grammar and its rejection when
 // test support is off, the `SZ_STATE_DIR` redirection, and the settings reload.
 //
-// Contract: `Mac/docs/test-support-contract.md`. Implementation notes: `Mac/docs/api/resetcmd.md`.
+// Contract: `ai/test-support-contract.md`. Implementation notes: `ai/api/resetcmd.md`.
 //
 // The sources under test are `Mac/App/Support/Settings.swift` (`TestSupport`, the domain
 // replacement) and `Mac/App/Integration/CommandURL.swift` (`TestResetRequest`), both already

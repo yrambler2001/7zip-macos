@@ -1,5 +1,5 @@
 // ListFeelTests.swift -- the main list's look and feel against fresh-default 7zFM 26.03 on
-// Windows 11 at 96 dpi (Mac/docs/reports/listfeel.md; the Windows numbers come from
+// Windows 11 at 96 dpi (ai/reports/listfeel.md; the Windows numbers come from
 // listfeel-data/win1/*.geom.txt, dlg-prop-*.txt and pixel measurements of the captures):
 // row pitch, header height, icon and text placement, the selection fill's padding, default column
 // widths, tabular digits, no sort arrow, the column menu's order, the rubber-band hit zones, the

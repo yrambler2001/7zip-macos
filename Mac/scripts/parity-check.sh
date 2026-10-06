@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# parity-check.sh -- count the parity checkboxes of Mac/docs/PROGRESS.md per scope.
+# parity-check.sh -- count the parity checkboxes of ai/PROGRESS.md per scope.
 # Read-only: it never writes to the file.
 #
 # Usage: Mac/scripts/parity-check.sh [options]
@@ -8,7 +8,7 @@
 #                          tools, options, finder, packaging)
 #   -l, --list <NAME>      list the unticked items of that scope (with line numbers)
 #   -L, --list-all         list the unticked items of every scope
-#   -f, --file <PATH>      a different checklist file (default Mac/docs/PROGRESS.md)
+#   -f, --file <PATH>      a different checklist file (default ai/PROGRESS.md)
 #   -h, --help             this text
 # A scope section is a "## <n>. <scope> — ..." heading; items are "- [ ]" / "- [x]" lines.
 set -euo pipefail
@@ -17,7 +17,7 @@ usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' 
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app}"   # for consistency with the other scripts
-FILE="$ROOT/Mac/docs/PROGRESS.md"
+FILE="$ROOT/ai/PROGRESS.md"
 SCOPE=""
 LIST=""
 while [ $# -gt 0 ]; do

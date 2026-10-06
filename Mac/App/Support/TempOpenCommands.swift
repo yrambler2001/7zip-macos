@@ -226,7 +226,7 @@ enum ItemOpenCommands {
 /// items are written either straight into the destination Finder supplies, or into a `7zE` temp
 /// folder whose paths are handed over.
 ///
-/// Documented for the panel scope in `Mac/docs/api/extract.md`.
+/// Documented for the panel scope in `ai/api/extract.md`.
 enum ArchiveDragOut {
 
     /// One promised / dropped item.

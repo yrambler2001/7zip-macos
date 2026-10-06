@@ -156,7 +156,7 @@ enum PanelProperties {
     }
 
     /// IsSizeProp -> ConvertSizeToString (PanelMenu.cpp:129-134): a size reads "101 156" in the
-    /// Properties list, as in 7zFM 25.01 (Mac/docs/reports/wincompare.md).
+    /// Properties list, as in 7zFM 25.01 (ai/reports/wincompare.md).
     static func sizeGrouped(_ propID: SZPropID, _ text: String) -> String {
         guard Formatting.sizePropIDs.contains(propID), let value = UInt64(text) else { return text }
         return Formatting.size(value)

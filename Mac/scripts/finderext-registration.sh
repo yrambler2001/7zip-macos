@@ -1,5 +1,5 @@
-# finderext-registration.sh -- sourced by build.sh and test.sh (appfeel, Mac/docs/reports/appfeel.md §2;
-# finderfix, Mac/docs/reports/finderfix.md).
+# finderext-registration.sh -- sourced by build.sh and test.sh (appfeel, ai/reports/appfeel.md §2;
+# finderfix, ai/reports/finderfix.md).
 #
 # Every 7-Zip.app copy registers its Finder Sync extension and its two Quick Actions under the same
 # identifiers, and PlugInKit hands Finder one copy of each -- after an xcodebuild, the fresh build.

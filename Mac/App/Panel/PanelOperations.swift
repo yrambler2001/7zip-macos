@@ -3,7 +3,7 @@
 // create file, the comment editor, the Properties dialog, F3 on a folder (CalcItemFullSize) and
 // the copy / move execution used by F5 / F6, the clipboard and drag & drop.
 //
-// Every engine call goes through the shared runner (Mac/docs/api/opsinfra.md): the panel queue is
+// Every engine call goes through the shared runner (ai/api/opsinfra.md): the panel queue is
 // parked for the duration, so the folder is touched by exactly one thread.
 //
 // Parity: 01-fm-feature-inventory.md §3.10, §3.11; 01b §4.4, §4.11.
@@ -229,7 +229,7 @@ extension PanelViewController {
         let current = rows[index].cells[.comment] ?? ""
         // CComboDialog, not the multi-line IDD_COMMENT: Title = "<rel path> : Comment" (IDS_COMMENT
         // 6400), Static = IDS_COMMENT2 6401 "&Comment:" (PanelOperations.cpp ChangeComment;
-        // 7zFM 25.01 shows "a.txt : Comment", Mac/docs/reports/wincompare.md).
+        // 7zFM 25.01 shows "a.txt : Comment", ai/reports/wincompare.md).
         let row = rows[index]
         guard let comment = ComboDialog.run(title: row.prefix + row.name + " : " + Lang.text(6400, "Comment"),
                                             label: Lang.text(6401, "&Comment:"), value: current,

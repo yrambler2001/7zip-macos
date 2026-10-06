@@ -11,7 +11,7 @@
 // Parity references stay with the dialog: `01b-fm-dialogs-settings.md` section 4.x and the Windows
 // resource ID are named for every window, exactly as in the XCUITest sweep.
 //
-// Each dialog is also written to `Mac/docs/reports/screenshots/fastui-*.png`, so the visual record
+// Each dialog is also written to `Mac/build/screenshots/fastui-*.png`, so the visual record
 // the `polish` scope relied on survives -- the difference is that the PNG is now evidence for a
 // human, not the measurement itself.
 

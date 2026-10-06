@@ -3,7 +3,7 @@
 // in command mode the process ends with it.
 //
 // The Finder Sync extension and the Quick Actions cannot be driven from a test (Finder itself would
-// have to be scripted, and this machine grants no Automation permission -- Mac/docs/reports/vmcheck.md
+// have to be scripted, and this machine grants no Automation permission -- ai/reports/vmcheck.md
 // section 5), but the **hand-off** can: the extension's only action is
 // `NSWorkspace.open(sevenzip:///run?argv=...)`, so these tests send exactly the URLs the menu items
 // build and assert on the dialogs the app then shows.
@@ -15,7 +15,7 @@
 // The argument grammar itself, the menu tree and the naming rules are covered by
 // `SevenZipKitTests/FinderCommandTests` (63 cases); this file covers the app's reaction.
 //
-// Parity references: 03-shell-integration-inventory.md sections 1.4, 2.4, 6.4; Mac/docs/api/finder.md.
+// Parity references: 03-shell-integration-inventory.md sections 1.4, 2.4, 6.4; ai/api/finder.md.
 
 import AppKit
 import XCTest
@@ -101,7 +101,7 @@ final class FinderIntegrationTests: SevenZipUITestCase {
         // The rows live in the list view (CListViewDialog). `HashListDialogView` does not expose
         // its rows to accessibility -- neither `cells` nor `staticText` descendants resolve -- so
         // the assertion stops at the list itself and the screenshot carries the rows. Recorded in
-        // Mac/docs/requests.md for the scope that owns the list dialog.
+        // ai/requests.md for the scope that owns the list dialog.
         let table = dialog.tables.firstMatch
         XCTAssertTrue(table.waitForExistence(timeout: 10), "the results list is missing")
         screenshot("03-checksum-results-from-finder-command")

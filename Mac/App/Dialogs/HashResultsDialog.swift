@@ -7,7 +7,7 @@
 //
 // `HashListDialogView` below is that generic list, owned by this scope for now. The `panel`
 // scope needs the very same control for Properties / archive info (PanelMenu.cpp:183) and
-// Folders History (PanelFolderChange.cpp:868) -- see Mac/docs/api/tools.md: it may be lifted
+// Folders History (PanelFolderChange.cpp:868) -- see ai/api/tools.md: it may be lifted
 // into Dialogs/ListViewDialog.swift (which `panel` owns) unchanged and this file then just
 // uses it.
 

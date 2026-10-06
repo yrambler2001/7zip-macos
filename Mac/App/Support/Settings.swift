@@ -6,7 +6,7 @@
 //
 // Everything goes through SZSettings rather than UserDefaults.standard: SZSettings names the
 // domain explicitly, so the same code works in the app, in a unit-test bundle and in an
-// extension. The key -> property table is in Mac/docs/api/options.md.
+// extension. The key -> property table is in ai/api/options.md.
 //
 // CBoolPair (tri-state) keys are `Bool?`: nil means the value is absent from the store
 // (CBoolPair::Def == false, "not forced" / "use the handler default"). Each of those has a
@@ -403,7 +403,7 @@ enum Settings {
 
     /// CListViewInfo. Windows stores a version-1 REG_BINARY blob per folder type ID; this port
     /// keeps the same fields in one JSON string under `FM.Columns.<FolderTypeID>` because
-    /// CFPreferences has no binary-blob idiom (shape documented in Mac/docs/api/options.md).
+    /// CFPreferences has no binary-blob idiom (shape documented in ai/api/options.md).
     struct ColumnLayout: Codable, Equatable {
         struct Column: Codable, Equatable {
             var propID: Int
@@ -866,7 +866,7 @@ extension Settings.Key {
 // ---------------------------------------------------------------------------
 // MARK: - Test support (`mac/resetcmd`)
 //
-// `Mac/docs/test-support-contract.md` and `Mac/docs/api/resetcmd.md`. Everything here is inert
+// `ai/test-support-contract.md` and `ai/api/resetcmd.md`. Everything here is inert
 // unless `SZ_TEST_SUPPORT=1` is in the environment: `TestSupport.isEnabled` gates the other two
 // variables, so an app started the normal way behaves exactly as it always has.
 //
@@ -922,7 +922,7 @@ enum TestSupport {
     ///
     /// With a state directory and no explicit `SEVENZIP_DEFAULTS_SUITE`, the settings domain is
     /// pointed at `<state>/preferences.plist`: CFPreferences takes an absolute path as an
-    /// application ID (`Mac/docs/api/harness.md` section 3), so two instances then keep entirely
+    /// application ID (`ai/api/harness.md` section 3), so two instances then keep entirely
     /// separate settings even when they were built with the same bundle identifier. An explicit
     /// suite always wins -- that is how the UI harness seeds one plist per test.
     static func prepareForLaunch() {
@@ -975,7 +975,7 @@ extension Settings {
     /// **Measured, and the reason this is not just `SZSettings.keys(withPrefix: "")`:**
     /// `CFPreferencesCopyKeyList` is live for a domain *named* like a bundle id, but for a domain
     /// that is an absolute **plist path** -- which is what `SEVENZIP_DEFAULTS_SUITE` is in every UI
-    /// test (`Mac/docs/api/harness.md` section 3) -- it answers from a cache populated by its first
+    /// test (`ai/api/harness.md` section 3) -- it answers from a cache populated by its first
     /// call in the process and never updates, even after `CFPreferencesAppSynchronize`. Values read
     /// back correctly; only the key *list* goes stale. The file on disk is written on every
     /// synchronize and is authoritative, so its keys are unioned in. Without this, a reset with

@@ -1,13 +1,13 @@
 // AboutAndDragOutTests.swift -- two defects that were filed across scopes and had no owner
-// (`polish`, Mac/docs/reports/polish.md):
+// (`polish`, ai/reports/polish.md):
 //
 //   * the two IDM_ABOUT 961 menu items changed their accessibility identifier at launch, because
 //     `ToolsCommands.install()` retargeted them and an NSMenuItem reports its *current* action
-//     (Mac/docs/requests.md, `harness` -> `tools`/`panel`) -- the identifier half of that is now
+//     (ai/requests.md, `harness` -> `tools`/`panel`) -- the identifier half of that is now
 //     asserted in process (`SevenZipAppTests/MenuAndToolbarTests`), the click half here;
 //   * dragging a member out of an archive the panel had already unlocked asked for the password a
 //     second time, because `ArchiveDragOut.extract` had no `password:` parameter
-//     (Mac/docs/requests.md, `cleanup` -> `extract`).
+//     (ai/requests.md, `cleanup` -> `extract`).
 
 import XCTest
 

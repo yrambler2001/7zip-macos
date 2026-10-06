@@ -716,7 +716,7 @@ final class FSFolderTests: XCTestCase {
         // Never assert the *total* number of volumes: another process (a parallel agent, Time
         // Machine, a .dmg opened by hand) can mount or unmount a disk while this test runs and the
         // total then disagrees for a reason that has nothing to do with the code under test
-        // (Mac/docs/requests.md, orchestrator -> fsfolder). Assert only that this test's own volume
+        // (ai/requests.md, orchestrator -> fsfolder). Assert only that this test's own volume
         // appears and disappears again.
         func volumeNames() throws -> [String] {
             try volumes.loadItems()

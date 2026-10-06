@@ -1,5 +1,5 @@
 // NewWindowTests.swift -- "starting 7-Zip again opens a new 7-Zip File Manager window" and "an
-// archive opened from Finder gets its own window" (user decisions, Mac/docs/reports/newwindow.md;
+// archive opened from Finder gets its own window" (user decisions, ai/reports/newwindow.md;
 // 01 §1.1 "Single instance", 03 §6.2), in process.
 //
 // The entry points are called exactly as AppKit calls them: the reopen Apple event ends in

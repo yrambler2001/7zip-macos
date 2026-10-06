@@ -4,7 +4,7 @@
 // they cannot show is that a real right click, a real mouse drag and a real button press reach the
 // same code. Every case here synthesizes input, so the class belongs to the **input shard**.
 //
-// Written by `mac/uiverify` (Mac/docs/reports/uiverify.md). The icon-view drag needed a product fix
+// Written by `mac/uiverify` (ai/reports/uiverify.md). The icon-view drag needed a product fix
 // first: the collection view's items were not in the accessibility tree at all.
 //
 // Not here, on purpose:

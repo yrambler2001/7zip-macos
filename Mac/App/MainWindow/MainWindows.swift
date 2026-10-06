@@ -4,7 +4,7 @@
 // is no single-instance restriction), so starting 7-Zip again while it runs gives a second window,
 // and so does opening a second archive from Explorer (`7zFM.exe "%1"`, 03 §6.2). The macOS port is
 // one process, so the same thing is done with a window per "launch" inside it (user decision,
-// Mac/docs/reports/newwindow.md):
+// ai/reports/newwindow.md):
 //
 //   * a re-launch of the running app -- Finder double-click of the app, Spotlight, `open -a 7-Zip`
 //     -- arrives as the reopen Apple event (`applicationShouldHandleReopen`) and opens a window,

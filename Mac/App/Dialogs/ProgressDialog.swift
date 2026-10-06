@@ -52,7 +52,7 @@ final class ProgressDialog: NSObject, NSWindowDelegate {
     private let processedValue = DialogKit.label("", alignment: .right)      // IDT_PROGRESS_PROCESSED_VAL 124
     // kLangIDs_Colon (ProgressDialog2.cpp:66-70): IDT_PROGRESS_PACKED and IDT_PROGRESS_FILES take
     // the property name from the lang file plus ":" (LangSetDlgItems_Colon) -- 7zFM 25.01 shows
-    // "Files:" (Mac/docs/reports/wincompare.md).
+    // "Files:" (ai/reports/wincompare.md).
     private let packedLabel = DialogKit.label(Lang.dialogTextColon(97, 1008, "Compressed size:"))  // IDT_PROGRESS_PACKED 1008
     private let packedValue = DialogKit.label("", alignment: .right)         // IDT_PROGRESS_PACKED_VAL 110
     private let ratioLabel = DialogKit.label(Lang.text(3905, "Compression ratio:")) // IDT_PROGRESS_RATIO 3905

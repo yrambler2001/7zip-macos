@@ -9,7 +9,7 @@
 // Resolution order (first hit wins):
 //   1. SEVENZIP_REPO_ROOT / SEVENZIP_SCREENSHOT_DIR / SEVENZIP_FIXTURES environment variables
 //      (test.sh / verify.sh pass them as TEST_RUNNER_SEVENZIP_* so they reach the runner),
-//   2. walking up from the test bundle until a directory containing `Mac/docs` is found,
+//   2. walking up from the test bundle until a directory containing `Mac/project.yml` is found,
 //   3. the Fixtures folder copied into the test bundle / the container's temp directory.
 
 import Foundation
@@ -42,11 +42,11 @@ public enum TestPaths {
         return NSTemporaryDirectory() + "Fixtures"
     }()
 
-    /// `Mac/docs/reports/screenshots` -- where test.sh puts the exported attachments. A sandboxed
+    /// `Mac/build/screenshots` -- where test.sh puts the exported attachments. A sandboxed
     /// test cannot write here itself.
     public static let screenshots: String = {
         if let env = ProcessInfo.processInfo.environment["SEVENZIP_SCREENSHOT_DIR"] { return env }
-        if let root = repoRoot { return root + "/Mac/docs/reports/screenshots" }
+        if let root = repoRoot { return root + "/Mac/build/screenshots" }
         return NSTemporaryDirectory() + "7zip-screenshots"
     }()
 
@@ -75,7 +75,7 @@ public enum TestPaths {
     }
 
     private static func isRoot(_ path: String) -> Bool {
-        FileManager.default.fileExists(atPath: path + "/Mac/docs")
+        FileManager.default.fileExists(atPath: path + "/Mac/project.yml")
     }
 
     private final class BundleToken {}

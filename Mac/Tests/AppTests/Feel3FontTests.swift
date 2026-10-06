@@ -4,7 +4,7 @@
 // (`wincompare-listfeel-list-win.png`, 760 x 200 px at 96 dpi): one image at 1x (1 Windows px =
 // 1 Mac pt) and one at 2x (the Windows pixels doubled, the Mac rendered at Retina scale).
 //
-// Writes Mac/docs/reports/screenshots/feel3-font-<candidate>-<byheight|bywidth>[-2x].png,
+// Writes Mac/build/screenshots/feel3-font-<candidate>-<byheight|bywidth>[-2x].png,
 // feel3-font-current[-2x].png (the default, Helvetica Neue 11) and feel3-font-current-byheight[-2x].png
 // (the default family matched by height, i.e. the helvetica-neue-byheight font).
 // The Mac text is drawn without font smoothing, as the app's windows show it (drawUnsmoothed).
@@ -221,8 +221,18 @@ final class Feel3FontTests: AppHostTestCase {
         try? png.write(to: URL(fileURLWithPath: TestPaths.screenshots).appendingPathComponent(file), options: .atomic)
     }
 
+    /// Reference-data test: it needs the Windows half, a 760 x 200 px capture of 7zFM 26.03's
+    /// Details list at 96 dpi (Segoe UI 9 pt), at `Mac/build/screenshots/wincompare-listfeel-list-win.png`.
+    /// That capture was made on a Windows host with the listfeel harness (ai/reports/listfeel.md §11)
+    /// and is not in the repository, so without it the test is skipped rather than failed. To
+    /// regenerate the comparison images: capture the list on Windows (the same fixture as
+    /// `makeFixture()`, 760 x 200 client area, PrintWindow), save it under that name, and run
+    /// `Mac/scripts/test.sh -o Feel3FontTests/testFontComparisonImages`.
     func testFontComparisonImages() throws {
-        let windows = try XCTUnwrap(windowsCapture(), "wincompare-listfeel-list-win.png")
+        guard let windows = windowsCapture() else {
+            throw XCTSkip("Windows reference capture wincompare-listfeel-list-win.png not found in "
+                          + TestPaths.screenshots + " (reference data, not in the repository)")
+        }
         let folder = makeFixture()
         var shots: [(font: NSFont, caption: String, name: String)] = []
         // "current" is the default feel3 compared against, Helvetica Neue 11 (sffont made SF Pro 12.2

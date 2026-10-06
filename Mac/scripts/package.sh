@@ -28,7 +28,7 @@
 # signature cannot be notarized -- Apple only accepts a Developer ID Application signature with
 # the hardened runtime and a secure timestamp -- so --notarize without a real identity is
 # refused up front, and without --notarize the notarization step is skipped silently rather
-# than failing. What a user sees on first launch of each state is in Mac/README.md.
+# than failing. What a user sees on first launch of each state is in README.md ("First launch: Gatekeeper").
 #
 # Exit: 0 success, 1 failure, 2 bad usage, 3 notarization asked for but impossible.
 set -euo pipefail
@@ -233,8 +233,8 @@ hdiutil attach "$RW" -mountpoint "$MNT" -nobrowse -quiet || die "could not mount
 # Finder automation. Icon positions, the window size and a background picture live in a
 # .DS_Store that only Finder writes, which needs Automation permission this machine does not
 # have -- an osascript that drives Finder here hangs on the consent dialog rather than failing
-# (CLAUDE.md, Mac/docs/reports/vmcheck.md section 7). Deliberately left out; see
-# Mac/docs/reports/packaging.md.
+# (CLAUDE.md, ai/reports/vmcheck.md section 7). Deliberately left out; see
+# ai/reports/packaging.md.
 SetFile -a C "$MNT" 2>/dev/null || say "   (SetFile unavailable: no custom volume icon)"
 hdiutil detach "$MNT" -quiet || die "could not unmount the staging image"
 rm -rf "$MNT"
@@ -291,7 +291,7 @@ if [ "$VERIFY" = 1 ]; then
     say "   spctl --assess: accepted"
   else
     say "   spctl --assess: rejected -- expected for an $([ "$ADHOC" = 1 ] && echo "ad-hoc" || echo "un-notarized") build; Gatekeeper wants a"
-    say "                   notarized Developer ID signature. First-launch instructions: Mac/README.md"
+    say "                   notarized Developer ID signature. First-launch instructions: README.md"
   fi
 fi
 

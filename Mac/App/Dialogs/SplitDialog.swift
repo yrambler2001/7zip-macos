@@ -22,7 +22,7 @@ final class SplitDialog: NSObject {
     private init(filePath: String, path: String, parent: NSWindow?) {
         self.filePath = filePath
         // CSplitDialog::OnInit: the caption gets " <FilePath>" appended ("Split File b.bin" in
-        // 7zFM 25.01, Mac/docs/reports/wincompare.md); IDD_SPLIT has no separate file-name label.
+        // 7zFM 25.01, ai/reports/wincompare.md); IDD_SPLIT has no separate file-name label.
         let caption = Lang.text(7300, "Split File")
         window = DialogKit.window(title: filePath.isEmpty ? caption : caption + " " + filePath, resizable: true)
         super.init()

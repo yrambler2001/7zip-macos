@@ -1,6 +1,6 @@
 // NewWindowUITests.swift -- the real input paths of "starting 7-Zip again opens a new 7-Zip File
 // Manager window" and "an archive opened from Finder gets its own window" (user decisions,
-// Mac/docs/reports/newwindow.md; 01 §1.1 "Single instance", 03 §6.2).
+// ai/reports/newwindow.md; 01 §1.1 "Single instance", 03 §6.2).
 //
 // A Dock click, a Finder double-click of 7-Zip.app and `open -a 7-Zip` all reach a running app as
 // the *reopen* Apple event, which Launch Services sends when it is asked to open an application
@@ -9,7 +9,7 @@
 // click is the same event sent by the Dock, which only shows the open windows (appfeel); those
 // cases click the real Dock tile. A Finder double-click of an archive is the *open documents* event:
 // `NSWorkspace.open(_:withApplicationAt:)`. Neither drives another application, so no Automation
-// consent is involved (Mac/docs/reports/vmcheck.md). The in-process half of the same cases is
+// consent is involved (ai/reports/vmcheck.md). The in-process half of the same cases is
 // `Mac/Tests/AppTests/NewWindowTests.swift`.
 
 import AppKit

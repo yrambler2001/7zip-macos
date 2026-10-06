@@ -1,6 +1,6 @@
 // ErrorAlert.swift -- the one rule about where a message box goes.
 //
-// The defect this file exists for (`Mac/docs/reports/fastui.md` section 6.10).
+// The defect this file exists for (`ai/reports/fastui.md` section 6.10).
 // `PanelViewController.showError` chose its presentation on `view.window`: a sheet when the panel had
 // a window, `NSAlert.runModal()` when it did not. A panel closed at runtime (F9 /
 // IDM_VIEW_TWO_PANELS 732) is deliberately kept alive and reused -- 7zFM hides its non-focused panel

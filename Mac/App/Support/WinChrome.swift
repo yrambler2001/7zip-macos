@@ -1,5 +1,5 @@
 // WinChrome.swift -- the colours 7zFM 26.03's window chrome is drawn with on Windows 11 at 96 dpi,
-// read from raw pixels of fresh-default captures (Mac/docs/reports/recheck.md §2,
+// read from raw pixels of fresh-default captures (ai/reports/recheck.md §2,
 // recheck-data/win/fresh-screen.png, two-screen.png) and from GetSysColor (syscolors.txt).
 //
 // 7zFM has no dark theme; in the dark appearance every colour falls back to the AppKit colour that

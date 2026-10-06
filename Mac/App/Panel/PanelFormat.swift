@@ -10,7 +10,7 @@ enum PanelFormat {
 
     /// GetColumnAlign: strings and times left, numbers, sizes and booleans right (VT_BOOL is in the
     /// LVCFMT_RIGHT group, PanelItems.cpp:64-76; 7zFM 25.01 shows "Encrypted" right-aligned --
-    /// Mac/docs/reports/wincompare.md).
+    /// ai/reports/wincompare.md).
     static func alignment(for varType: SZVarType, propID: SZPropID) -> NSTextAlignment {
         if propID == .name || propID == .path || propID == .prefix { return .left }
         switch varType {
@@ -31,7 +31,7 @@ enum PanelFormat {
     ///       sub/                             folders with a separator, then "  ..."
     ///
     /// The earlier port listed the names first and the counts after them; 7zFM 25.01 shows the
-    /// order above (Mac/docs/reports/wincompare.md, dlg-copy).
+    /// order above (ai/reports/wincompare.md, dlg-copy).
     static func itemsInfo(rows: [PanelRow], folderPrefix: String) -> String {
         var numDirs: UInt64 = 0, numFiles: UInt64 = 0
         var dirsSize: UInt64? = 0, filesSize: UInt64? = 0

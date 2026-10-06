@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in the Mac app does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If the same problem happens with 7-Zip on Windows or the console `7zz`
+        (a format, compression, a crash while reading an archive), please report it upstream at
+        https://www.7-zip.org instead. Security problems: see SECURITY.md, do not file them here.
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: 7-Zip ▸ About 7-Zip, e.g. "7-Zip 26.03 for macOS 1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version and Mac
+      description: e.g. "macOS 15.4, Apple Silicon" or "macOS 14.7, Intel"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed from
+      options:
+        - Disk image from GitHub Releases
+        - Homebrew cask
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, step by step. Attach a small archive if one is needed (no private data).
+      placeholder: |
+        1. Open …
+        2. Choose …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+      description: If 7-Zip on Windows behaves differently, say how.
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots, crash report, anything else
+      description: Crash reports are in Console ▸ Crash Reports (7-Zip-*.ips).

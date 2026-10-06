@@ -2,7 +2,7 @@
 // **inside 7-Zip.app's own process** (`TEST_HOST`), so they get real AppKit objects, real Auto
 // Layout, the real lang files and the app's real menu bar at unit-test speed.
 //
-// Why this target exists (Mac/docs/reports/fastui.md): the XCUITest suite cost 28.7 s per test,
+// Why this target exists (ai/reports/fastui.md): the XCUITest suite cost 28.7 s per test,
 // almost all of it launching and quitting the app. An assertion about a *frame*, a menu title or a
 // localized string does not need another process to be launched and driven through the
 // accessibility bus -- it needs the object. Here the object is right there:
@@ -30,7 +30,7 @@ import XCTest
 
 class AppHostTestCase: XCTestCase {
 
-    /// File-name prefix of the PNGs this class writes into `Mac/docs/reports/screenshots/`.
+    /// File-name prefix of the PNGs this class writes into `Mac/build/screenshots/`.
     var screenshotPrefix: String { "fastui" }
 
     /// Hard defects collected by `audit(...)`; `finishAudit()` fails the test with all of them.
@@ -165,7 +165,7 @@ class AppHostTestCase: XCTestCase {
     // MARK: - screenshots
 
     /// A PNG of the window's content view, attached to the result **and** written straight into
-    /// `Mac/docs/reports/screenshots/` -- unlike the XCUITest runner this process is not
+    /// `Mac/build/screenshots/` -- unlike the XCUITest runner this process is not
     /// sandboxed, so `test.sh` does not have to export it from the result bundle.
     @discardableResult
     func attach(_ window: NSWindow, _ name: String) -> URL? {

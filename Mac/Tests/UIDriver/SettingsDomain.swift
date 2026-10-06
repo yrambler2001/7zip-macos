@@ -1,7 +1,7 @@
 // SettingsDomain.swift -- deterministic, per-test settings for UI tests.
 //
 // The app resolves its whole preferences domain from the `SEVENZIP_DEFAULTS_SUITE` environment
-// variable (`NMacPrefs::ApplicationID`, `Mac/docs/api/options.md`): `SZSettings`, the Swift
+// variable (`NMacPrefs::ApplicationID`, `ai/api/options.md`): `SZSettings`, the Swift
 // `Settings` facade and the engine-side `ZipRegistry` accessors all read and write that one domain.
 //
 // **CFPreferences accepts an absolute path as an application ID**, and then reads and writes

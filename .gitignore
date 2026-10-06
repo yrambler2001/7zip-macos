@@ -1,4 +1,20 @@
 CPP/7zip/**/b/
 *.o
 .DS_Store
-Mac/docs/reports/screenshots/*-failure-*.png
+
+# macOS port: build output, generated Xcode project, test results
+Mac/build/
+Mac/7-Zip.xcodeproj/
+DerivedData/
+*.xcresult
+*.xcworkspace/xcuserdata/
+xcuserdata/
+
+# Screenshots written by the tests go to Mac/build/screenshots/ (ignored above). These patterns
+# catch any that land elsewhere, so the repository never accumulates them again.
+ai/reports/screenshots/
+Mac/docs/reports/screenshots/
+*-failure-*.png
+
+# agent / developer worktrees
+.worktrees/

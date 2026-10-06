@@ -85,7 +85,7 @@ enum SevenZipBundle {
 
     /// The identifier of the **app**, as seen from whichever process is asking: its own identifier
     /// in the app, and the identifier with the last component dropped in an appex (an appex id is
-    /// always `<app id>.<name>`, `Mac/docs/api/finder.md` section 7). The literal `app` is the
+    /// always `<app id>.<name>`, `ai/api/finder.md` section 7). The literal `app` is the
     /// fallback, so an unidentified bundle behaves exactly as before.
     ///
     /// This is what lets two copies built with different bundle identifiers coexist: everything
@@ -163,7 +163,7 @@ struct IntegrationSettings: Equatable {
     ///
     /// The file name carries the **containing app's** bundle identifier, so two copies of the app
     /// built with different identifiers write different files into the same container instead of
-    /// clobbering each other (`Mac/docs/test-support-contract.md`, "Running several instances at
+    /// clobbering each other (`ai/test-support-contract.md`, "Running several instances at
     /// once"). For the shipped identifier the name is unchanged, so an extension that was already
     /// configured keeps reading the file it knows.
     static func snapshotURL(forExtension bundleID: String,

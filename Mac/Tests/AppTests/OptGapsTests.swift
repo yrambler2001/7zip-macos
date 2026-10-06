@@ -387,7 +387,7 @@ final class OptGapsTests: AppHostTestCase {
     /// `mac/release` dropped it because it raised NSGenericException in a full `-H` run: it ran
     /// right after `testOptionsPagesFitTheirWindow` left the app in Ukrainian, where the System
     /// page's header label never settled (`testSystemPageHeaderLayoutSettles`,
-    /// Mac/docs/reports/syslayout.md). Also shot in German, Russian and Arabic (RTL).
+    /// ai/reports/syslayout.md). Also shot in German, Russian and Arabic (RTL).
     func testScreenshotSystemPage() {
         for (code, suffix) in [("-", ""), ("de", "-de"), ("ru", "-ru"), ("ar", "-ar")] {
             useLanguage(code)

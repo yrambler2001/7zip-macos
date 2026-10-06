@@ -20,7 +20,7 @@
 #   -k, --keep-prefs       do not clear com.yrambler2001.7zip before an input-shard run
 #   -h, --help             this text
 #
-# Sharding (Mac/docs/api/harness.md). Every XCUITest target is built against an app target with its
+# Sharding (ai/api/harness.md). Every XCUITest target is built against an app target with its
 # own bundle identifier, so several instances coexist: the **input** shard drives the real app and
 # needs the machine to itself (macOS delivers a synthesized click or key to the frontmost
 # application), while the **probe** shards and the app-hosted tests only read, and run at the same
@@ -31,7 +31,7 @@
 # input shard runs: it waits up to 15 minutes, breaks a lock older than 30 minutes, and releases it
 # on any exit. The app saves its own settings when it quits, so com.yrambler2001.7zip is exported to
 # Mac/build/prefs-backup.plist, cleared (Lang forced to English) and imported back afterwards.
-# Screenshot attachments are exported from the result bundles into Mac/docs/reports/screenshots/.
+# Screenshot attachments are exported from the result bundles into Mac/build/screenshots/.
 # A test that hangs is failed by XCTest rather than stalling the run (-test-timeouts-enabled).
 # Env: DEVELOPER_DIR (default /Applications/Xcode.app), XCODEBUILD_EXTRA.
 # Logs: Mac/build/test-<target>.log. Exit: 0 when everything passed, else xcodebuild's code.
@@ -154,7 +154,7 @@ PLIST
 
 # --- shared app-launch lock + preferences safety net (the input shard owns the app) ------------
 # Only the input shard drives the shipping bundle id, so only it has to queue behind another agent:
-# Mac/docs/api/harness.md "App-launch lock".
+# ai/api/harness.md "App-launch lock".
 APP_LOCK="${SEVENZIP_APP_LOCK:-$(
   if [ -d "$ROOT/.worktrees" ]; then echo "$ROOT/.worktrees/.app-lock"
   elif [ "$(basename "$(dirname "$ROOT")")" = ".worktrees" ]; then echo "$(dirname "$ROOT")/.app-lock"
@@ -306,7 +306,7 @@ FAILED=0          # xcodebuild's exit code of the first failing target (contract
 TOTAL_PASS=0
 TOTAL_FAIL=0
 
-# Copy the screenshot attachments of a result bundle into Mac/docs/reports/screenshots.
+# Copy the screenshot attachments of a result bundle into Mac/build/screenshots.
 export_screenshots() {
   # Declared one at a time: `local a=$1 b=$(f "$a")` is evaluated with `a` still unset under
   # `set -u` in bash 3.2, which is what "line 240: bundle: unbound variable" was.
@@ -315,12 +315,12 @@ export_screenshots() {
   local tmp
   tmp="$MAC/build/attachments-$(basename "$bundle" .xcresult)"
   [ -d "$bundle" ] || return 0
-  rm -rf "$tmp"; mkdir -p "$tmp" "$MAC/docs/reports/screenshots"
+  rm -rf "$tmp"; mkdir -p "$tmp" "$MAC/build/screenshots"
   xcrun xcresulttool export attachments --path "$bundle" --output-path "$tmp" >/dev/null 2>&1 || return 0
   [ -f "$tmp/manifest.json" ] || return 0
   # manifest.json: [{ attachments: [{ exportedFileName, suggestedHumanReadableName }] }]
   # suggestedHumanReadableName is "<attachment name>_<n>_<UUID>.png"; keep the attachment name.
-  n=$(python3 - "$tmp" "$MAC/docs/reports/screenshots" <<'PY'
+  n=$(python3 - "$tmp" "$MAC/build/screenshots" <<'PY'
 import json, os, re, shutil, sys
 src, dst = sys.argv[1], sys.argv[2]
 count = 0
@@ -339,7 +339,7 @@ with open(os.path.join(src, "manifest.json")) as fh:
 print(count)
 PY
 )
-  echo "   $n screenshot(s) from $(basename "$bundle") -> $MAC/docs/reports/screenshots"
+  echo "   $n screenshot(s) from $(basename "$bundle") -> $MAC/build/screenshots"
 }
 
 # The build settings every test run needs. `TEST_RUNNER_<NAME>` reaches the process that hosts the
@@ -348,7 +348,7 @@ PY
 COMMON_SETTINGS=(
   CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES
   "TEST_RUNNER_SEVENZIP_REPO_ROOT=$ROOT"
-  "TEST_RUNNER_SEVENZIP_SCREENSHOT_DIR=$MAC/docs/reports/screenshots"
+  "TEST_RUNNER_SEVENZIP_SCREENSHOT_DIR=$MAC/build/screenshots"
   "TEST_RUNNER_SEVENZIP_DEFAULTS_SUITE=$HOST_DEFAULTS"
 )
 

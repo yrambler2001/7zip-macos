@@ -11,7 +11,7 @@
 //
 // The archive verbs send the selectors below down the responder chain. `MainWindowController`
 // implements every one of them (`Mac/App/Commands/PanelContextActions.swift`) by calling the very
-// command the File menu, the toolbar and Finder use -- see Mac/docs/api/panel.md section 3.
+// command the File menu, the toolbar and Finder use -- see ai/api/panel.md section 3.
 
 import Cocoa
 import Quartz

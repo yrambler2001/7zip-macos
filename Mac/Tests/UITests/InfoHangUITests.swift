@@ -1,5 +1,5 @@
 // InfoHangUITests.swift -- the user's report, with real clicks: "I clicked Info in 7-Zip File
-// Manager, closed it and then the app became unresponsive" (Mac/docs/reports/infohang.md).
+// Manager, closed it and then the app became unresponsive" (ai/reports/infohang.md).
 //
 // The flat toolbar's Info button (IDM_PROPERTIES 551, IDS_BUTTON_INFO) is clicked with the mouse,
 // the Properties list (IDS_PROPERTIES 6600) is closed each way a user closes a window -- OK,

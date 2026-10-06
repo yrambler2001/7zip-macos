@@ -1,5 +1,5 @@
 // PanelSelectionStyle.swift -- how the panel's list draws selection, focus and grid lines, matched
-// to the real 7zFM 25.01 list control on Windows 11 (Mac/docs/reports/selcolors.md, captures in
+// to the real 7zFM 25.01 list control on Windows 11 (ai/reports/selcolors.md, captures in
 // selcolors-data/win/). The list is a plain SysListView32 (Panel.cpp:391-416): no Explorer theme,
 // no LVS_SHOWSELALWAYS (it is commented out there), so:
 //

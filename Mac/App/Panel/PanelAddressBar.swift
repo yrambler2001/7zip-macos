@@ -1,6 +1,6 @@
 // PanelAddressBar.swift -- the panel's address band as 7zFM 26.03 draws it (Panel.cpp:440-580,
 // CreateToolbarEx + ComboBoxEx32 in a ReBar; 01 §1.2), measured on Windows 11 at 96 dpi
-// (Mac/docs/reports/recheck.md §2, recheck-data/win/fresh.txt and fresh-screen.png):
+// (ai/reports/recheck.md §2, recheck-data/win/fresh.txt and fresh-screen.png):
 //
 //   * the band: 24 px, white (the ReBar's band), no highlight for the active panel -- 7zFM marks
 //     the active panel only with the keyboard focus;

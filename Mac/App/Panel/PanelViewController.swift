@@ -834,7 +834,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         }
     }
 
-    // MARK: - Test support: rebuild this panel in place (Mac/docs/api/resetcmd.md)
+    // MARK: - Test support: rebuild this panel in place (ai/api/resetcmd.md)
 
     /// Step 4 of `sevenzip://test/reset`, for one panel. Selection, sort order, view mode and flat
     /// mode go back to their defaults, the navigation stacks and the remembered password are
@@ -842,7 +842,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     ///
     /// **The folder chain is released on the panel's own queue.** `SZFolder` wraps engine COM
     /// objects whose reference counts are plain `++`/`--` (`Z7_COM_USE_ATOMIC` is not defined, see
-    /// `Mac/docs/api/opsinfra.md` section 4), so the object must be deallocated by the one thread
+    /// `ai/api/opsinfra.md` section 4), so the object must be deallocated by the one thread
     /// that owns it. `folder = nil` therefore goes through `runOnQueue`, and the `navigate` below
     /// enqueues behind it on the same serial queue, so the old chain is gone before the new one is
     /// built. A reset always waits for `OperationRunner.hasActiveOperation` to go false first, so
@@ -871,7 +871,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         runOnQueue { [self] in self.folder = nil }
         // `reportErrors: false`: a reset must not leave a sheet up. Its own step 1 has just closed
         // every dialog, so an error raised by step 4 would survive the reset and greet the next test
-        // instead (`Mac/docs/api/resetcmd.md` section 4). The failure is logged and the panel falls
+        // instead (`ai/api/resetcmd.md` section 4). The failure is logged and the panel falls
         // back to the root, which is what a reset to a vanished path should do.
         navigate(to: path, fallbackToRoot: true, reportErrors: false, completion: completion)
     }
@@ -885,7 +885,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
 
     /// The window this panel's sheets belong to: its own window while it is on screen, and otherwise
     /// the window that owns it. Never nil just because the panel is closed -- that mistake is what
-    /// `ErrorAlert` exists to prevent (`Mac/docs/reports/fastui.md` section 6.10).
+    /// `ErrorAlert` exists to prevent (`ai/reports/fastui.md` section 6.10).
     var hostWindow: NSWindow? { (isViewLoaded ? view.window : nil) ?? delegate?.panelHostWindow }
 
     /// Called by `MainWindowController` when this panel's view goes back into the split view. A
@@ -1113,7 +1113,7 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     ///
     /// It used to branch on `view.window` and fall back to `NSAlert.runModal()`, which wedged the
     /// whole app whenever a closed panel reported an error: see `ErrorAlert` and
-    /// `Mac/docs/reports/fastui.md` section 6.10. A panel that is out of the split view still belongs
+    /// `ai/reports/fastui.md` section 6.10. A panel that is out of the split view still belongs
     /// to the main window, which `hostWindow` asks the delegate for, so there is a sheet parent even
     /// then; with no window anywhere the message goes to the log.
     func showError(message: String) {

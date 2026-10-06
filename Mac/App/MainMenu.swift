@@ -45,7 +45,7 @@ enum MainMenu {
         // Pin the accessibility identity to the selector the item is *declared* with. Without
         // this an NSMenuItem reports whatever action it currently carries, so retargeting one at
         // runtime renames it for VoiceOver and for any test that addresses it by selector --
-        // which is what happened to the two IDM_ABOUT 961 items (Mac/docs/requests.md,
+        // which is what happened to the two IDM_ABOUT 961 items (ai/requests.md,
         // `harness` -> `tools`/`panel`).
         if let action { it.setAccessibilityIdentifier(NSStringFromSelector(action)) }
         menu.addItem(it)
@@ -110,7 +110,7 @@ enum MainMenu {
         // The 7-Zip Explorer commands (CPanel::CreateSevenZipMenu) are not a fixed part of this
         // menu: CPanel::CreateFileMenu inserts them in front of IDM_OPEN each time the menu opens,
         // and only for a file-system folder with operated items (PanelMenu.cpp:921-945,
-        // programMenu = true). FileMenuDelegate does the same (Mac/docs/reports/wincompare.md).
+        // programMenu = true). FileMenuDelegate does the same (ai/reports/wincompare.md).
         menu.delegate = FileMenuDelegate.shared
         menu.addItem(.separator())
         item(menu, 8, lang: 557, "E&xit\tAlt+F4", key: "w", mods: [.command], action: #selector(a.fileExit(_:)))   // IDCLOSE (lang 557)

@@ -6,7 +6,7 @@
 // compile the very same source.
 //
 // Parity references: 03-shell-integration-inventory.md sections 1.3, 1.4, 1.5, 1.6, 2.2, 2.3, 2.7,
-// 3.1, 6.1, 6.4; Mac/docs/api/finder.md.
+// 3.1, 6.1, 6.4; ai/api/finder.md.
 
 import XCTest
 import SevenZipKit

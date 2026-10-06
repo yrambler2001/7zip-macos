@@ -1,5 +1,5 @@
 // WinCompareTests.swift -- regression tests for the differences the side-by-side comparison with
-// the real 7zFM 25.01 found (Mac/docs/reports/wincompare.md). Each test names the Windows
+// the real 7zFM 25.01 found (ai/reports/wincompare.md). Each test names the Windows
 // observation it pins down. They use the ordinary fixtures (Mac/Tests/Fixtures), not the
 // comparison folder, so they always run.
 

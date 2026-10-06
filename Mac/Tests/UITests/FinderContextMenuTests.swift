@@ -3,7 +3,7 @@
 // `FinderIntegrationTests` sends the `sevenzip://` URLs the extensions build; this file checks that
 // the extensions actually build and deliver them when the user clicks. That is where the shipped
 // bug was: the 7-Zip submenu appeared in Finder but "Open archive", "Add to archive..." and the
-// "Extract with 7-Zip" Quick Action did nothing (Mac/docs/reports/finderfix.md):
+// "Extract with 7-Zip" Quick Action did nothing (ai/reports/finderfix.md):
 //  * Finder copies the extension's menu and drops `representedObject`, so the Finder Sync action
 //    found no command and returned;
 //  * Finder hands a Quick Action an attachment typed `public.zip-archive` only, never

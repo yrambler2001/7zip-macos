@@ -10,7 +10,7 @@
 //   in a fresh temp folder and handed to `NSSharingService.composeEmail`;
 // * adding files to the archive an open panel is already inside.
 //
-// Everything runs under `OperationRunner` (Mac/docs/api/opsinfra.md section 5) with the
+// Everything runs under `OperationRunner` (ai/api/opsinfra.md section 5) with the
 // progress title IDS_PROGRESS_COMPRESSING 3301 and the Packed size / Ratio rows, like
 // `CThreadUpdating` under `CProgressDialog` (UpdateGUI.cpp:579).
 

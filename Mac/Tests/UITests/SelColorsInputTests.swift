@@ -1,5 +1,5 @@
 // SelColorsInputTests.swift -- the selection colours with real clicks in a real key window
-// (Mac/docs/reports/selcolors.md). The app-hosted `SelColorsTests` render every state with the
+// (ai/reports/selcolors.md). The app-hosted `SelColorsTests` render every state with the
 // keyboard focus forced; this checks the part they cannot: that a click really gives the list the
 // focus and the fill, that the other panel's selection disappears as in 7zFM (no
 // LVS_SHOWSELALWAYS), and that the user's bug -- Light appearance, a selected row's Size column

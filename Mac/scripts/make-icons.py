@@ -46,7 +46,7 @@ import zlib
 from collections import Counter
 
 # --------------------------------------------------------------------------------------------
-# Geometry / naming constants shared with make-icons.swift and Mac/docs/api/icons.md
+# Geometry / naming constants shared with make-icons.swift and ai/api/icons.md
 # --------------------------------------------------------------------------------------------
 
 # Pixel sizes an AppIcon.appiconset / .iconset needs on macOS (16pt..512pt @1x and @2x).
@@ -723,7 +723,7 @@ def verify_icns(repo: str, work: str, manifest: dict) -> list[str]:
 
 def stage_contact_sheet(repo: str, work: str) -> None:
     """Ask the renderer for the contact sheet and drop it in the reports directory."""
-    out = os.path.join(repo, "Mac/docs/reports/screenshots/icons-contact-sheet.png")
+    out = os.path.join(repo, "Mac/build/screenshots/icons-contact-sheet.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     cmd = ["swift", os.path.join(repo, "Mac/scripts/make-icons.swift"),
            os.path.join(work, "icons-manifest.json"), os.path.join(work, "png"),

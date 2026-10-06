@@ -12,7 +12,7 @@
 //
 // What it is for: `ArchiveDragOut.extract` had no `password:` parameter, so a drag out of an
 // archive the panel had already unlocked asked for the password a second time
-// (Mac/docs/requests.md, `cleanup` -> `extract`).
+// (ai/requests.md, `cleanup` -> `extract`).
 
 import AppKit
 

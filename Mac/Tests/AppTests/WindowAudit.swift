@@ -2,7 +2,7 @@
 // moved off the GUI path: it walks the real `NSView` tree of a window that lives in *this* process
 // instead of an `XCUIElementSnapshot` of another one.
 //
-// Why the move. The dialog sweep (`polish` scope, Mac/docs/reports/polish.md) found the clipped
+// Why the move. The dialog sweep (`polish` scope, ai/reports/polish.md) found the clipped
 // button rows of nineteen dialogs by opening each of them through the menu bar of a freshly
 // launched app and looking at a screenshot. The defect itself, though, is a *number*: the button
 // row's frame ran past the bottom edge of the window's content rectangle because

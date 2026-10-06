@@ -2,13 +2,13 @@
 // to Finder (01-fm-feature-inventory.md §3.15, 03-shell-integration-inventory.md §4.1).
 //
 // The app fulfils such a drag with an NSFilePromiseProvider whose delegate calls
-// `ArchiveDragOut.extract` (Mac/docs/api/extract.md §5), which is
+// `ArchiveDragOut.extract` (ai/api/extract.md §5), which is
 // `SZFolder.extractItems(at:toPath:pathMode:.curPaths, overwriteMode:.overwrite, testMode:false)`
 // plus the Progress dialog. Neither `ArchiveDragOut` nor `PanelViewController` is linked into this
 // (framework-only) test target, so the delegate below makes exactly that bridge call: what is
 // covered here is the promise machinery -- Finder asks the provider for its file and the promised
 // bytes appear at the destination it chose -- and the `kCurPaths` semantics a drag needs.
-// A real drag to Finder cannot be scripted on this machine; see Mac/docs/reports/cleanup.md.
+// A real drag to Finder cannot be scripted on this machine; see ai/reports/cleanup.md.
 
 import XCTest
 import AppKit

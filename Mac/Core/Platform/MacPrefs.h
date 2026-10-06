@@ -28,7 +28,7 @@ extern const char * const kSuiteEnvVar;   // "SEVENZIP_DEFAULTS_SUITE"
 
 // The domain used when the environment variable is not set: the running application's own
 // bundle identifier, so two copies built with different PRODUCT_BUNDLE_IDENTIFIERs keep separate
-// settings (Mac/docs/test-support-contract.md, "nothing keyed on a hard-coded bundle identifier").
+// settings (ai/test-support-contract.md, "nothing keyed on a hard-coded bundle identifier").
 // kAppID when the main bundle is not an application (the xctest runner, an .appex) or has no
 // identifier, so the unit tests and the extensions keep the shipping domain.
 AString DefaultApplicationID();

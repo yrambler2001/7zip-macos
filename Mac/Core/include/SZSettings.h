@@ -58,7 +58,7 @@ FOUNDATION_EXPORT NSString * const SZSettingsSuiteEnvironmentVariable;   // "SEV
 /// The default domain, used when the environment variable is not set.
 FOUNDATION_EXPORT NSString * const SZSettingsDefaultApplicationID;       // "com.yrambler2001.7zip"
 
-/// Test support (Mac/docs/test-support-contract.md, Mac/docs/api/resetcmd.md).
+/// Test support (ai/test-support-contract.md, ai/api/resetcmd.md).
 ///
 /// `SZ_TEST_SUPPORT=1` is the master switch: with it unset nothing below exists and the app
 /// behaves exactly as it always has. `SZ_STATE_DIR` is an absolute directory this instance uses
@@ -117,7 +117,7 @@ FOUNDATION_EXPORT NSString * const SZSettingsStateDirectoryEnvironmentVariable; 
 
 /// Untyped access, for the one job the typed accessors cannot do: replacing the whole domain
 /// with the contents of a property list without flattening its value types
-/// (`sevenzip://test/reset?defaults=<plist>`, Mac/docs/api/resetcmd.md section 4).
+/// (`sevenzip://test/reset?defaults=<plist>`, ai/api/resetcmd.md section 4).
 + (nullable id)propertyListValueForKey:(NSString *)key NS_SWIFT_NAME(propertyListValue(forKey:));
 + (void)setPropertyListValue:(nullable id)value forKey:(NSString *)key;
 + (void)synchronize;

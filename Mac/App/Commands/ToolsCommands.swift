@@ -374,7 +374,7 @@ extension MainWindowController {
 
     /// The real CAboutDialog (IDD_ABOUT 2900). `MainWindowController.helpAbout` is the Wave 1
     /// placeholder that shows the standard macOS About panel; ToolsCommands.install() retargets
-    /// the two About menu items here (see Mac/docs/requests.md).
+    /// the two About menu items here (see ai/requests.md).
     @objc func toolsShowAbout(_ sender: Any?) {
         AboutDialog.show(parent: toolsWindow)
     }
@@ -388,7 +388,7 @@ enum ToolsCommands {
     /// point straight at `MainWindowController.helpAbout`, which now shows the real IDD_ABOUT
     /// 2900 dialog. It used to retarget them at `toolsShowAbout:` on `didFinishLaunching`, which
     /// changed their accessibility identifier out from under any test or assistive technology
-    /// addressing them by selector (Mac/docs/requests.md, `harness` -> `tools`/`panel`). The hook
+    /// addressing them by selector (ai/requests.md, `harness` -> `tools`/`panel`). The hook
     /// is kept so `MainMenu.build()` needs no edit and a later tools wave has a place to install.
     static func install() {}
 }

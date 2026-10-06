@@ -1,7 +1,7 @@
 // SevenZipApp.swift -- the XCUITest driver for 7-Zip.app: launching with a known settings
 // domain, addressing the window, the panels, the toolbar and the menu bar, waiting for dialogs
 // and taking named screenshots. Later waves build their tests on this; see
-// Mac/docs/api/harness.md for the documented API and examples.
+// ai/api/harness.md for the documented API and examples.
 //
 // Everything is addressed through what the app already exposes to accessibility -- element type
 // plus AX title/value -- so no test hook is needed inside the app:
@@ -253,7 +253,7 @@ public final class SevenZipApp {
 
     /// "Apple", "7-Zip", "File", "Edit", "View", "Favorites", "Tools", "Window", "Help".
     /// Read from one accessibility snapshot: resolving menu elements one by one is slow and has
-    /// crashed the test runner (see Mac/docs/reports/harness.md).
+    /// crashed the test runner (see ai/reports/harness.md).
     public var topLevelMenuTitles: [String] {
         guard let snap = try? menuBar.snapshot() else { return [] }
         return snap.children.filter { $0.elementType == .menuBarItem }
@@ -401,7 +401,7 @@ public final class SevenZipApp {
     /// `<prefix>-<name>.png`.
     ///
     /// It is attached to the test result (lifetime `.keepAlways`), and `Mac/scripts/test.sh`
-    /// exports every attachment of a run into `Mac/docs/reports/screenshots/` -- the sandboxed
+    /// exports every attachment of a run into `Mac/build/screenshots/` -- the sandboxed
     /// test runner cannot write there itself. When the runner is *not* sandboxed the file is also
     /// written directly and its URL returned.
     @discardableResult

@@ -1,4 +1,4 @@
-// GModeTests.swift -- "7zG mode" in process (Mac/docs/reports/gmode.md, App/Integration/GMode.swift).
+// GModeTests.swift -- "7zG mode" in process (ai/reports/gmode.md, App/Integration/GMode.swift).
 //
 // On Windows a shell command runs in 7zG.exe: no 7zFM window appears, the dialog stands alone,
 // centred on the work area, and the process exits when the command ends (03 §1.5, §2). Here the

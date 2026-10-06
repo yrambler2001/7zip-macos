@@ -14,7 +14,7 @@
   `NSWorkspace.open(URL)` hands a sevenzip:// URL to whichever registered bundle owns the scheme.
   With the probes registered, that turned out to be a probe -- and eleven UI tests of another scope
   that used an unaimed `NSWorkspace.open` were answered by a probe, which then took the frontmost
-  menu bar (Mac/docs/api/resetcmd.md section 5, Mac/docs/reports/fastui.md section 6.7). A copy that
+  menu bar (ai/api/resetcmd.md section 5, ai/reports/fastui.md section 6.7). A copy that
   claims nothing cannot be chosen, whether it is registered or not.
 
   The tests drive these copies through the state-directory channel

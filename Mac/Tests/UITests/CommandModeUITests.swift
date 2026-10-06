@@ -13,7 +13,7 @@
 //     fails the same way after ~69 s.
 //
 // Exit codes are therefore verified by running the built binary from a shell and reading `$?` --
-// 25 cases, listed in `Mac/docs/reports/cmdmode.md` section 4.2 -- and the two dialogs command mode
+// 25 cases, listed in `ai/reports/cmdmode.md` section 4.2 -- and the two dialogs command mode
 // is allowed to show are screenshotted here through the **file manager**, where they are the same
 // dialogs built by the same code:
 //
@@ -25,7 +25,7 @@
 //     (03 section 2.6, ExtractGUI.cpp:129-152).
 //
 // The Dock **gesture** is not reachable either: Automation permission is not granted on this machine
-// and XCUITest cannot drag onto the Dock. `Mac/docs/parity.md` F.4 records the one manual check a
+// and XCUITest cannot drag onto the Dock. `ai/parity.md` F.4 records the one manual check a
 // human still owes; the routing, the argv, the Apple-event sender detection and the `Info.plist`
 // claim are unit-tested in `CommandModeTests`.
 
