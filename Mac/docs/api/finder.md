@@ -516,3 +516,32 @@ than doing nothing.
 Dock highlights the icon only for types the app claims and the compress gesture has to accept
 anything. Rank `None` keeps it out of "Open With" and out of every default-handler race; it grants
 the drop and nothing else.
+
+---
+
+## 13. The extension hand-off, 2026-10-06 (`mac/finderfix`)
+
+What changed between a click in Finder and `URLCommands.handle` (report: `Mac/docs/reports/finderfix.md`).
+
+- **Menu items are numbered.** `FinderMenuBuilder.menu(for:action:image:)` builds the Finder Sync
+  `NSMenu`; every command item's `tag` is `FinderMenuModel.menuTag(forIndex:)` in
+  `FinderMenuModel.flattenCommands(_:)` order. Finder copies the menu and keeps only title, image,
+  tag, action and submenu, so `representedObject`/`target` must never carry anything. On the click,
+  `FinderMenuModel.resolveInvocation(tag:title:nodes:)` rebuilds the tree for the current selection
+  and returns the command (tag first, the title must agree; a stale tag falls back to a unique
+  title; nil otherwise).
+- **`ExtensionHandoff.send(_:to:log:completion:)`** (AppKit, compiled into the three appexes) opens
+  the URL with `NSWorkspace.open(_:withApplicationAt:)` aimed at `SevenZipBundle.containingAppURL`
+  and falls back to `NSWorkspace.open(URL)` only when that fails. Outcome `.aimed` / `.scheme` /
+  `.failed`. `aimedOpener` and `schemeOpener` are replaceable for tests.
+- **`sevenzip:///error?code=<noitems|command|unavailable>`** (`CommandURL.errorURL(_:)`,
+  `CommandURL.Action.extensionFailure`, `CommandURL.ExtensionFailure`): an extension that cannot
+  build a command asks the app to show the fixed message for that code in an error box. Unknown codes
+  are rejected like any unsupported URL, so a URL cannot make the app show text of its choosing.
+- **`QuickActionInput.fileURLs(from:completion:)`** resolves Quick Action attachments: `public.file-url`
+  when offered, else `loadInPlaceFileRepresentation` of the content type (in place only, never a
+  temporary copy), else `loadItem` of the content type when it returns a file URL.
+- **Logging.** Subsystem `com.yrambler2001.7zip`, categories `FinderSync` and `QuickAction` (the hand-off logs under its caller's category)
+  and `URL` (the app): `log stream --predicate 'subsystem == "com.yrambler2001.7zip"'`
+  shows the menu, the click, the hand-off outcome and the URL the app received. Paths are private.
+- **Compress Quick Action** activates on `UTI-CONFORMS-TO "public.item"` (any file or folder).
