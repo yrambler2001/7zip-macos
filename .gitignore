@@ -1,3 +1,4 @@
 CPP/7zip/**/b/
 *.o
 .DS_Store
+Mac/docs/reports/screenshots/*-failure-*.png
