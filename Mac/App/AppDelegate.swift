@@ -52,8 +52,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // window is added (Mac/docs/reports/newwindow.md).
         let args = Array(CommandLine.arguments.dropFirst())
         let startPath = args.first.flatMap { $0.hasPrefix("-") ? nil : $0 }
-        let controller: MainWindowController? = Self.needsLaunchWindow(
-            documentWindows: MainWindows.controllers.count, startPath: startPath) ? MainWindows.open() : nil
+        // A launch made for a 7zG command (a Finder menu item, a Quick Action, a `sevenzip://` URL,
+        // a Dock drop, a 7zG argv) has no file-manager window at all, as 7zG.exe has none
+        // (Mac/docs/reports/gmode.md; GMode.swift).
+        let forCommand = GMode.launchedForCommand || SevenZipCommandLineEntry.isCommandMode
+        var needsWindow = Self.needsLaunchWindow(documentWindows: MainWindows.controllers.count,
+                                                 startPath: startPath, forCommand: forCommand)
+        // Launch Services does not always hand the launch's `GURL` over before this point: when it
+        // comes after, the launch event is nil instead of `oapp` (measured, reports/gmode.md §2).
+        // The default window then waits briefly for that command instead of appearing under it.
+        if needsWindow, startPath == nil,
+           !GMode.isOpenApplicationEvent(NSAppleEventManager.shared().currentAppleEvent) {
+            needsWindow = false
+            GMode.deferLaunchWindow { [weak self] in self?.openNewWindow() }
+        }
+        let controller: MainWindowController? = needsWindow ? MainWindows.open() : nil
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try SZCodecs.loadCodecs()
@@ -83,9 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Whether `applicationDidFinishLaunching` creates the default window. Not when the launch
     /// was for documents -- Launch Services delivers a Finder double-click's open-documents event
     /// *before* `applicationDidFinishLaunching` (measured, Mac/docs/reports/newwindow.md), so their
-    /// windows exist by then -- unless a 7zFM argv path also asks for a window of its own.
-    static func needsLaunchWindow(documentWindows: Int, startPath: String?) -> Bool {
-        documentWindows == 0 || startPath != nil
+    /// windows exist by then -- unless a 7zFM argv path also asks for a window of its own. Never for
+    /// a launch made for a command (`forCommand`): that is 7zG.exe, which has no file-manager window.
+    static func needsLaunchWindow(documentWindows: Int, startPath: String?, forCommand: Bool = false) -> Bool {
+        guard !forCommand else { return false }
+        return documentWindows == 0 || startPath != nil
     }
 
     /// The reopen Apple event (`kAEReopenApplication`). Two gestures send it, and the user wants
@@ -102,9 +117,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// because both cases are handled here.
     ///
     /// Not in 7zG command mode: that process shows only its command's dialogs and exits when the
-    /// command ends (03 §6.4), which would take a window opened here with it.
+    /// command ends (03 §6.4), which would take a window opened here with it. Not while a shell
+    /// command runs either (`GMode`).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !SevenZipCommandLineEntry.isCommandMode else { return true }
+        // While a shell command runs (7zG mode), the Dock icon stands for 7zG's dialog: bring that
+        // forward, never a file-manager window (Mac/docs/reports/gmode.md).
+        if GMode.isActive {
+            (NSApp.modalWindow ?? NSApp.keyWindow)?.makeKeyAndOrderFront(nil)
+            return false
+        }
         return handleReopen(from: ReopenSender.classifyCurrent())
     }
 

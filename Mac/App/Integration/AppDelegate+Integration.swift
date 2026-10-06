@@ -73,24 +73,41 @@ enum DockDropDetector {
 @objc extension AppDelegate {
 
     /// URL opens (`sevenzip://`, `x-7zip://`) and file opens both arrive here on macOS 10.13+.
+    ///
+    /// A shell command (a command URL, a Dock drop) goes through `GMode.submit`: on a cold launch
+    /// this event arrives *before* `applicationDidFinishLaunching` (measured, reports/gmode.md), and
+    /// running the command's modal dialog from here used to hold the launch until OK / Cancel, after
+    /// which the default file-manager window appeared. Now the launch is marked as one for a command
+    /// (no file-manager window) and the command runs once the app is up.
     func application(_ application: NSApplication, open urls: [URL]) {
         var files: [URL] = []
         for url in urls {
             if url.isFileURL {
                 files.append(url)
+            } else if URLCommands.isShellCommand(url) {
+                GMode.submit { URLCommands.handle(url) }
             } else {
                 URLCommands.handle(url)
             }
         }
         if !files.isEmpty {
-            URLCommands.openDocuments(files, source: DockDropDetector.currentSource)
+            openDocuments(files, source: DockDropDetector.currentSource)
         }
     }
 
     /// The legacy `odoc` path, for callers that still send it (`open -a 7-Zip file`).
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        URLCommands.openDocuments(filenames.map { URL(fileURLWithPath: $0) },
-                                  source: DockDropDetector.currentSource)
+        openDocuments(filenames.map { URL(fileURLWithPath: $0) }, source: DockDropDetector.currentSource)
         sender.reply(toOpenOrPrint: .success)
+    }
+
+    /// A plain open runs now (its windows are the launch's windows, reports/newwindow.md); a Dock
+    /// drop is 7zG's drop handler, a shell command (`GMode`).
+    @nonobjc private func openDocuments(_ files: [URL], source: DocumentOpenSource) {
+        if source == .dockDrop {
+            GMode.submit { URLCommands.openDocuments(files, source: source) }
+        } else {
+            URLCommands.openDocuments(files, source: source)
+        }
     }
 }

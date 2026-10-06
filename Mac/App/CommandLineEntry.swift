@@ -3,7 +3,7 @@
 // `Main2` (CPP/7zip/UI/GUI/GUI.cpp:137-402) drops argv[0] and requires a command word; this is the
 // same contract, in the app, because the macOS port has one binary instead of `7zFM.exe` +
 // `7zG.exe` (03-shell-integration-inventory.md section 6.4). `argv[1] ∈ {a,u,d,rn,x,e,t,h,b,l,i}`
-// puts the process into command mode: the file-manager window is ordered out, only the command's
+// puts the process into command mode: no file-manager window is created (GMode.swift), only the command's
 // own dialogs and the progress window are shown, and the process exits with the 7zG exit code
 // (ExitCode.h). Anything else is left to the file-manager argv (`7zFM.exe [path] [-t<type>]`,
 // FM.cpp:639-702), which `AppDelegate` already handles.
@@ -34,12 +34,12 @@ enum SevenZipCommandLineEntry {
         guard !launchCommandDidRun, isCommandMode else { return }
         launchCommandDidRun = true
 
-        // "no document windows" (03 section 6.4): the file manager the app always creates is
-        // ordered out rather than closed, because closing the last window terminates the process
-        // before the command could run.
+        // "no document windows" (03 section 6.4): `AppDelegate` creates no file-manager window for
+        // a 7zG argv any more (GMode.swift); anything else on screen is ordered out, as before.
         for window in NSApp.windows { window.orderOut(nil) }
 
-        let code = CommandExecutor.run(argv: arguments, parentWindow: nil)
+        GMode.markLaunchForCommand()
+        let code = GMode.run { CommandExecutor.run(argv: arguments, parentWindow: nil) }
         // `exit` rather than `NSApp.terminate`: 7zG returns a real exit code, and the file
         // manager's `applicationWillTerminate` must not save the window/panel state of a window
         // the user never saw.

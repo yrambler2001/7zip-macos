@@ -70,9 +70,12 @@ final class ServicesProvider: NSObject {
             return
         }
         let built = command.argv(for: selection.paths)
-        NSApp.activate(ignoringOtherApps: true)
-        CommandExecutor.run(argv: built.argv, temporaryFiles: built.temporaryFiles,
-                            parentWindow: NSApp.mainWindow)
+        // 7zG mode (GMode.swift): its own windows, not a file-manager window's sheets.
+        GMode.submit {
+            _ = GMode.run {
+                CommandExecutor.run(argv: built.argv, temporaryFiles: built.temporaryFiles, parentWindow: nil)
+            }
+        }
     }
 
     /// `NSPasteboard` -> `FinderSelection`. The host app is not sandboxed, so `isDirectory` can be
