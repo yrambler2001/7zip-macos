@@ -1,5 +1,7 @@
 # `listfeel`: the main window's list, measured against a fresh-default 7zFM 26.03
 
+> **Publication note:** the raw capture data under `docs/reports/*-data/` and all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication (raw capture data removed before publication). Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/listfeel`, off `macos` at `8d3064d`, 2026-10-04. Scope: the panel's list, header,
 address bar, toolbar button, Properties (`panel`'s files), plus the few lines in other scopes
 listed in §12.

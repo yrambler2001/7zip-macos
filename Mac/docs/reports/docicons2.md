@@ -1,5 +1,7 @@
 # `docicons2`: small icons are the 16 × 16 frame at every scale
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/docicons2`, a follow-up to `docicons` (`Mac/docs/reports/docicons.md`).
 
 ## User decision

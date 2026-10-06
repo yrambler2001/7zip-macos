@@ -1,5 +1,7 @@
 # `datecols`: whole dates, sizes and headers in SF Pro 12.2; the status bar's time as 7zFM
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/datecols`. The orchestrator found three defects in sffont's `sffont-main.png`: dates cut
 ("2024-11-28 21:5…") in Modified and Created at the default width, a status bar time ending in "Z",
 and asked for anything else clipped under SF Pro 12.2.

@@ -1,5 +1,7 @@
 # Verification run — 2026-10-03 17:51:35 +0200
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 * scope / branch: `newwindow`  (commit `78a2558`)
 * configuration: Debug (clean)
 * command: `Mac/scripts/verify.sh`  → exit 0

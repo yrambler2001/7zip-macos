@@ -1,5 +1,7 @@
 # `cmdmode` — command mode, archive creation switches, and the Dock drop
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Scope report per `Mac/docs/00-orchestration.md` "Agent deliverables". Branch `mac/cmdmode`, worktree
 `.worktrees/cmdmode`, created from `macos` at `c6f1a8b`. Date 2026-09-20.
 

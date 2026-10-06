@@ -1,5 +1,7 @@
 # `modalfix` — the window-less app-modal alert, and a reset that never acknowledged
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/modalfix`, worktree `.worktrees/modalfix`. Scope: the two app-side halves left open by
 `Mac/docs/reports/fastui.md` §6.10. The test half of that defect was fixed on `mac/fastui`; this is
 the app.

@@ -1,5 +1,7 @@
 # Harness report — branch `mac/harness`
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Scope: the verification infrastructure every later wave uses — the `7-ZipUITests` XCUITest target,
 a reusable Swift helper library in `Mac/Tests/UITests/`, and the scripts in `Mac/scripts/`
 (`build.sh`, `test.sh`, `verify.sh`, `parity-check.sh`). Owned paths: `Mac/scripts/*`,

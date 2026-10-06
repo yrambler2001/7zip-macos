@@ -1,5 +1,7 @@
 # `selcolors`: selected rows unreadable in Light, and selection drawn as 7zFM draws it
 
+> **Publication note:** the raw capture data under `docs/reports/*-data/` and all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication (raw capture data removed before publication). Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/selcolors`, off `macos` at `47d023c`, 2026-10-03. Scope: `panel` (the list's drawing),
 plus tests. The user's report, for the Release build in the Light appearance: "When I select items
 in the list, the column details become transparent (white)." The user also asked for the

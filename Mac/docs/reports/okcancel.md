@@ -1,5 +1,7 @@
 # `okcancel`: "SOMETIMES the OK and Cancel buttons don't work, while Help and the close button work"
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/okcancel`, off `macos` at `396900f`, 2026-10-06.
 
 ## 1. Root cause in one paragraph

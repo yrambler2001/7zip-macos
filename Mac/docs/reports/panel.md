@@ -1,5 +1,7 @@
 # `panel` scope report (branch `mac/panel`)
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Everything the two file panels do: the four view modes and the columns, sorting, flat view,
 navigation and the address bar, the selection commands and the key map, the status bar, the file
 operations, the context menus, drag & drop and the clipboard, and the generic dialogs this scope

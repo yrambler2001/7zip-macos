@@ -1,5 +1,7 @@
 # `vmcheck` — fresh-VM environment verification
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 **The build and test environment is healthy: the clean build, all 209 unit tests and the whole
 XCUITest suite run on this VM with exactly the five failures already recorded in `requests.md`.**
 **Two things still need the user in System Settings** — Terminal has no Automation and no Screen

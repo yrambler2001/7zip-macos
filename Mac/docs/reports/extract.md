@@ -1,5 +1,7 @@
 # `extract` scope — progress notes
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/extract`, worktree `.worktrees/extract`. Deliverables per
 `Mac/docs/00-orchestration.md`; checklist is `Mac/docs/PROGRESS.md` section 4.
 

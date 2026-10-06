@@ -1,5 +1,7 @@
 # `finder` — shell integration: what was built, how it maps to Windows, what was verified
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/finder`, worktree `.worktrees/finder`, off `macos` at `d06136d`.
 Scope: `03-shell-integration-inventory.md` in full — the Explorer context menu, the `7zG.exe`
 command contract, the file associations, the drag-and-drop mapping — reproduced with the macOS

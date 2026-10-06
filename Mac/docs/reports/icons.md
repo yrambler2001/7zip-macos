@@ -1,5 +1,7 @@
 # icons scope — report
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/icons`. Worktree `.worktrees/icons`. Owned: `Mac/Resources/Assets.xcassets/*`,
 `Mac/Resources/Icons/*` (new), `Mac/scripts/make-icons.{sh,py,swift}`, `Mac/docs/api/icons.md`.
 Additive edits: `Mac/project.yml` (one source entry on the `7-Zip` target),

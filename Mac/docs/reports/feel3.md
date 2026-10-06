@@ -1,5 +1,7 @@
 # `feel3`: Get Info, combo boxes, scroll bars, the list font, Open archive, the address drop-down, archive icons
 
+> **Publication note:** the raw capture data under `docs/reports/*-data/` and all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication (raw capture data removed before publication). Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/feel3`, off `macos` at `5086123`, 2026-10-05. Scope: the user's eight findings on the
 Release build at `5086123`, the two `recheck2` leftovers (hover and slow-click rename in the icon
 views, CEditDialog for the hash item info), and two decisions the user sent during the run

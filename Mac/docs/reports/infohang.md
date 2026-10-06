@@ -1,5 +1,7 @@
 # `infohang`: "I clicked Info, closed it and the app became unresponsive"
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/infohang`, off `macos` at `2c403fe`, 2026-10-03.
 
 ## 1. Root cause in one paragraph

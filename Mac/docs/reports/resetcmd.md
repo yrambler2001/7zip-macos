@@ -1,5 +1,7 @@
 # `resetcmd` — report
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/resetcmd`. Implements `Mac/docs/test-support-contract.md` in the app so the UI suite can
 stop relaunching the app for every test. The public surface is `Mac/docs/api/resetcmd.md`; this file
 is what was done, what was measured, and what is still wrong.

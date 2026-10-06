@@ -1,5 +1,7 @@
 # `harness2` — the UI suite green, and honest checklist numbers
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 **19 of 19 UI tests and 209 of 209 unit tests pass, and `Mac/scripts/verify.sh` is green end to
 end for the first time.** None of the five failures was a product bug, as the triage said. But
 **two of the five diagnoses were wrong and a third only half right**: one of them named product

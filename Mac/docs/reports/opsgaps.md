@@ -1,5 +1,7 @@
 # `opsgaps` — operation-level gaps from `parity.md`
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/opsgaps`, off `macos` at `69f2a88`, 2026-10-03. Closes `parity.md` D items 2, 3, 4 (panel
 half) and 8, and the cheap `requests.md` rows addressed to `opsinfra` / `extract` / `tools`.
 Summary for users: `parity.md` section H. Specification: `01 §2.6, §8.7, §9 #17, §9 #23`,

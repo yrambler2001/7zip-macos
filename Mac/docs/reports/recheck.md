@@ -1,5 +1,7 @@
 # `recheck`: a systematic pixel-and-behaviour recheck against fresh-default 7zFM 26.03
 
+> **Publication note:** the raw capture data under `docs/reports/*-data/` and all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication (raw capture data removed before publication). Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/recheck`, off `macos` at `fe6ee5f`, 2026-10-04. Scope: everything a user sees or does in
 the main window, the dialogs and the operations, measured on the reference PC and on the Mac and
 fixed where they differ (files of several scopes, listed in §9).

@@ -1,5 +1,7 @@
 # `recheck2`: Windows message boxes, the Up button, the Edit menu, hover and slow-click rename
 
+> **Publication note:** the raw capture data under `docs/reports/*-data/` and all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication (raw capture data removed before publication). Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/recheck2`, off `macos` at `ec7d4dc`, 2026-10-04. Scope: the items 1, 2, 4, 5 and 6 of
 `recheck.md` §8 (item 3, Ctrl+Space, waits for the user's choice and is not touched). Files of several
 scopes, listed in §8.

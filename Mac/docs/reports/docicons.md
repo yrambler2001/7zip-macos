@@ -1,5 +1,7 @@
 # `docicons`: Finder document icons are the original Windows 7-Zip icons
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/docicons`. Owned: `Mac/scripts/make-icons.{sh,py,swift}`, `Mac/Resources/Icons/doc-*.icns`,
 `Mac/Resources/Assets.xcassets/doc-*.imageset`, `Mac/docs/api/icons.md`. One value changed in
 `Mac/App/Info.plist` (owned by `finder`, assigned to this scope by the request): the catch-all

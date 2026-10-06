@@ -1,5 +1,7 @@
 # opsinfra — operation infrastructure (branch `mac/opsinfra`)
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 The shared machinery every long-running operation in the app uses: the COM callback adapters,
 the `SZFolderOperations` bridge API, the Swift `OperationRunner`, and the Progress / Overwrite
 / Password / Messages / Memory dialogs. **Public API: `Mac/docs/api/opsinfra.md`** — wave-3

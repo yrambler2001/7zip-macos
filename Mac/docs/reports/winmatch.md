@@ -1,5 +1,7 @@
 # `winmatch`: the five `wincompare` differences, the original icon, a Windows toolbar
 
+> **Publication note:** the raw capture data under `docs/reports/*-data/` and all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication (raw capture data removed before publication). Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/winmatch`, off `macos` at `006d42d`, 2026-10-03. The user's three decisions:
 
 1. fix the five differences `wincompare` filed (`requests.md`) so the Mac matches 7zFM;

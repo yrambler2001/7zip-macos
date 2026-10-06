@@ -1,5 +1,7 @@
 # `syslayout` — the Options ▸ System layout exception
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/syslayout`, off `macos` at `739abc9`, 2026-10-03. Scope: `options`
 (`Mac/App/Dialogs/Options*.swift`) plus its tests in `Mac/Tests/AppTests/OptGapsTests.swift`.
 Follow-up of `Mac/docs/reports/release.md` §5 ("Options ▸ System screenshot case removed").

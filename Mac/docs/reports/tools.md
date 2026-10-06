@@ -1,5 +1,7 @@
 # `tools` scope report — hashes, Benchmark, Split/Combine, Link, About, Help, temp files
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 ## State notes (appended per phase)
 
 ### Phase 1 — hashing bridge (done)

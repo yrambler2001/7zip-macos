@@ -1,5 +1,7 @@
 # options scope — progress log
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/options`. Worktree `.worktrees/options`. Files owned: `Mac/App/Dialogs/Options*.swift`,
 `Mac/App/Support/Settings.swift`, `Mac/App/Support/FileTypes.swift`,
 `Mac/App/Commands/OptionsCommands.swift`, plus new tests under `Mac/Tests/SevenZipKitTests/`.

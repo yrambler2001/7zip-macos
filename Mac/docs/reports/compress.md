@@ -1,5 +1,7 @@
 # `compress` scope — progress log and report
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/compress`. Checklist: `Mac/docs/PROGRESS.md` section 5. Spec:
 `Mac/docs/01b-fm-dialogs-settings.md` sections 4.23, 4.24; `01-fm-feature-inventory.md`
 section 8.5; `02-engine-api.md` section 2.3.

@@ -1,5 +1,7 @@
 # `packaging` — build configuration, the disk image, localization QA, the final parity audit
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/packaging`, off `macos` at `dea739c`. Five pieces of work: cleaning up the build
 configuration, making Release real, producing a distributable disk image, running the localization
 QA across all 93 bundled languages (which nobody had done), and auditing the parity checklist

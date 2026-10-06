@@ -1,5 +1,7 @@
 # `cleanup` — closing the seams the parallel scopes left
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/cleanup` (worktree `.worktrees/cleanup`), cut from `macos` at `d06136d`.
 
 Five tasks, all from `Mac/docs/requests.md`: each one was a place where a scope had to work around

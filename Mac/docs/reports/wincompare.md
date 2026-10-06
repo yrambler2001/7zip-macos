@@ -1,5 +1,7 @@
 # `wincompare`: the macOS port against the real 7-Zip File Manager, side by side
 
+> **Publication note:** the raw capture data under `docs/reports/*-data/` and all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication (raw capture data removed before publication). Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/wincompare`, off `macos` at `73afb22`, 2026-10-03. Scope: comparison plus fixes in
 whatever scope owned the defect (listed in §9).
 

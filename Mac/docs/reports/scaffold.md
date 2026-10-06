@@ -1,5 +1,7 @@
 # Scaffold report (Wave 1) — branch `mac/scaffold`
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 ## What was implemented
 
 - **SevenZipCore** static library: exact 7zz source set minus Console (312 TUs) + patched `UI/Agent`, `WorkDir`, `ArchiveName`, `StringUtils`, `TextPairs`, `SplitUtils`, `PropertyName`, `FormatUtils`, `Common/Lang.cpp`, arm64 `LzmaDecOpt.S` with `Z7_LZMA_DEC_OPT`. Upstream patches: `Mac/docs/upstream-patches.md` (+ `.diff`). Platform layer `Mac/Core/Platform/` (MyInitGuid TU with every interface header, `CompareFileNames_ForFolderList`, `SetExtractErrorMessage`, `MyLoadString` hook, all `ZipRegistry.h` accessors over CFPreferences).

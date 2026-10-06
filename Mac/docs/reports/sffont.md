@@ -1,5 +1,7 @@
 # `sffont`: SF Pro 12.2 for the whole UI, and pixel-sharp archive icons
 
+> **Publication note:** all but a few showcase images under `docs/reports/screenshots/` were removed from the repository before publication. Paths below that point into them are kept as a record of what was measured.
+
 Branch `mac/sffont`. The user's two decisions after `feel3` §4 and §8 (requests row `feel3` → user):
 
 1. **Font:** SF Pro, the system font, at 12.2 pt ("sf-pro-byheight") as the default for the whole
