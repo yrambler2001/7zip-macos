@@ -261,6 +261,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate, NSTab
             OptionsEditorPage(),      // IDD_EDIT 2103
             OptionsSettingsPage(),    // IDD_SETTINGS 2500
             OptionsLanguagePage(),    // IDD_LANG 2101
+            OptionsMacPage(),         // macOS addition (theme): Theme, Show grid lines
         ]
         tabView.tabViewType = .noTabsNoBorder
         tabView.drawsBackground = false

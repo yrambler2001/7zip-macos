@@ -395,7 +395,14 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
         guard isViewLoaded, !isApplyingSettings else { return }
         isApplyingSettings = true
         defer { isApplyingSettings = false }
-        tableView.gridStyleMask = Settings.showGrid ? [.solidHorizontalGridLineMask, .solidVerticalGridLineMask] : []
+        let grid: NSTableView.GridLineStyle = Settings.showGrid ? [.solidHorizontalGridLineMask, .solidVerticalGridLineMask] : []
+        if tableView.gridStyleMask != grid {
+            tableView.gridStyleMask = grid
+            // theme: each NSTableRowView keeps the grid style it was handed when the table added
+            // it, and draws its lines from that copy; the rows on screen kept their old lines (or
+            // none) until they were scrolled away. Re-creating them hands every row the new style.
+            tableView.reloadData()
+        }
         let alternative = Settings.alternativeSelection
         if alternative != alternativeSelection {
             alternativeSelection = alternative

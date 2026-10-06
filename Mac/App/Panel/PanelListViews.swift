@@ -14,7 +14,9 @@ extension PanelViewController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-        let identifier = NSUserInterfaceItemIdentifier("panelRow")
+        // theme: a row view keeps the grid style it was first handed (NSTableRowView's own copy),
+        // so rows with and without grid lines are never reused for each other.
+        let identifier = NSUserInterfaceItemIdentifier(tableView.gridStyleMask.isEmpty ? "panelRow" : "panelRow.grid")
         let view = (tableView.makeView(withIdentifier: identifier, owner: self) as? PanelRowView) ?? PanelRowView()
         view.identifier = identifier
         view.panel = self
