@@ -19,10 +19,10 @@ final class GModeUITests: SevenZipUITestCase {
     override class var reusesTheApp: Bool { false }
 
     /// The app as Launch Services started it. By bundle URL, not by bundle identifier: another copy
-    /// with the same identifier (the installed /Applications/7-Zip.app) may be running too.
+    /// with the same identifier (the installed /Applications/7-Zip.app) may be running too. Without
+    /// a bundle URL, the target application Xcode built (never a lookup by identifier, testreg).
     private var target: XCUIApplication {
-        TestShard.appURL.map { XCUIApplication(url: $0) }
-            ?? XCUIApplication(bundleIdentifier: TestShard.appBundleIdentifier)
+        TestShard.appURL.map { XCUIApplication(url: $0) } ?? XCUIApplication()
     }
     private var scratch = ""
 

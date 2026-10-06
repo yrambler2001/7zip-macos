@@ -109,6 +109,7 @@ public final class SevenZipApp {
             _ = window.waitForExistence(timeout: timeout)
         }
         _ = panel(0).table.waitForExistence(timeout: timeout)
+        TestShard.assertOnlyTestBuildRuns("after launching \(TestShard.appName)")
         return window
     }
 

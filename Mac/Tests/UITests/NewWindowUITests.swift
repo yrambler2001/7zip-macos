@@ -106,20 +106,32 @@ final class NewWindowUITests: SevenZipUITestCase {
     // MARK: - a Dock click (appfeel, user request 7)
 
     /// This app's tile in the Dock, found through the Dock's own accessibility tree (no Automation
-    /// consent: XCUITest reads and clicks other apps' elements as the test runner). The running
-    /// app's tile comes before the "recent applications" section, so the first tile with the app's
-    /// name is the running one.
+    /// consent: XCUITest reads and clicks other apps' elements as the test runner).
+    ///
+    /// testreg: a Dock can show **two** "7-Zip" tiles -- the user's installed copy in the
+    /// persistent or recent-applications section, and this build's running one -- and the installed
+    /// copy's came first: clicking it launched /Applications/7-Zip.app (measured; that was the
+    /// `testDockClickRestoresTheMinimizedWindow` failure). XCUITest exposes neither a tile's AXURL
+    /// nor its running indicator, the sandboxed runner may not read the accessibility API itself
+    /// (measured: it may not), and a tile's Dock menu was no reliable tell either (opening the
+    /// installed copy's and pressing Escape still launched it). So with more than one tile of that
+    /// name the test is skipped rather than click a tile that may start another 7-Zip.
     private func dockTile() throws -> XCUIElement {
         let dock = XCUIApplication(bundleIdentifier: "com.apple.dock")
         let name = (try appURL()).deletingPathExtension().lastPathComponent
         // A Dock tile is an AXDockItem, which XCUITest reports as `.dockItem`.
-        let tile = dock.descendants(matching: .dockItem).matching(NSPredicate(format: "title == %@", name)).firstMatch
-        guard tile.waitForExistence(timeout: 10) else {
+        let query = dock.descendants(matching: .dockItem).matching(NSPredicate(format: "title == %@", name))
+        guard query.firstMatch.waitForExistence(timeout: 10) else {
             let all = dock.descendants(matching: .any).allElementsBoundByIndex.prefix(40)
                 .map { "\($0.elementType.rawValue):\($0.title)" }
             throw XCTSkip("no Dock tile titled \(name) (Dock elements: \(all))")
         }
-        return tile
+        let count = query.count
+        guard count == 1 else {
+            throw XCTSkip("the Dock shows \(count) tiles titled \(name) (an installed 7-Zip is kept or "
+                          + "recent in the Dock); not clicking one that may launch it")
+        }
+        return query.firstMatch
     }
 
     /// A click on the Dock tile sends the reopen event from the Dock: the open window is shown,

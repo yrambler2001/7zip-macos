@@ -15,11 +15,15 @@
 // do not open Finder's submenus). The file is revealed with
 // `NSWorkspace.activateFileViewerSelecting`, which is a Launch Services call, not an Apple event.
 //
-// Which 7-Zip answers is whichever copy's extension Finder runs (normally the installed
-// /Applications/7-Zip.app; `pluginkit -m -v -i com.yrambler2001.7zip.FinderSync` shows it). The
-// extension now aims its URL at its own containing app, so the app that reacts is that copy. When
-// the Finder extension is switched off the menu has no "7-Zip" item and the tests are skipped, not
-// failed: that is a machine setting, not a regression.
+// Which 7-Zip answers is whichever copy's extension Finder runs (`pluginkit -m -v -i
+// com.yrambler2001.7zip.FinderSync` shows it), and the extension aims its URL at its own containing
+// app. On a machine with 7-Zip installed that is /Applications/7-Zip.app -- which a test must never
+// drive or quit (testreg). So a test runs only when Finder uses *this* build's copy of the extension
+// it needs, as `Mac/scripts/test.sh` recorded in `Mac/build/finderext-active` just before the input
+// shard (`finderext_mark`; the sandboxed runner cannot ask PlugInKit itself); otherwise it is
+// skipped. Only instances of this build are looked at or terminated, and a foreign 7-Zip that
+// appears fails the test by name. When the Finder extension is switched off the menu has no "7-Zip" item and the
+// tests are skipped too: that is a machine setting, not a regression.
 //
 // Parity references: 03-shell-integration-inventory.md sections 1.4 (the menu items), 6.1 (the
 // Quick Actions), 6.4 (the URL hand-off).
@@ -30,39 +34,71 @@ import XCTest
 final class FinderContextMenuTests: XCTestCase {
 
     private let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
-    /// The shipping identifier. Several copies may carry it (this target's Debug app, the
-    /// installed one), so a query goes to the copy that is actually running, by its URL.
-    private static let appID = "com.yrambler2001.7zip"
+    /// Whether this test opened Finder windows that tearDown must close.
+    private var droveFinder = false
+    /// The running instances of **this build** (several copies carry the shipping identifier: this
+    /// target's Debug app, the installed one).
+    private static func ownInstances() -> [NSRunningApplication] {
+        NSRunningApplication.runningApplications(withBundleIdentifier: TestShard.appBundleIdentifier)
+            .filter { TestShard.isTestBuild($0.bundleURL) }
+    }
 
-    /// The running 7-Zip the command reached; nil until one is running.
+    /// The running 7-Zip the command reached -- this build's; nil until one is running. A foreign
+    /// copy that answers instead fails the test loudly and is left alone.
     private func runningSevenZip(timeout: TimeInterval = 30) -> XCUIApplication? {
         var found: URL?
         waitFor(timeout) {
-            found = NSRunningApplication.runningApplications(withBundleIdentifier: Self.appID)
-                .first?.bundleURL
-            return found != nil
+            found = Self.ownInstances().first?.bundleURL
+            return found != nil || !TestShard.foreignInstances().isEmpty
         }
+        TestShard.assertOnlyTestBuildRuns("Finder's command")
         return found.map { XCUIApplication(url: $0) }
     }
 
+    /// Quits this build's instances only; never the user's 7-Zip.
     private func terminateSevenZip() {
-        for app in NSRunningApplication.runningApplications(withBundleIdentifier: Self.appID) {
-            app.forceTerminate()
+        for app in Self.ownInstances() { app.forceTerminate() }
+        waitFor(10) { Self.ownInstances().isEmpty }
+    }
+
+    /// Skips unless Finder runs this build's copy of extension `name` (`FinderSync`,
+    /// `QuickActionExtract`, `QuickActionCompress`), per `Mac/build/finderext-active`: written by
+    /// the test.sh that is running this test (its pid is line 1 and must still be alive), then
+    /// `<identifier>|<appex path>` per extension.
+    private func requireThisBuildsExtension(_ name: String) throws {
+        let id = "com.yrambler2001.7zip." + name
+        var active: String?
+        if let root = TestPaths.repoRoot,
+           let text = try? String(contentsOfFile: root + "/Mac/build/finderext-active", encoding: .utf8) {
+            let lines = text.split(separator: "\n").map(String.init)
+            // Signal 0 only checks that the writer exists; EPERM (the sandbox) still means it does.
+            if let pid = lines.first.flatMap({ Int32($0) }), kill(pid, 0) == 0 || errno == EPERM {
+                active = lines.dropFirst().first { $0.hasPrefix(id + "|") }.map { String($0.dropFirst(id.count + 1)) }
+            }
         }
-        waitFor(10) { NSRunningApplication.runningApplications(withBundleIdentifier: Self.appID).isEmpty }
+        guard let appex = active, !appex.isEmpty else {
+            throw XCTSkip("which copy of \(id) Finder runs is unknown (run through Mac/scripts/test.sh)")
+        }
+        let owner = URL(fileURLWithPath: appex).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        guard TestShard.isTestBuild(owner) else {
+            throw XCTSkip("Finder runs \(owner.path)'s \(name), not this build's; a test never drives another 7-Zip")
+        }
     }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         executionTimeAllowance = 300
+        TestShard.assertOnlyTestBuildRuns("before \(name)")
         // A clean slate: no 7-Zip left over with a modal dialog that would queue the next URL.
         terminateSevenZip()
     }
 
     override func tearDown() {
+        TestShard.assertOnlyTestBuildRuns("after \(name)")
         // Close what the commands opened (dialogs, archive windows) and the Finder windows.
         terminateSevenZip()
-        finder.typeKey("w", modifierFlags: [.command, .option])
+        if droveFinder { finder.typeKey("w", modifierFlags: [.command, .option]) }   // not after a skip
         super.tearDown()
     }
 
@@ -92,6 +128,7 @@ final class FinderContextMenuTests: XCTestCase {
 
     /// Reveals `path` in a fresh Finder window and right-clicks it.
     private func openContextMenu(on path: String) throws {
+        droveFinder = true
         finder.activate()
         finder.typeKey("w", modifierFlags: [.command, .option])
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
@@ -200,6 +237,7 @@ final class FinderContextMenuTests: XCTestCase {
     /// A1 "Open archive" -> the file manager opens the archive (`7zFM.exe "<file>"`): a window whose
     /// title is the archive path with a trailing separator.
     func testOpenArchiveFromFinderMenuOpensTheArchive() throws {
+        try requireThisBuildsExtension("FinderSync")
         let zip = try makeZip()
         try openContextMenu(on: zip)
         try chooseSevenZip("Open archive")
@@ -211,6 +249,7 @@ final class FinderContextMenuTests: XCTestCase {
 
     /// B5 "Add to archive..." -> the Add to Archive dialog over the selection.
     func testAddToArchiveFromFinderMenuShowsTheCompressDialog() throws {
+        try requireThisBuildsExtension("FinderSync")
         let zip = try makeZip()
         try openContextMenu(on: zip)
         try chooseSevenZip("Add to archive...")
@@ -220,6 +259,7 @@ final class FinderContextMenuTests: XCTestCase {
 
     /// B3 `Extract to "probe/"` -> no dialog, the folder appears next to the archive.
     func testExtractToFromFinderMenuExtracts() throws {
+        try requireThisBuildsExtension("FinderSync")
         let zip = try makeZip()
         let out = ((zip as NSString).deletingLastPathComponent as NSString).appendingPathComponent("probe")
         try openContextMenu(on: zip)
@@ -232,6 +272,7 @@ final class FinderContextMenuTests: XCTestCase {
 
     /// "Extract with 7-Zip" -> `SevenZipExtractTo`: the folder appears next to the archive.
     func testQuickActionExtractExtracts() throws {
+        try requireThisBuildsExtension("QuickActionExtract")
         let zip = try makeZip()
         let out = ((zip as NSString).deletingLastPathComponent as NSString).appendingPathComponent("probe")
         try openContextMenu(on: zip)
@@ -244,6 +285,7 @@ final class FinderContextMenuTests: XCTestCase {
 
     /// "Compress with 7-Zip" -> `SevenZipCompress`: the Add to Archive dialog.
     func testQuickActionCompressShowsTheCompressDialog() throws {
+        try requireThisBuildsExtension("QuickActionCompress")
         let file = try makeTextFile()
         try openContextMenu(on: file)
         guard choose("Compress with 7-Zip", in: "Quick Actions") else {

@@ -19,6 +19,8 @@
 #
 #   finderext_snapshot   before xcodebuild
 #   finderext_restore    after it, and from an EXIT trap
+#   finderext_mark       (testreg) write which copy Finder runs to $MAC/build/finderext-active,
+#                        for the sandboxed UI tests, which cannot ask PlugInKit themselves
 
 FINDEREXT_IDS="com.yrambler2001.7zip.FinderSync com.yrambler2001.7zip.QuickActionExtract com.yrambler2001.7zip.QuickActionCompress"
 FINDEREXT_BEFORE=""
@@ -47,7 +49,21 @@ finderext_snapshot() {
   done
 }
 
+# testreg: `FinderContextMenuTests` right-click in Finder, and Finder runs whichever copy's extension
+# PlugInKit elected -- on a machine with 7-Zip installed, /Applications/7-Zip.app, which no test may
+# drive. The tests read this file (line 1: the pid of the test.sh that wrote it, then `id|appex path`
+# per identifier) and run only when the copy Finder uses is the build under test; otherwise they
+# skip. Making the build's copy the one Finder runs was tried and is not reliable (testreg report §3).
+finderext_mark() {
+  local file="${MAC:-/nonexistent}/build/finderext-active" id
+  [ -x /usr/bin/pluginkit ] && [ -d "${MAC:-/nonexistent}/build" ] || return 0
+  { echo "$$"
+    for id in $FINDEREXT_IDS; do echo "$id|$(finderext_active "$id" || true)"; done
+  } >"$file"
+}
+
 finderext_restore() {
+  rm -f "${MAC:-/nonexistent}/build/finderext-active"
   [ -x /usr/bin/pluginkit ] || return 0
   local id before path now handed=""
   for id in $FINDEREXT_IDS; do
