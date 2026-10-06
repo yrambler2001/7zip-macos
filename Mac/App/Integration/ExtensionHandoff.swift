@@ -29,7 +29,11 @@ enum ExtensionHandoff {
 
     static var aimedOpener: AimedOpener = { url, app, completion in
         let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
+        // gmode: a running app is not activated by the hand-off, because Launch Services would raise
+        // its main file-manager window with it (measured, reports/gmode.md §3). The app activates
+        // itself once the command's dialog is key (`GMode.prepareModal`), as 7zG's dialog is the
+        // only window that comes forward. A launch has no window to raise, so it activates as before.
+        configuration.activates = !isRunning(app)
         configuration.addsToRecentItems = false
         NSWorkspace.shared.open([url], withApplicationAt: app, configuration: configuration) { _, error in
             completion(error)
@@ -37,6 +41,15 @@ enum ExtensionHandoff {
     }
 
     static var schemeOpener: SchemeOpener = { NSWorkspace.shared.open($0) }
+
+    /// Whether the app at `appURL` is running already (`NSWorkspace.runningApplications` is
+    /// readable from the sandboxed extensions).
+    static func isRunning(_ appURL: URL) -> Bool {
+        let target = appURL.resolvingSymlinksInPath().standardizedFileURL
+        return NSWorkspace.shared.runningApplications.contains {
+            $0.bundleURL?.resolvingSymlinksInPath().standardizedFileURL == target
+        }
+    }
 
     /// How a hand-off went, for the log and the tests.
     enum Outcome: Equatable {

@@ -410,6 +410,8 @@ extension DialogKit {
     @discardableResult
     static func runModal(for window: NSWindow) -> NSApplication.ModalResponse {
         var response = NSApplication.ModalResponse.abort
+        // 7zG mode: the dialog of a shell command comes forward on its own (Integration/GMode.swift).
+        GMode.prepareModal(window)
         while true {
             let exception = SZCatchException { response = NSApp.runModal(for: window) }
             guard let exception else { return response }
@@ -528,9 +530,11 @@ enum DialogKit {
     /// centred on the **screen** while Copy / Move / Create Folder sat on the main window
     /// (requests.md, `polish` -> `opsinfra`). Resolving the owner here fixes all of them at once.
     static func owner(for window: NSWindow?, parent: NSWindow?) -> NSWindow? {
+        // 7zG mode (Integration/GMode.swift): a shell command's dialogs belong to no file-manager
+        // window -- 7zG.exe has none -- so they are centred on the screen and never raise one.
         func usable(_ candidate: NSWindow?) -> NSWindow? {
             guard let candidate, candidate !== window, candidate.isVisible || candidate.isMiniaturized,
-                  candidate.styleMask.contains(.titled) else { return nil }
+                  candidate.styleMask.contains(.titled), GMode.mayOwnDialogs(candidate) else { return nil }
             return candidate
         }
         if let parent = usable(parent) { return parent }
@@ -546,7 +550,13 @@ enum DialogKit {
         // Remembered for the `center()` that `runModal(for:)` sends when it orders the window in.
         if let parent, let dialog = window as? DialogWindow { dialog.owner = parent }
         guard let owner = owner(for: window, parent: parent) else {
-            if let dialog = window as? DialogWindow { dialog.centerOnScreen() } else { window.center() }
+            if GMode.isActive, let screen = NSScreen.main {
+                // An ownerless DS_CENTER dialog (7zG's Compress / Extract / progress) is centred on
+                // the work area, title bar included (wincompare-data/win/dlg-compress.txt: frame
+                // 645,228 630x575 on a 1920 x 1032 work area). AppKit's own `center()` puts it a
+                // third of the way down instead.
+                window.setFrameOrigin(centeredOrigin(of: window.frame.size, in: screen.visibleFrame))
+            } else if let dialog = window as? DialogWindow { dialog.centerOnScreen() } else { window.center() }
             return
         }
         let frame = owner.frame
@@ -558,5 +568,11 @@ enum DialogKit {
             origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
         }
         window.setFrameOrigin(origin)
+    }
+
+    /// The origin that centres a frame of `size` in `area`, kept inside it.
+    static func centeredOrigin(of size: NSSize, in area: NSRect) -> NSPoint {
+        NSPoint(x: max(area.minX, (area.midX - size.width / 2).rounded()),
+                y: min(max(area.minY, (area.midY - size.height / 2).rounded()), area.maxY - size.height))
     }
 }

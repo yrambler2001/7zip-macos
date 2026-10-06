@@ -37,18 +37,20 @@ enum URLCommands {
             return .userError
         } catch let error as SevenZipArgumentError {
             log.error("rejected URL: \(error.description, privacy: .public)")
-            CommandExecutor.showError(error.description, parent: parentWindow)
+            GMode.run { CommandExecutor.showError(error.description, parent: parentWindow) }
             return .userError
         } catch {
-            CommandExecutor.showError(error.localizedDescription, parent: parentWindow)
+            GMode.run { CommandExecutor.showError(error.localizedDescription, parent: parentWindow) }
             return .userError
         }
 
         switch action {
         case .run(let argv, let temporaryFiles):
-            NSApp.activate(ignoringOtherApps: true)
-            return CommandExecutor.run(argv: argv, temporaryFiles: temporaryFiles,
-                                       parentWindow: parentWindow ?? NSApp.mainWindow)
+            // 7zG mode (GMode.swift): the command's dialogs are windows of their own, never sheets or
+            // children of a file-manager window, and a launch made for it quits when it ends.
+            return GMode.run {
+                CommandExecutor.run(argv: argv, temporaryFiles: temporaryFiles, parentWindow: parentWindow)
+            }
         case .settings(let show):
             FinderSettingsBridge.push()
             if show {
@@ -58,14 +60,25 @@ enum URLCommands {
             return .success
         case .extensionFailure(let failure):
             log.error("extension reported \(failure.rawValue, privacy: .public)")
-            NSApp.activate(ignoringOtherApps: true)
-            CommandExecutor.showError(failure.message, parent: parentWindow)
+            GMode.run { CommandExecutor.showError(failure.message, parent: parentWindow) }
             return .userError
         case .testReset(let request):
             // `CommandURL.parse` has already refused the `test` host unless SZ_TEST_SUPPORT=1, so
             // reaching here means test support is on. No `NSApp.activate`: a reset must not steal
             // focus from the test runner, and the window is not being shown for the first time.
             return TestResetCoordinator.handle(request)
+        }
+    }
+
+    /// Whether `url` is a 7zG-style shell command -- a command line, an extension's failure report,
+    /// or a malformed command URL (its error box is that command's) -- as opposed to the settings
+    /// hand-off and the test host, which do not make the app a 7zG process (`GMode`).
+    static func isShellCommand(_ url: URL) -> Bool {
+        if url.host?.lowercased() == CommandURL.testHost { return false }
+        guard let action = try? CommandURL.parse(url) else { return true }
+        switch action {
+        case .run, .extensionFailure: return true
+        case .settings, .testReset: return false
         }
     }
 
@@ -117,10 +130,10 @@ enum URLCommands {
             CommandExecutor.openInFileManager(paths: paths, formatHint: nil)
             return .success
         }
-        NSApp.activate(ignoringOtherApps: true)
         let built = command.argv(for: selection.paths)
-        return CommandExecutor.run(argv: built.argv, temporaryFiles: built.temporaryFiles,
-                                   parentWindow: NSApp.mainWindow)
+        return GMode.run {
+            CommandExecutor.run(argv: built.argv, temporaryFiles: built.temporaryFiles, parentWindow: nil)
+        }
     }
 
     /// `URL.hasDirectoryPath` is only reliable for a URL Finder handed out with a trailing slash;
@@ -257,6 +270,8 @@ enum FinderIntegration {
             FinderExtensionControl.claimAtLaunchIfNeeded()
             FinderSettingsBridge.push()
             CompressCommands.purgeStaleEmailDirectories()
+            // Commands that arrived during the launch run now (GMode.swift).
+            GMode.launchDidFinish()
             SevenZipCommandLineEntry.runLaunchCommandIfNeeded()
         }
 
