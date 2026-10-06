@@ -14,7 +14,23 @@ final class OkCancelUITests: SevenZipUITestCase {
     override var screenshotPrefix: String { "okcancel" }
     override class var timeAllowance: TimeInterval { 900 }
 
+    /// A "7-Zip quit unexpectedly" box left over from an earlier crashed run sits over the main
+    /// window and takes clicks; answer it with Ignore.
+    private func dismissCrashReporter() {
+        for id in ["com.apple.UserNotificationCenter"] {
+            let other = XCUIApplication(bundleIdentifier: id)
+            guard other.state != .notRunning else { continue }
+            for _ in 0..<10 {
+                let ignore = other.buttons.matching(identifier: "Ignore").firstMatch
+                guard ignore.exists else { break }
+                print("OKCANCEL | dismissing a crash report box of \(id)")
+                ignore.click()
+            }
+        }
+    }
+
     private func makeScratch() throws -> String {
+        dismissCrashReporter()
         let fm = FileManager.default
         let base = (TestPaths.artifacts as NSString).appendingPathComponent("okcancel-\(UUID().uuidString.prefix(8))")
         try fm.createDirectory(atPath: base, withIntermediateDirectories: true)
@@ -35,7 +51,10 @@ final class OkCancelUITests: SevenZipUITestCase {
     /// Right-click `row`, 7-Zip > `verb`; the dialog titled `title`, or nil.
     private func openVerb(_ verb: String, on row: String, expecting title: String) -> XCUIElement? {
         let panel = sevenZip.panel(0)
-        guard let menu = panel.openContextMenu(onRow: row) else { XCTFail("no context menu on \(row)"); return nil }
+        guard let menu = panel.openContextMenu(onRow: row) else {
+            screenshot("no-context-menu")
+            XCTFail("no context menu on \(row)"); return nil
+        }
         let top = menu.menuItems["7-Zip"]
         guard top.waitForExistence(timeout: 5) else { XCTFail("no 7-Zip submenu"); return nil }
         top.hover()
@@ -98,24 +117,22 @@ final class OkCancelUITests: SevenZipUITestCase {
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
-    /// Add to archive... from the context menu, OK clicked: the archive is written and the dialog
-    /// goes, 10 times (each time a new name, so no Update-mode question is asked).
+    /// Add to archive... from the context menu, OK clicked with the default name: the dialog goes
+    /// and `alpha.7z` is written, 10 times (the archive is removed between rounds).
     func testContextMenuAddToArchiveOKWithTheMouse() throws {
         let scratch = try makeScratch()
         launch(seed: .values([SettingsDomain.Key.panelPath0: scratch]))
         let panel = sevenZip.panel(0)
         XCTAssertTrue(panel.waitForRow(named: "alpha.txt"))
+        let path = scratch + "/alpha.7z"
         var failures: [String] = []
         for round in 1...10 {
+            try? FileManager.default.removeItem(atPath: path)
+            // Let the listing settle first, or the right click lands on a row that is moving.
+            _ = waitFor("alpha.7z gone from the list", timeout: 10) { !panel.hasRow(named: "alpha.7z") }
             guard let dialog = openVerb("Add to archive...", on: "alpha.txt", expecting: "Add to Archive") else {
                 failures.append("round \(round): no dialog"); continue
             }
-            let name = "ok\(round)"
-            let combo = dialog.comboBoxes.firstMatch
-            XCTAssertTrue(combo.waitForExistence(timeout: 5))
-            combo.click()
-            combo.typeKey("a", modifierFlags: .command)
-            combo.typeText(name + ".7z")
             XCTAssertTrue(click("OK", in: dialog))
             if !isGone(dialog, timeout: 10) {
                 failures.append("round \(round): OK did not close the dialog")
@@ -124,10 +141,11 @@ final class OkCancelUITests: SevenZipUITestCase {
                 _ = isGone(dialog)
                 continue
             }
-            let path = scratch + "/" + name + ".7z"
             if !waitFor(path, timeout: 30, { FileManager.default.fileExists(atPath: path) }) {
-                failures.append("round \(round): \(name).7z was not written")
+                screenshot("not-written-\(round)")
+                failures.append("round \(round): alpha.7z was not written")
             }
+            _ = panel.waitForRow(named: "alpha.7z", timeout: 10)
         }
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
@@ -142,12 +160,12 @@ final class OkCancelUITests: SevenZipUITestCase {
         launch(seed: .values([SettingsDomain.Key.panelPath0: scratch]))
         let panel = sevenZip.panel(0)
         XCTAssertTrue(panel.waitForRow(named: "arc.zip"))
+        // Selected once: a second click on a selected name starts the slow-click rename (01 §3.9).
+        panel.select("arc.zip")
         var failures: [String] = []
         for round in 1...5 {
             for (way, title) in [("toolbar Add", "Add to Archive"), ("toolbar Extract", "Extract"),
                                  ("context Extract files...", "Extract")] {
-                panel.select(round % 2 == 0 ? "alpha.txt" : "arc.zip")
-                if way.hasPrefix("toolbar") { panel.select("arc.zip") }
                 let dialog: XCUIElement?
                 switch way {
                 case "toolbar Add":
