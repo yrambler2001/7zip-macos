@@ -8,8 +8,8 @@ All art derives from the upstream Windows icon resources, which are read-only in
 
 | Input | Used for |
 |---|---|
-| `CPP/7zip/Archive/Icons/*.ico` (27 files) | one document icon each: the exact badge colour and the label the badge spells |
-| `CPP/7zip/UI/FileManager/FM.ico` | the app icon itself, frame for frame (the File Manager's own Windows icon) |
+| `CPP/7zip/Archive/Icons/*.ico` (27 files) | one document icon each, the original frames enlarged nearest-neighbour (`docicons`) |
+| `CPP/7zip/UI/FileManager/FM.ico` | the app icon itself, frame for frame, and `doc-fm` (the catch-all document type) |
 | `CPP/7zip/UI/FileManager/7zipLogo.ico` | the About-box wordmark, shipped unscaled as `AboutLogo.imageset` (IDI_LOGO) |
 | `CPP/7zip/Bundles/SFXWin/7z.ico` | the SFX stub icon (decoded and archived) |
 | `CPP/7zip/Bundles/Format7zF/resource.rc` | `<index> ICON "<name>.ico"` (0–26) and STRINGTABLE 100, the `ext:index` string |
@@ -28,8 +28,9 @@ Mac/scripts/make-icons.sh --stage draw             # one stage: extract | draw |
 Mac/scripts/make-icons.sh --dump 7z                # ASCII-dump an upstream .ico (how the palette was read)
 ```
 
-No third-party tool is involved: `python3` decodes the `.ico` files and assembles the catalogue,
-`swift` (CoreGraphics + CoreText, from Xcode) draws, and `iconutil` packs the `.icns`. There is
+No third-party tool is involved: `python3` decodes the `.ico` files, enlarges their frames and
+assembles the catalogue, `iconutil` packs the `.icns`, and `swift` (from Xcode) only renders the
+contact sheet. Nothing is drawn. There is
 no ImageMagick, Pillow or `rsvg` dependency, and `sips` is not asked to read `.ico` — it cannot.
 
 Stages:
@@ -38,18 +39,23 @@ Stages:
    `Mac/build/icons/frames/<name>/<w>x<h>-<bpp>bpp.png` (PNG-compressed frames, 32/24-bit BMP
    frames with or without a real alpha channel, and 8/4/1-bit paletted BMP frames whose
    transparency is the trailing 1-bit AND mask — 7-Zip's are all 8bpp + AND mask). Writes
-   `Mac/build/icons/icons-manifest.json`: the shared body palette, each format's badge colour,
-   label and extensions.
-2. **draw** — `make-icons.swift` renders every document icon at every pixel size from the
-   manifest. The art is re-drawn per size (stroke widths, insets, corner radii, fold and type size
-   are all functions of the pixel size); nothing is downsampled from one big bitmap. Then
-   `stage_app_icon` (Python) writes the app icon's PNGs straight from `FM.ico` (see below).
-3. **assemble** — lays the PNGs out as `AppIcon.appiconset`, 27 `doc-<name>.imageset`s, and 27
-   `.icns` files via `iconutil`.
+   `Mac/build/icons/icons-manifest.json`: each format icon's index, name, frames, formats and
+   extensions.
+2. **draw** — draws nothing (the stage name is historical). `stage_doc_icons` writes every
+   document icon at every pixel size as an `.ico` frame enlarged by an integer factor,
+   nearest-neighbour (see "Document icons" below), and `stage_app_icon` writes the app icon's PNGs
+   straight from `FM.ico`.
+3. **assemble** — lays the PNGs out as `AppIcon.appiconset`, 27 `doc-<name>.imageset`s, and 28
+   `.icns` files (27 formats + `doc-fm`) via `iconutil`. Only `doc-*.icns` in `Mac/Resources/Icons`
+   are replaced; the `fm-<name>.ico` copies the file list uses (feel3) are left alone.
 4. **sheet** — writes `Mac/docs/reports/screenshots/icons-contact-sheet.png`: every icon at 128 pt
    on a checkerboard, with its name and the extensions it serves.
-5. **verify** — reads all 196 emitted PNGs back and fails on a wrong pixel size, a lost alpha
-   channel, a blank or single-colour image, or an opaque corner.
+5. **verify** — reads all 203 emitted PNGs back and fails on a wrong pixel size, a lost alpha
+   channel, a colour that is not in the source `.ico`, or (app icon) an opaque corner. Then it
+   unpacks every shipped `doc-*.icns` with `iconutil -c iconset` and fails unless each of its ten
+   slots equals some frame of the source `.ico` enlarged by an integer factor, nearest-neighbour
+   (same alpha everywhere, same RGB wherever visible), and unless that frame is the one Windows
+   draws at that size. An old page-style `.icns` fails all ten slots (checked).
 
 `Mac/build/icons/` is scratch (git-ignored). Nothing there is shipped.
 
@@ -81,48 +87,50 @@ pixel-identical to the icon Windows' shell extracts from 7zFM.exe 25.01
 `Info.plist` needs nothing: `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon` in `Mac/project.yml`
 makes `actool` write `CFBundleIconFile` / `CFBundleIconName` and emplace `AppIcon.icns`.
 
-### Document icons — `doc-<name>.imageset` and `Mac/Resources/Icons/doc-<name>.icns`
+### Document icons — `Mac/Resources/Icons/doc-<name>.icns` (and `doc-<name>.imageset`)
 
-One per upstream **format icon**, not per extension: extensions that share a Windows icon share
-one macOS icon, so there are 27 icons for 40 extensions and no duplicated assets. `<name>` is the
-upstream `.ico` file's stem, so `001` uses `doc-split` (from `split.ico`).
+**The original Windows format icons, pixel for pixel** (`docicons`, user decision; report
+`Mac/docs/reports/docicons.md`). One per upstream format icon, not per extension: 27 icons for 40
+extensions. `<name>` is the `.ico` stem, so `001` uses `doc-split`. Plus `doc-fm`, which is
+`FM.ico`: the icon of the catch-all "Archive (7-Zip)" document type, because Windows registers a
+DefaultIcon only for the 40 STRINGTABLE 100 extensions and Explorer draws any other file opened with
+7zFM with the program's own icon.
 
-* `Mac/Resources/Icons/doc-<name>.icns` — the full 16 … 1024 pyramid (all ten `iconutil` slots).
-  Copied flat into `Contents/Resources`, so `CFBundleTypeIconFile` and `NSImage(named:)` both
-  find it by bare name. This is the one to use for document types.
-* `Mac/Resources/Assets.xcassets/doc-<name>.imageset` — `mac` idiom, 1× = 256 px, 2× = 512 px, for
-  in-app use through `NSImage(named: "doc-7z")`: the Options ▸ System rows (`01b §4.21`, `03 §3.4`),
-  sheets, anything that wants the format icon inside the UI rather than from Launch Services.
-  This closes the `options` scope's note that the System page shows system icons because the real
-  format icons were never bundled.
+Every format `.ico` has a 16 px and a 32 px frame (8-bit paletted + AND mask; `7z.ico` also has
+4-bit copies, and the deepest is used, as on a true-colour display). Each size takes the frame
+Windows picks for that pixel size and enlarges it by an integer factor, nearest-neighbour. Nothing
+is added: no page, squircle, padding, shadow or label, and the AND-mask transparency is kept.
 
-Which one `NSImage` gives you, verified against the built bundle:
+| `.icns` slot | pixels | source |
+|---|---|---|
+| 16 pt @1x | 16 | 16 px frame ×1 |
+| 16 pt @2x, 32 pt @1x | 32 | 32 px frame ×1 (Windows uses the 32 px frame in a 32 px slot) |
+| 32 pt @2x | 64 | 32 px frame ×2 |
+| 128 pt @1x / @2x | 128 / 256 | 32 px frame ×4 / ×8 |
+| 256 pt @1x / @2x | 256 / 512 | 32 px frame ×8 / ×16 |
+| 512 pt @1x / @2x | 512 / 1024 | 32 px frame ×16 / ×32 |
 
-```swift
-NSImage(named: "doc-7z")                      // the image set: 256 px @1x, 512 px @2x
-Bundle.main.url(forResource: "doc-7z", withExtension: "icns")
-    .flatMap(NSImage.init(contentsOf:))       // the .icns: native 16/32/64/128/256/512/1024 reps
-```
+(`doc-fm` has a 48 px frame too, but 48 divides none of the macOS sizes above 32, so it also
+uses the 32 px frame from 64 px up.)
 
-`NSImage(named:)` resolves the asset catalogue first, so a 16 pt table row gets a downscale of the
-256 px rep. For crisp small sizes in the UI (Options ▸ System rows, panel list icons) load the
-`.icns`, which carries a real 16 px and 32 px representation.
+Delivery:
 
-Geometry: the macOS page, 704 × 900 in a 1024 canvas (0.6875 × 0.8789), centred horizontally, with
-the top-right corner folded by 190/1024. At the foot of the page sit the 7-Zip bands — manila
-(`#ffff99`) over the format's exact upstream badge colour — and the badge carries the format label
-in white. The label is dropped below 64 px, where no type size is legible, exactly as Apple's own
-document icons behave; the bands alone carry the identity there.
+* `doc-<name>.icns` — copied flat into `Contents/Resources`; `CFBundleTypeIconFile` names it
+  without the extension. This is what Finder uses. The Options ▸ System rows load it too
+  (`OptionsSystemPage.swift`), so a 16 pt row shows the original 16 px frame.
+* `doc-<name>.imageset` — 1× = 256 px, 2× = 512 px (the 32 px frame ×8 / ×16), for
+  `NSImage(named:)`.
 
-Labels are the full format name. Upstream draws the name in a 2 px-stroke pixel font inside a
-12 × 8 box, so it truncates to two glyphs (`AP` for apfs, `Sq` for squashfs, `01` for split);
-macOS has the room, so the whole name is set. `split.ico`'s label stays **`001`**, the extension it
-actually serves.
+`CFBundleTypeIconSystemGenerated` is not set: with an `.icns` named by `CFBundleTypeIconFile`,
+macOS 26 (25G83) draws the `.icns` as is, with no page or badge chrome (measured through
+`NSWorkspace.icon(forFile:)`; setting the key to 0 changes nothing).
 
 ## Extension → icon mapping
 
 Every one of the 40 extensions in `FileTypes.swift` has artwork; **no extension falls back**,
-because all 27 upstream icons exist and the association string only ever references 0–26.
+because all 27 upstream icons exist and the association string only ever references 0–26. The
+Badge and Label columns describe the upstream `.ico` art (they were inputs to the old drawn icons).
+Every other extension 7-Zip can open (the catch-all document type) uses `doc-fm`.
 
 | Ext | Icon index | Image set | `.icns` | Badge | Label |
 |---|---|---|---|---|---|
@@ -173,7 +181,8 @@ generate its plist entries than copy the table.
 
 ## What the `finder` scope must put in `Info.plist`
 
-`Mac/App/Info.plist` is owned by `finder`; this scope does not touch it. One
+`Mac/App/Info.plist` is owned by `finder` (`docicons` changed one value: the catch-all's icon is
+`doc-fm`). One
 `CFBundleDocumentTypes` entry per extension, with `CFBundleTypeIconFile` naming the `.icns`
 **without the extension**. Fields other than the icon (`LSItemContentTypes`, `LSHandlerRank`,
 `CFBundleTypeRole`) are the `finder` scope's call — the shape below only fixes the icon keys.

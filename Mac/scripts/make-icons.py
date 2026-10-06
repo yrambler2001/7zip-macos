@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Regenerate every 7-Zip.app icon asset from the upstream Windows icon resources.
 
-This is the *extraction and assembly* half of the icon pipeline; the *drawing* half is
-``Mac/scripts/make-icons.swift`` (CoreGraphics, so the art is a real vector render at every
-pixel size instead of one big bitmap scaled down).  ``Mac/scripts/make-icons.sh`` runs both.
+Nothing is drawn: every icon is an upstream ``.ico`` frame, enlarged nearest-neighbour.
+``Mac/scripts/make-icons.swift`` only renders the contact sheet.  ``Mac/scripts/make-icons.sh``
+runs both.
 
 What this script does, in order:
 
@@ -19,14 +19,12 @@ What this script does, in order:
    lives in the trailing 1-bit AND mask).  Frames are written out as RGBA PNGs by a small
    built-in PNG writer -- ``sips`` cannot read ``.ico`` at all, and nothing here may depend on a
    package that is not part of a stock macOS + Xcode install.
-3. Derives the palette that the macOS art is drawn with: the shared "archive body" colours and
-   each format's exact badge colour, read straight out of the decoded 32x32 frames.
-4. Writes ``icons-manifest.json`` for the Swift renderer, runs it (document icons), writes the
-   app icon straight from ``FM.ico``'s frames (:func:`stage_app_icon`: nearest frame per size,
-   nearest-neighbour, nothing redrawn), then assembles
-   ``AppIcon.appiconset``, the ``doc-<name>.imageset``s, and the ``doc-<name>.icns`` files
-   (via ``iconutil``), and finally verifies every emitted PNG really carries alpha and is not
-   blank or a solid rectangle.
+3. Writes the document icons (:func:`stage_doc_icons`, docicons: the frame Windows draws at each
+   size, enlarged by an integer factor) and the app icon (:func:`stage_app_icon`, winmatch:
+   FM.ico, nearest frame per size), then assembles ``AppIcon.appiconset``, the
+   ``doc-<name>.imageset``s and the ``doc-<name>.icns`` files (via ``iconutil``).
+4. Verifies every emitted PNG, and unpacks every shipped ``.icns`` to prove each of its sizes is
+   an integer nearest-neighbour enlargement of an ``.ico`` frame (:func:`verify_icns`).
 
 Usage::
 
@@ -78,32 +76,6 @@ ICONSET_ROWS = [
 # hold the full 16..1024 pyramid; the image sets exist for in-app use (Options > System rows,
 # sheets) where NSImage scales one representation.
 IMAGESET_ROWS = [(1, 256), (2, 512)]
-
-# The label each format badge carries.  Upstream draws the format name in a 2px-stroke pixel
-# font inside a 12x8 box, so it truncates to two glyphs ("AP" for apfs, "Sq" for squashfs,
-# "01" for split).  macOS has room, so the label is the full format name; index 9 keeps the
-# upstream "001" rather than the file name "split" because that is the extension it serves.
-BADGE_LABELS = {
-    0: "7Z", 1: "ZIP", 2: "BZ2", 3: "RAR", 4: "ARJ", 5: "Z", 6: "LZH", 7: "CAB", 8: "ISO",
-    9: "001", 10: "RPM", 11: "DEB", 12: "CPIO", 13: "TAR", 14: "GZ", 15: "WIM", 16: "LZMA",
-    17: "DMG", 18: "HFS", 19: "XAR", 20: "VHD", 21: "FAT", 22: "NTFS", 23: "XZ",
-    24: "SQUASHFS", 25: "APFS", 26: "ZST",
-}
-
-# The shared "archive body" colours every one of the 27 upstream format icons paints the yellow
-# sheet with (verified identical across all 27 by --dump).  Everything *else* in an icon is that
-# format's badge colour, which is how :func:`badge_colour` finds it.
-BODY_PALETTE = {
-    "fill":    (0xFF, 0xFF, 0x99),  # manila sheet
-    "speckle": (0xFF, 0xCC, 0x99),  # 1px dither speckles over the sheet
-    "edge":    (0xCC, 0xCC, 0x66),  # sheet highlight / lid edge
-    "border":  (0x99, 0x99, 0x00),  # sheet outline
-    "shadow":  (0x33, 0x33, 0x00),  # drop shadow
-    "white":   (0xFF, 0xFF, 0xFF),  # badge inner plate
-    "black":   (0x0C, 0x0C, 0x0C),  # 3px anti-alias crumb on the lid
-    "paper":   (0xFF, 0xFB, 0xF0),  # 1px anti-alias crumb on the lid
-}
-
 
 # --------------------------------------------------------------------------------------------
 # Minimal PNG writer (no Pillow on this machine, and none may be installed)
@@ -326,20 +298,6 @@ def best_frame(frames: list[Frame]) -> Frame:
     return max(frames, key=lambda f: (f.width * f.height, f.bpp))
 
 
-def badge_colour(frame: Frame) -> tuple[int, int, int]:
-    """The format's badge colour: the most common colour that is not part of the shared body."""
-    body = set(BODY_PALETTE.values())
-    counts: Counter = Counter()
-    for y in range(frame.height):
-        for x in range(frame.width):
-            r, g, b, a = frame.pixel(x, y)
-            if a and (r, g, b) not in body:
-                counts[(r, g, b)] += 1
-    if not counts:
-        raise ValueError("no badge colour found")
-    return counts.most_common(1)[0][0]
-
-
 # --------------------------------------------------------------------------------------------
 # Upstream tables
 # --------------------------------------------------------------------------------------------
@@ -393,22 +351,19 @@ def stage_extract(repo: str, work: str) -> dict:
             write_png(os.path.join(out, f"{f.width}x{f.height}-{f.bpp}bpp.png"),
                       f.width, f.height, f.rgba)
         big = best_frame(frames)
-        r, g, b = badge_colour(big)
         exts = [e for e, i, _ in sw_rows if i == index]
         entries.append({
             "index": index,
             "name": name,
-            "label": BADGE_LABELS[index],
-            "badge": "#%02x%02x%02x" % (r, g, b),
             "extensions": exts,
             "formats": sorted({f for e, i, f in sw_rows if i == index}),
             "source": os.path.relpath(ico, repo),
             "frames": [f"{f.width}x{f.height}/{f.encoding}{f.bpp}" for f in frames],
         })
         print(f"  [{index:2d}] {name:9s} {big.width}x{big.height} {big.encoding}{big.bpp} "
-              f"badge={entries[-1]['badge']} label={BADGE_LABELS[index]:8s} exts={','.join(exts)}")
+              f"exts={','.join(exts)}")
 
-    # The app icon takes its mark from the File Manager's own icon and its colours from 7z.ico.
+    # The File Manager's own icon (the app icon and doc-fm), the About wordmark and the SFX icon.
     fm = ico_frames(os.path.join(repo, "CPP/7zip/UI/FileManager/FM.ico"))
     logo = ico_frames(os.path.join(repo, "CPP/7zip/UI/FileManager/7zipLogo.ico"))
     sfx = ico_frames(os.path.join(repo, "CPP/7zip/Bundles/SFXWin/7z.ico"))
@@ -437,7 +392,6 @@ def stage_extract(repo: str, work: str) -> dict:
     manifest = {
         "note": "generated by Mac/scripts/make-icons.py -- do not edit",
         "pixelSizes": PIXEL_SIZES,
-        "body": {k: "#%02x%02x%02x" % v for k, v in BODY_PALETTE.items()},
         "app": {
             # The app icon is FM.ico itself (IDI_ICON in FM.rc), frame by frame: see
             # stage_app_icon.  Nothing about it is drawn.
@@ -453,16 +407,75 @@ def stage_extract(repo: str, work: str) -> dict:
     return manifest
 
 
-def stage_draw(repo: str, work: str) -> None:
-    """Run the CoreGraphics renderer to produce every PNG at every pixel size."""
-    swift = os.path.join(repo, "Mac/scripts/make-icons.swift")
+def stage_draw(repo: str, work: str, manifest: dict) -> None:
+    """Write every PNG at every pixel size straight from the upstream .ico frames (nothing drawn)."""
     png_dir = os.path.join(work, "png")
     shutil.rmtree(png_dir, ignore_errors=True)
     os.makedirs(png_dir, exist_ok=True)
-    cmd = ["swift", swift, os.path.join(work, "icons-manifest.json"), png_dir]
-    print("$ " + " ".join(cmd))
-    subprocess.run(cmd, check=True)
+    stage_doc_icons(repo, work, manifest)
     stage_app_icon(repo, work)
+
+
+def doc_icon_sources(repo: str, manifest: dict) -> list[tuple[str, str]]:
+    """(asset name, .ico path) of every document icon: the 27 format icons, then `fm`.
+
+    `doc-fm` is FM.ico (7zFM.exe's IDI_ICON) as a document icon.  It serves the catch-all
+    "Archive (7-Zip)" document type: Windows 7-Zip registers a DefaultIcon only for the 40
+    STRINGTABLE 100 extensions (SystemPage.cpp -> RegistryAssociations.cpp AddShellExtensionInfo),
+    so any other file a user opens with 7zFM through "Open with" is drawn by Explorer with the
+    program's own icon, which is FM.ico.
+    """
+    out = [(e["name"], os.path.join(repo, e["source"])) for e in manifest["icons"]]
+    out.append(("fm", os.path.join(repo, "CPP/7zip/UI/FileManager/FM.ico")))
+    return out
+
+
+def doc_icon_frame(frames: list[Frame], px: int) -> Frame:
+    """The .ico frame Windows would draw in a `px` pixel slot, before any enlargement.
+
+    Windows (LoadImage / the shell's icon cache) takes the frame whose size equals the slot and,
+    among same-size frames, the deepest colour depth a true-colour display can show.  When no
+    frame matches it scales the best one; here that is replaced by an exact integer
+    nearest-neighbour enlargement, so the source is the largest frame whose size divides `px`
+    (for the 7-Zip format icons: 16 -> 16 px frame, 32 -> 32 px frame, 64..1024 -> 32 px frame).
+    """
+    exact = [f for f in frames if f.width == px and f.height == px]
+    if exact:
+        return max(exact, key=lambda f: f.bpp)
+    fits = [f for f in frames if f.width == f.height and px % f.width == 0]
+    if not fits:
+        raise SystemExit(f"no .ico frame divides {px} px")
+    return max(fits, key=lambda f: (f.width, f.bpp))
+
+
+def enlarge(f: Frame, factor: int) -> bytes:
+    """Integer nearest-neighbour enlargement: each source pixel becomes a factor x factor block."""
+    if factor == 1:
+        return f.rgba
+    out = bytearray()
+    for y in range(f.height):
+        row = bytearray()
+        for x in range(f.width):
+            row += f.rgba[(y * f.width + x) * 4:(y * f.width + x) * 4 + 4] * factor
+        out += bytes(row) * factor
+    return bytes(out)
+
+
+def stage_doc_icons(repo: str, work: str, manifest: dict) -> None:
+    """The document icons are the original Windows format icons (docicons, user decision):
+    every macOS pixel size is the frame Windows would pick (:func:`doc_icon_frame`) enlarged by an
+    integer factor, nearest-neighbour.  No page, squircle, padding, shadow or label is added, and
+    the AND-mask transparency is carried over pixel for pixel."""
+    for name, ico in doc_icon_sources(repo, manifest):
+        frames = ico_frames(ico)
+        out_dir = os.path.join(work, "png", "doc", name)
+        os.makedirs(out_dir, exist_ok=True)
+        used = []
+        for px in PIXEL_SIZES:
+            f = doc_icon_frame(frames, px)
+            write_png(os.path.join(out_dir, f"{px}.png"), px, px, enlarge(f, px // f.width))
+            used.append(f"{px}<-{f.width}x{px // f.width}")
+        print(f"  doc-{name:9s} " + " ".join(used))
 
 
 def app_icon_frame(frames: list[Frame], px: int) -> Frame:
@@ -537,19 +550,24 @@ def stage_assemble(repo: str, work: str, manifest: dict) -> None:
     print(f"image sets: {len(manifest['icons'])} x doc-<name>.imageset")
 
     # ---- doc-<name>.icns ----------------------------------------------------------------
-    shutil.rmtree(icons_dir, ignore_errors=True)
-    os.makedirs(icons_dir)
-    for e in manifest["icons"]:
-        iconset = os.path.join(work, "iconset", f"doc-{e['name']}.iconset")
+    # Only this generator's doc-*.icns are replaced: the directory also holds the verbatim
+    # fm-<name>.ico copies the file list draws its rows with (PanelArchiveIcons.swift, feel3).
+    os.makedirs(icons_dir, exist_ok=True)
+    for old in os.listdir(icons_dir):
+        if old.startswith("doc-") and old.endswith(".icns"):
+            os.remove(os.path.join(icons_dir, old))
+    sources = doc_icon_sources(repo, manifest)
+    for name, _ico in sources:
+        iconset = os.path.join(work, "iconset", f"doc-{name}.iconset")
         shutil.rmtree(iconset, ignore_errors=True)
         os.makedirs(iconset)
         for fn, px in ICONSET_ROWS:
-            shutil.copyfile(os.path.join(png, "doc", e["name"], f"{px}.png"),
+            shutil.copyfile(os.path.join(png, "doc", name, f"{px}.png"),
                             os.path.join(iconset, fn))
-        out = os.path.join(icons_dir, f"doc-{e['name']}.icns")
+        out = os.path.join(icons_dir, f"doc-{name}.icns")
         subprocess.run(["iconutil", "-c", "icns", iconset, "-o", out], check=True)
-    sizes = sum(os.path.getsize(os.path.join(icons_dir, f)) for f in os.listdir(icons_dir))
-    print(f".icns: {len(manifest['icons'])} files in Mac/Resources/Icons ({sizes // 1024} kB)")
+    sizes = sum(os.path.getsize(os.path.join(icons_dir, f"doc-{n}.icns")) for n, _ in sources)
+    print(f".icns: {len(sources)} files in Mac/Resources/Icons ({sizes // 1024} kB)")
 
     # ---- the mapping table the finder scope needs ----------------------------------------
     rows = []
@@ -573,8 +591,10 @@ def stage_verify(repo: str, work: str, manifest: dict) -> int:
     problems = []
     checked = 0
     todo = [(os.path.join(work, "png", "app", f"{px}.png"), px, "app") for px in PIXEL_SIZES]
-    for e in manifest["icons"]:
-        todo += [(os.path.join(work, "png", "doc", e["name"], f"{px}.png"), px, e["name"])
+    ico_of = {"app": os.path.join(repo, "CPP/7zip/UI/FileManager/FM.ico")}
+    for name, ico in doc_icon_sources(repo, manifest):
+        ico_of[name] = ico
+        todo += [(os.path.join(work, "png", "doc", name, f"{px}.png"), px, name)
                  for px in PIXEL_SIZES]
     for path, px, who in todo:
         if not os.path.exists(path):
@@ -593,23 +613,82 @@ def stage_verify(repo: str, work: str, manifest: dict) -> int:
             problems.append(f"{who} {px}px: nothing opaque -- blank")
         # Distinct opaque colours: a stretched/blank icon collapses to one or two.
         colours = {rgba[i:i + 3] for i in range(0, len(rgba), 4) if rgba[i + 3] > 200}
-        if who == "app":
-            # The app icon is FM.ico resampled nearest-neighbour: only the .ico's own colours.
-            fm = ico_frames(os.path.join(repo, "CPP/7zip/UI/FileManager/FM.ico"))
-            src = {f.rgba[i:i + 3] for f in fm for i in range(0, len(f.rgba), 4) if f.rgba[i + 3] > 200}
-            if not colours <= src:
-                problems.append(f"app {px}px: colours not in FM.ico: {sorted(colours - src)[:4]}")
-        elif px >= 64 and len(colours) < 4:
+        # Every icon is an .ico resampled nearest-neighbour: only the .ico's own colours.
+        fs = ico_frames(ico_of[who])
+        src = {f.rgba[i:i + 3] for f in fs for i in range(0, len(f.rgba), 4) if f.rgba[i + 3] > 200}
+        if not colours <= src:
+            problems.append(f"{who} {px}px: colours not in its .ico: {sorted(colours - src)[:4]}")
+        if len(colours) < 2:
             problems.append(f"{who} {px}px: only {len(colours)} opaque colours")
-        # Corners must be clear: FM.ico's frames and the page both leave them empty.
-        for cx, cy in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
-            if rgba[(cy * w + cx) * 4 + 3] > 8:
-                problems.append(f"{who} {px}px: corner ({cx},{cy}) is opaque")
-                break
+        # The app icon's corners are clear in FM.ico.  The format icons are not checked: their
+        # lid reaches the top-right corner pixel in the original, and they are copied as is.
+        if who == "app":
+            for cx, cy in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
+                if rgba[(cy * w + cx) * 4 + 3] > 8:
+                    problems.append(f"{who} {px}px: corner ({cx},{cy}) is opaque")
+                    break
     print(f"verified {checked} PNGs")
+    problems += verify_icns(repo, work, manifest)
     for p in problems:
         print("  FAIL " + p)
     return 1 if problems else 0
+
+
+def verify_icns(repo: str, work: str, manifest: dict) -> list[str]:
+    """Unpack every shipped doc-<name>.icns and prove each size is an original .ico frame.
+
+    For every slot of every .icns: some frame of the source .ico, enlarged by the integer factor
+    size/frame (nearest-neighbour), must equal the slot exactly -- the same alpha at every pixel,
+    and the same RGB wherever the pixel is not fully transparent.  The slot must also be the frame
+    :func:`doc_icon_frame` picks (the one Windows draws at that size).  Anything smoothed,
+    redrawn, padded, masked or shadowed fails.
+    """
+    problems = []
+    icons_dir = os.path.join(repo, "Mac/Resources/Icons")
+    sources = doc_icon_sources(repo, manifest)
+    shipped = sorted(f for f in os.listdir(icons_dir) if f.startswith("doc-") and f.endswith(".icns"))
+    expected = sorted(f"doc-{n}.icns" for n, _ in sources)
+    if shipped != expected:
+        problems.append(f"Mac/Resources/Icons holds {shipped}, expected {expected}")
+    slots = 0
+    for name, ico in sources:
+        icns = os.path.join(icons_dir, f"doc-{name}.icns")
+        if not os.path.exists(icns):
+            continue
+        frames = ico_frames(ico)
+        unpacked = os.path.join(work, "verify", f"doc-{name}.iconset")
+        shutil.rmtree(unpacked, ignore_errors=True)
+        os.makedirs(os.path.dirname(unpacked), exist_ok=True)
+        subprocess.run(["iconutil", "-c", "iconset", icns, "-o", unpacked], check=True)
+        for fn, px in ICONSET_ROWS:
+            path = os.path.join(unpacked, fn)
+            if not os.path.exists(path):
+                problems.append(f"doc-{name}.icns: no {fn}")
+                continue
+            w, h, rgba = read_png_rgba(path)
+            slots += 1
+            if (w, h) != (px, px):
+                problems.append(f"doc-{name}.icns {fn}: is {w}x{h}")
+                continue
+            match = None
+            for f in sorted(frames, key=lambda f: (-f.width, -f.bpp)):
+                if px % f.width or f.width != f.height:
+                    continue
+                want = enlarge(f, px // f.width)
+                if all(rgba[i + 3] == want[i + 3] and (want[i + 3] == 0 or rgba[i:i + 3] == want[i:i + 3])
+                       for i in range(0, len(want), 4)):
+                    match = f
+                    break
+            if match is None:
+                problems.append(f"doc-{name}.icns {fn}: not an integer nearest-neighbour "
+                                f"enlargement of any frame of {os.path.relpath(ico, repo)}")
+                continue
+            pick = doc_icon_frame(frames, px)
+            if match.width != pick.width:
+                problems.append(f"doc-{name}.icns {fn}: is the {match.width} px frame, "
+                                f"Windows draws the {pick.width} px frame at {px} px")
+    print(f"verified {slots} .icns slots against their .ico frames")
+    return problems
 
 
 def stage_contact_sheet(repo: str, work: str) -> None:
@@ -627,7 +706,7 @@ def stage_contact_sheet(repo: str, work: str) -> None:
 # --------------------------------------------------------------------------------------------
 
 def dump(repo: str, name: str) -> None:
-    """ASCII-art one upstream icon; how the palette and badge constants above were established."""
+    """ASCII-art one upstream icon (frame by frame, with its palette)."""
     for base in ("CPP/7zip/Archive/Icons/%s.ico" % name,
                  "CPP/7zip/UI/FileManager/%s.ico" % name,
                  "CPP/7zip/Bundles/SFXWin/%s.ico" % name):
@@ -677,7 +756,7 @@ def main() -> int:
     else:
         manifest = json.load(open(manifest_path))
     if args.stage in ("all", "draw"):
-        stage_draw(repo, work)
+        stage_draw(repo, work, manifest)
     if args.stage in ("all", "assemble"):
         stage_assemble(repo, work, manifest)
     if args.stage in ("all", "sheet"):
