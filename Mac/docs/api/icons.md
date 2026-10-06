@@ -104,7 +104,8 @@ is added: no page, squircle, padding, shadow or label, and the AND-mask transpar
 | `.icns` slot | pixels | source |
 |---|---|---|
 | 16 pt @1x | 16 | 16 px frame ×1 |
-| 16 pt @2x, 32 pt @1x | 32 | 32 px frame ×1 (Windows uses the 32 px frame in a 32 px slot) |
+| 16 pt @2x | 32 | 16 px frame ×2 (`docicons2`: a small icon is the small frame at every scale, as in the panel list) |
+| 32 pt @1x | 32 | 32 px frame ×1 |
 | 32 pt @2x | 64 | 32 px frame ×2 |
 | 128 pt @1x / @2x | 128 / 256 | 32 px frame ×4 / ×8 |
 | 256 pt @1x / @2x | 256 / 512 | 32 px frame ×8 / ×16 |
@@ -116,8 +117,9 @@ uses the 32 px frame from 64 px up.)
 Delivery:
 
 * `doc-<name>.icns` — copied flat into `Contents/Resources`; `CFBundleTypeIconFile` names it
-  without the extension. This is what Finder uses. The Options ▸ System rows load it too
-  (`OptionsSystemPage.swift`), so a 16 pt row shows the original 16 px frame.
+  without the extension. This is what Finder uses. The Options ▸ System rows draw
+  `PanelArchiveIcons`' small icon instead (`docicons2`), the same image as the panel list: the
+  16 px frame, enlarged by whole pixels on Retina.
 * `doc-<name>.imageset` — 1× = 256 px, 2× = 512 px (the 32 px frame ×8 / ×16), for
   `NSImage(named:)`.
 

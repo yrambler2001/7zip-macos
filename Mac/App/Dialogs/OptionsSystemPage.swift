@@ -131,15 +131,16 @@ final class OptionsSystemPage: OptionsPageBase, NSTableViewDataSource, NSTableVi
 
     private static var iconCache: [String: NSImage] = [:]
 
-    /// The 7-Zip document icon of the row's format: `doc-<name>.icns` from the bundle (it carries
-    /// real 16 and 32 px representations, `Mac/docs/api/icons.md`), else the asset-catalogue image,
-    /// else the system's icon for the type. Windows draws `assoc.GetIconIndex()` from 7z.dll
-    /// (SystemPage.cpp:95), i.e. the same artwork.
+    /// The 7-Zip icon of the row's format, drawn exactly as the panel list draws it (docicons2):
+    /// the `.ico`'s 16 x 16 frame, enlarged by whole pixels nearest-neighbour on Retina
+    /// (`PanelArchiveIcons`, sffont). Windows draws `assoc.GetIconIndex()` from 7z.dll
+    /// (SystemPage.cpp:95), an ImageList of small (16 px) icons from ExtractIconExW. Falls back to
+    /// the bundled `doc-<name>.icns`, then to the system's icon for the type.
     static func formatIcon(for type: SevenZipFileType) -> NSImage? {
         let name = "doc-" + type.iconFileName
         if let cached = iconCache[name] { return cached }
-        let image = Bundle.main.url(forResource: name, withExtension: "icns").flatMap(NSImage.init(contentsOf:))
-            ?? NSImage(named: name)
+        let image = PanelArchiveIcons.icon(named: type.iconFileName, large: false)
+            ?? Bundle.main.url(forResource: name, withExtension: "icns").flatMap(NSImage.init(contentsOf:))
             ?? type.utType.map { NSWorkspace.shared.icon(for: $0) }
         if let image { iconCache[name] = image }
         return image
