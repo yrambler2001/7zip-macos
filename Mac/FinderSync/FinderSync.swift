@@ -12,14 +12,22 @@
 //  * it never reads or writes a selected file: the item list goes to the app as `-aiw-!<path>`
 //    switches, or -- for a long selection -- as a UTF-8 list file inside its **own** container,
 //    which the unsandboxed app can read and then deletes;
-//  * it never spawns a process: `NSWorkspace.open(URL)` with the `sevenzip://` scheme is the only
-//    hand-off, and the app's `CommandExecutor` is the single place a command runs;
+//  * it never spawns a process: a `sevenzip://` URL opened in the containing app
+//    (`ExtensionHandoff`) is the only hand-off, and the app's `CommandExecutor` is the single place
+//    a command runs;
+//  * Finder copies the returned menu into its own process and keeps only title, image, tag and
+//    action: `representedObject` and `target` do not survive (finderfix). So each command item is
+//    numbered by `tag` and the command is looked up again at invoke time
+//    (`FinderMenuModel.resolveInvocation`);
 //  * it never badges. `directoryURLs` contains `/`, so badging would be evaluated for every
 //    visible item, and Finder shows at most one badge per item anyway when several extensions
 //    overlap (03 section 6.3).
 
 import Cocoa
 import FinderSync
+import os
+
+private let log = Logger(subsystem: ExtensionHandoff.subsystem, category: "FinderSync")
 
 final class FinderSync: FIFinderSync {
 
@@ -87,63 +95,53 @@ final class FinderSync: FIFinderSync {
         let nodes = FinderMenuModel.build(selection: selection, settings: settings,
                                          extendedVerbs: extended)
         guard !nodes.isEmpty else { return nil }
+        // The invoke may reach another instance of this class, so the one thing the tree depends
+        // on that cannot be re-read at click time is kept process-wide.
+        FinderSync.lastExtendedVerbs = extended
+        FinderSync.lastSelection = selection
 
-        let menu = NSMenu(title: "")
         // Finder inserts the extension's items into its own menu, so the flat mode's leading
         // separator is already the one `:667-675` adds; keep it for the same visual grouping.
-        append(nodes, to: menu, selection: selection, showIcons: settings.menuIcons)
+        let menu = FinderMenuBuilder.menu(for: nodes, action: #selector(invoke(_:)),
+                                          image: settings.menuIcons ? menuImage : nil)
+        log.log("menu: \(FinderMenuModel.flattenCommands(nodes).count, privacy: .public) commands for \(urls.count, privacy: .public) items")
         return menu
     }
 
-    private func append(_ nodes: [FinderMenuNode], to menu: NSMenu,
-                        selection: FinderSelection, showIcons: Bool) {
-        for node in nodes {
-            switch node {
-            case .separator:
-                menu.addItem(.separator())
-            case .command(let command):
-                let item = NSMenuItem(title: command.title, action: #selector(invoke(_:)),
-                                      keyEquivalent: "")
-                item.target = self
-                item.representedObject = InvocationTarget(command: command, selection: selection)
-                if showIcons { item.image = menuImage }
-                menu.addItem(item)
-            case .submenu(let title, _, let children):
-                let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                if showIcons { item.image = menuImage }
-                let submenu = NSMenu(title: title)
-                append(children, to: submenu, selection: selection, showIcons: showIcons)
-                item.submenu = submenu
-                menu.addItem(item)
-            }
-        }
-    }
-
-    /// What a menu item carries; Finder re-creates the menu per click, so this is short-lived.
-    private final class InvocationTarget: NSObject {
-        let command: FinderMenuCommand
-        let selection: FinderSelection
-        init(command: FinderMenuCommand, selection: FinderSelection) {
-            self.command = command
-            self.selection = selection
-        }
-    }
+    /// `Shift` at the time the menu was built (`CMF_EXTENDEDVERBS`).
+    private static var lastExtendedVerbs = false
+    /// The selection the menu was built for, used when Finder reports none at click time.
+    private static var lastSelection: FinderSelection?
 
     // MARK: - Invoke
 
     @objc private func invoke(_ sender: NSMenuItem) {
-        guard let target = sender.representedObject as? InvocationTarget else { return }
         // The selection is re-read so a long one gets its list file only now, which is also when
         // Explorer recomputes the real names (ContextMenu.cpp:1305-1323).
-        let paths = FIFinderSyncController.default().selectedItemURLs()?.map(\.path)
-            ?? target.selection.paths
-        let built = target.command.argv(for: paths, listFileDirectory: NSTemporaryDirectory())
+        let current = FIFinderSyncController.default().selectedItemURLs() ?? []
+        let selection = current.isEmpty ? FinderSync.lastSelection : FinderSelection(urls: current)
+        log.log("invoke: tag \(sender.tag, privacy: .public) \"\(sender.title, privacy: .public)\"")
+        guard let selection, !selection.isEmpty else {
+            ExtensionHandoff.report(.noItems, log: log)
+            return
+        }
+        let settings = IntegrationSettings.current(extensionBundleID: SevenZipBundle.finderSync)
+        let nodes = FinderMenuModel.build(selection: selection, settings: settings,
+                                         extendedVerbs: FinderSync.lastExtendedVerbs)
+        guard let command = FinderMenuModel.resolveInvocation(tag: sender.tag, title: sender.title,
+                                                              nodes: nodes) else {
+            ExtensionHandoff.report(.unknownCommand, log: log)
+            return
+        }
+        let built = command.argv(for: selection.paths, listFileDirectory: NSTemporaryDirectory())
         guard let url = CommandURL.url(argv: built.argv, temporaryFiles: built.temporaryFiles) else {
+            ExtensionHandoff.report(.unknownCommand, log: log)
             return
         }
         // A sandboxed extension may open a URL but not spawn a process; the app parses the same
         // argv 7zG would have received. Errors (a folder in an extract selection, an unsupported
         // type) are reported by the app, which owns the message boxes.
-        NSWorkspace.shared.open(url)
+        log.log("invoke: \(command.verb, privacy: .public)")
+        ExtensionHandoff.send(url, log: log)
     }
 }

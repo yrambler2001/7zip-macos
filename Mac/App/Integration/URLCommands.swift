@@ -12,6 +12,9 @@
 
 import AppKit
 import SevenZipKit
+import os
+
+private let log = Logger(subsystem: "com.yrambler2001.7zip", category: "URL")
 
 enum URLCommands {
 
@@ -20,6 +23,9 @@ enum URLCommands {
     /// forget, exactly like `CreateProcess` without `waitFinish`).
     @discardableResult
     static func handle(_ url: URL, parentWindow: NSWindow? = nil) -> SevenZipExitCode {
+        // finderfix: every URL that arrives is logged, so "nothing happened" can be told apart
+        // from "the app never got it" (`log stream --predicate 'subsystem == "com.yrambler2001.7zip"'`).
+        log.log("received \(url.scheme ?? "", privacy: .public) URL \(url.path, privacy: .public)")
         let action: CommandURL.Action
         do {
             action = try CommandURL.parse(url)
@@ -30,6 +36,7 @@ enum URLCommands {
             NSLog("7-Zip: ignored %@ (test support is off)", url.absoluteString)
             return .userError
         } catch let error as SevenZipArgumentError {
+            log.error("rejected URL: \(error.description, privacy: .public)")
             CommandExecutor.showError(error.description, parent: parentWindow)
             return .userError
         } catch {
@@ -49,6 +56,11 @@ enum URLCommands {
                 OptionsWindowController.showOptions()
             }
             return .success
+        case .extensionFailure(let failure):
+            log.error("extension reported \(failure.rawValue, privacy: .public)")
+            NSApp.activate(ignoringOtherApps: true)
+            CommandExecutor.showError(failure.message, parent: parentWindow)
+            return .userError
         case .testReset(let request):
             // `CommandURL.parse` has already refused the `test` host unless SZ_TEST_SUPPORT=1, so
             // reaching here means test support is on. No `NSApp.activate`: a reset must not steal
