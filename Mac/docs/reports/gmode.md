@@ -175,3 +175,15 @@ screenshots were not kept), and only the user can answer it.
   `ExtensionHandoff.swift`, `URLCommands.swift`, `ServicesProvider.swift`,
   `AppDelegate+Integration.swift`, `CommandLineEntry.swift` (finder). All are small and commented
   with `gmode` / `GMode`.
+
+## 8. Machine state left behind
+
+- `/Applications/7-Zip.app` is this branch's Release build (ad-hoc signed). It was checked after the
+  install:
+  - a cold `open sevenzip:///run?argv=[a -t7z …]` wrote the archive and the app exited within 0.5 s,
+    with no window;
+  - a cold `a -ad …` showed only "Add to Archive" at (511,256).
+
+  The previous copy was kept at `~/7-Zip-backup.app` until then, and has now been removed.
+- The three extensions are registered only from `/Applications`. `sevenzip:` resolves only to
+  `/Applications/7-Zip.app`; the main tree's Debug and Release builds were unregistered again.
