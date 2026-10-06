@@ -461,6 +461,28 @@ def enlarge(f: Frame, factor: int) -> bytes:
     return bytes(out)
 
 
+def slot_points(fn: str) -> int:
+    """The point size of an iconset slot file name: icon_16x16@2x.png -> 16."""
+    return int(re.match(r"icon_(\d+)x\d+", fn).group(1))
+
+
+def doc_slot_frame(frames: list[Frame], fn: str, px: int) -> Frame:
+    """The .ico frame for one .icns slot (docicons2, user decision).
+
+    A 16 pt slot is the small icon at every scale: the 16 px frame, which is the one drawn for
+    small sizes (Details / List / Small Icons on Windows, the panel list's sffont icons here), so
+    16 pt @2x is the 16 px frame x2, not the 32 px frame.  32 pt and up take
+    :func:`doc_icon_frame` of the slot's pixel size (the 32 px frame, x1..x32)."""
+    if slot_points(fn) == 16:
+        return doc_icon_frame(frames, 16)
+    return doc_icon_frame(frames, px)
+
+
+def slot_png(fn: str, px: int) -> str:
+    """The PNG (under png/doc/<name>/) that fills iconset slot `fn`."""
+    return "16@2x.png" if fn == "icon_16x16@2x.png" else f"{px}.png"
+
+
 def stage_doc_icons(repo: str, work: str, manifest: dict) -> None:
     """The document icons are the original Windows format icons (docicons, user decision):
     every macOS pixel size is the frame Windows would pick (:func:`doc_icon_frame`) enlarged by an
@@ -475,6 +497,10 @@ def stage_doc_icons(repo: str, work: str, manifest: dict) -> None:
             f = doc_icon_frame(frames, px)
             write_png(os.path.join(out_dir, f"{px}.png"), px, px, enlarge(f, px // f.width))
             used.append(f"{px}<-{f.width}x{px // f.width}")
+        # 16 pt @2x: the small (16 px) frame doubled -- see doc_slot_frame.
+        f = doc_slot_frame(frames, "icon_16x16@2x.png", 32)
+        write_png(os.path.join(out_dir, "16@2x.png"), 32, 32, enlarge(f, 32 // f.width))
+        used.append(f"16pt@2x<-{f.width}x{32 // f.width}")
         print(f"  doc-{name:9s} " + " ".join(used))
 
 
@@ -562,7 +588,7 @@ def stage_assemble(repo: str, work: str, manifest: dict) -> None:
         shutil.rmtree(iconset, ignore_errors=True)
         os.makedirs(iconset)
         for fn, px in ICONSET_ROWS:
-            shutil.copyfile(os.path.join(png, "doc", name, f"{px}.png"),
+            shutil.copyfile(os.path.join(png, "doc", name, slot_png(fn, px)),
                             os.path.join(iconset, fn))
         out = os.path.join(icons_dir, f"doc-{name}.icns")
         subprocess.run(["iconutil", "-c", "icns", iconset, "-o", out], check=True)
@@ -640,7 +666,8 @@ def verify_icns(repo: str, work: str, manifest: dict) -> list[str]:
     For every slot of every .icns: some frame of the source .ico, enlarged by the integer factor
     size/frame (nearest-neighbour), must equal the slot exactly -- the same alpha at every pixel,
     and the same RGB wherever the pixel is not fully transparent.  The slot must also be the frame
-    :func:`doc_icon_frame` picks (the one Windows draws at that size).  Anything smoothed,
+    :func:`doc_slot_frame` picks (16 pt: the 16 px frame at 1x and 2x; 32 pt and up: the 32 px
+    frame).  Anything smoothed,
     redrawn, padded, masked or shadowed fails.
     """
     problems = []
@@ -683,10 +710,13 @@ def verify_icns(repo: str, work: str, manifest: dict) -> list[str]:
                 problems.append(f"doc-{name}.icns {fn}: not an integer nearest-neighbour "
                                 f"enlargement of any frame of {os.path.relpath(ico, repo)}")
                 continue
-            pick = doc_icon_frame(frames, px)
-            if match.width != pick.width:
+            pick = doc_slot_frame(frames, fn, px)
+            want = enlarge(pick, px // pick.width)
+            if match.width != pick.width or any(
+                    rgba[i + 3] != want[i + 3] or (want[i + 3] and rgba[i:i + 3] != want[i:i + 3])
+                    for i in range(0, len(want), 4)):
                 problems.append(f"doc-{name}.icns {fn}: is the {match.width} px frame, "
-                                f"Windows draws the {pick.width} px frame at {px} px")
+                                f"the {slot_points(fn)} pt slot must be the {pick.width} px frame")
     print(f"verified {slots} .icns slots against their .ico frames")
     return problems
 

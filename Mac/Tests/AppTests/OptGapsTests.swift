@@ -88,6 +88,10 @@ final class OptGapsTests: AppHostTestCase {
             // The .icns carries a real 16 px representation for the 16 pt row.
             XCTAssertTrue(image.representations.contains { $0.pixelsWide == 16 },
                           ".\(type.ext): no 16 px representation in \(image.representations)")
+            // docicons2: the row icon is the panel list's small icon (the 16 px frame, doubled
+            // pixel-for-pixel on Retina), not the 32 px frame scaled into a 16 pt slot.
+            XCTAssertTrue(image === PanelArchiveIcons.icon(named: type.iconFileName, large: false),
+                          ".\(type.ext): not the panel list's small icon")
         }
     }
 
