@@ -51,17 +51,80 @@ public enum TestShard {
 
     /// The app bundle this shard drives, needed to send a URL to *this* instance rather than to
     /// whichever copy LaunchServices considers the handler (another worktree's build, for one).
+    ///
+    /// testreg: found on disk only, never through Launch Services. The old last resort,
+    /// `urlForApplication(withBundleIdentifier:)`, returned **`/Applications/7-Zip.app`** once the
+    /// installed copy owned the registrations (finderfix unregisters the builds after every run), so
+    /// "aimed" reopens and URLs went to the user's 7-Zip -- the three `NewWindowUITests` failures of
+    /// Mac/docs/reports/gmode.md §5. It got that far because the bundle walk below stopped one
+    /// level short: on macOS the test bundle is `<Config>/<Target>-Runner.app/Contents/PlugIns/
+    /// <Target>.xctest`, four levels under `<Config>`, not three. nil means "not found", and every
+    /// caller treats that as a failure rather than falling back to an unaimed request.
     public static let appURL: URL? = {
         if let path = ProcessInfo.processInfo.environment["SEVENZIP_APP_PATH"],
            FileManager.default.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path)
+            return URL(fileURLWithPath: path).standardizedFileURL
         }
         for directory in productsDirectories() {
             let candidate = directory.appendingPathComponent(appName + ".app")
-            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate.standardizedFileURL }
         }
-        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: appBundleIdentifier)
+        return nil
     }()
+
+    /// The bundle identifier the shipping app (and the user's installed copy) carries.
+    public static let shippingBundleIdentifier = "com.yrambler2001.7zip"
+
+    /// True when `url` is this shard's own app bundle (symlinks resolved).
+    public static func isTestBuild(_ url: URL?) -> Bool {
+        guard let url, let appURL else { return false }
+        return canonical(url) == canonical(appURL)
+    }
+
+    /// Running copies of 7-Zip this shard must never launch, message, or terminate: any process with
+    /// this shard's bundle identifier that is not this shard's build, and any copy of the shipping
+    /// identifier outside this run's products directory (the user's `/Applications/7-Zip.app`,
+    /// another worktree's build). XCUIApplication attaches to and terminates by bundle identifier,
+    /// so with one of these running the input shard could drive or kill the user's app.
+    public static func foreignInstances() -> [NSRunningApplication] {
+        let products = appURL.map { canonical($0.deletingLastPathComponent()) + "/" }
+        return NSWorkspace.shared.runningApplications.filter { running in
+            guard let id = running.bundleIdentifier, !running.isTerminated else { return false }
+            if id == appBundleIdentifier { return !isTestBuild(running.bundleURL) }
+            guard id == shippingBundleIdentifier else { return false }
+            guard let bundle = running.bundleURL, let products else { return true }
+            return !canonical(bundle).hasPrefix(products)
+        }
+    }
+
+    /// A readable list of `foreignInstances()` for a failure message; nil when there are none.
+    public static func describeForeignInstances() -> String? {
+        let found = foreignInstances()
+        guard !found.isEmpty else { return nil }
+        return found.map { "\($0.bundleURL?.path ?? "?") (pid \($0.processIdentifier))" }
+            .joined(separator: ", ")
+    }
+
+    /// The guard every UI test runs before and after it touches the app (testreg): fails loudly
+    /// when a 7-Zip that is not this shard's build is running, so a test can never drive, message
+    /// or terminate the user's installed copy, and a test that *made* one start is named.
+    public static func assertOnlyTestBuildRuns(_ when: String,
+                                               file: StaticString = #filePath, line: UInt = #line) {
+        guard appURL != nil else {
+            XCTFail("cannot find this shard's \(appName).app next to the test runner; refusing to fall "
+                    + "back to Launch Services (it would pick /Applications/7-Zip.app)", file: file, line: line)
+            return
+        }
+        if let foreign = describeForeignInstances() {
+            XCTFail("\(when): a 7-Zip that is not the build under test is running: \(foreign). "
+                    + "The tests never touch it; quit it (or find the test that started it).",
+                    file: file, line: line)
+        }
+    }
+
+    private static func canonical(_ url: URL) -> String {
+        url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
 
     /// `SZ_STATE_DIR` for one test class: everything the instance would otherwise put in a shared
     /// location (work directory, temp extraction folders, caches) goes here, so two instances never
@@ -90,14 +153,16 @@ public enum TestShard {
     }
 
     /// Where `build-for-testing` put the products. The runner app itself lives there
-    /// (`<Products>/<Config>/<Target>-Runner.app/PlugIns/<Target>.xctest`), and xcodebuild also
-    /// passes the list in `__XCODE_BUILT_PRODUCTS_DIR_PATHS`.
+    /// (`<Products>/<Config>/<Target>-Runner.app/Contents/PlugIns/<Target>.xctest`), so every
+    /// ancestor of the test bundle up to `<Config>` is tried, and xcodebuild also passes the list in
+    /// `__XCODE_BUILT_PRODUCTS_DIR_PATHS`.
     private static func productsDirectories() -> [URL] {
         var found: [URL] = []
-        let bundle = Bundle(for: ShardToken.self).bundleURL
-        found.append(bundle.deletingLastPathComponent()           // PlugIns
-            .deletingLastPathComponent()                          // *-Runner.app
-            .deletingLastPathComponent())                         // <Config>
+        var directory = Bundle(for: ShardToken.self).bundleURL
+        for _ in 0..<5 {
+            directory = directory.deletingLastPathComponent()      // PlugIns, Contents, Runner.app, <Config>, ...
+            found.append(directory)
+        }
         if let list = ProcessInfo.processInfo.environment["__XCODE_BUILT_PRODUCTS_DIR_PATHS"] {
             found += list.split(separator: ":").map { URL(fileURLWithPath: String($0)) }
         }
@@ -266,31 +331,26 @@ public extension SevenZipApp {
 
     /// Send a `sevenzip://` URL to **this shard's** instance.
     ///
-    /// Three channels, in this order, and the first one is the only one that is aimed by
-    /// construction:
+    /// Two channels, both aimed:
     ///
     /// 1. **`<SZ_STATE_DIR>/reset-request`** -- the app watches that file and treats its contents as
     ///    the URL (`Mac/docs/api/resetcmd.md` section 5). The state directory belongs to exactly one
     ///    instance, so a request left there cannot reach another; the watcher is a `Timer` in
     ///    `.common` mode, so it also arrives while `NSApp.runModal` is on the stack, which no Apple
     ///    event does. Any `sevenzip://` URL works, not only a reset.
-    /// 2. `NSWorkspace.open(_:withApplicationAt:)` -- aimed, but a sandboxed XCUITest runner cannot
-    ///    always resolve a bundle URL outside its container to aim with.
-    /// 3. `NSWorkspace.open(URL)` -- the last resort, and the one that caused real damage: Launch
-    ///    Services hands the URL to whichever registered bundle owns the scheme, which with the
-    ///    probe copies registered turned out to be a *probe*. That is why the copies no longer claim
-    ///    the scheme at all (`Mac/Tests/AppVariants/Info.plist`) and why this is last.
-    /// `aimedOnly` drops channel 3. A **read-only shard must pass true**: it drives an app copy that
-    /// claims no URL scheme (`Mac/Tests/AppVariants/Info.plist`), so an unaimed open would not reach
-    /// its instance at all -- it would reach whichever bundle Launch Services considers the handler,
-    /// i.e. some other agent's app, and the test would then fail for a reason that has nothing to do
-    /// with what it asserts. Returning false instead makes the missing channel the failure.
+    /// 2. `NSWorkspace.open(_:withApplicationAt:)` with this shard's bundle (`TestShard.appURL`).
+    ///
+    /// There is no third, unaimed `NSWorkspace.open(URL)` any more (testreg): Launch Services hands
+    /// that to whichever registered bundle owns the scheme -- a probe once (resetcmd), and the user's
+    /// installed `/Applications/7-Zip.app` on a machine that has one. Returns false instead.
     @discardableResult
-    func open(_ url: URL, timeout: TimeInterval = 10, aimedOnly: Bool = false) -> Bool {
+    func open(_ url: URL, timeout: TimeInterval = 10) -> Bool {
         if writeRequest(url) { return true }
-        // else: the app did not take the file (an app without the watcher, i.e. before
-        // `mac/resetcmd` merges), so aim the URL instead.
-        guard let appURL = TestShard.appURL else { return aimedOnly ? false : NSWorkspace.shared.open(url) }
+        // else: the app is not running or did not take the file, so aim the URL instead.
+        guard let appURL = TestShard.appURL else {
+            XCTFail("cannot aim \(url.scheme ?? "")://: this shard's app bundle was not found")
+            return false
+        }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         configuration.addsToRecentItems = false
@@ -300,8 +360,7 @@ public extension SevenZipApp {
         }
         let deadline = Date().addingTimeInterval(timeout)
         while outcome == nil, Date() < deadline { usleep(20_000) }
-        if outcome == true { return true }
-        return aimedOnly ? false : NSWorkspace.shared.open(url)
+        return outcome == true
     }
 
     /// `<SZ_STATE_DIR>/reset-request` for this instance, the file channel 1 writes.

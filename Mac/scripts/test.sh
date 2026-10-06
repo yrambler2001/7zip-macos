@@ -198,16 +198,64 @@ release_app_lock() {
   fi
 }
 
+# testreg: every 7-Zip process that is not one of this tree's test builds -- the user's installed
+# /Applications/7-Zip.app, another worktree's build. "pid path" per line. The input shard's app has
+# the shipping bundle identifier, which XCUIApplication attaches to and terminates by, and the
+# shipping preferences domain, which the app saves when it quits; so the input shard refuses to run
+# while one of these is up, and a run that *started* one is a failure (a test reached the wrong copy).
+foreign_sevenzip() {
+  ps -axo pid=,comm= 2>/dev/null \
+    | awk -v own="$MAC/build/" '{ pid = $1; sub(/^[ \t]*[0-9]+[ \t]+/, "") }
+           /\.app\/Contents\/MacOS\/7-Zip$/ && index($0, own) != 1 { print pid " " $0 }'
+}
+
+FOREIGN_BEFORE=""
+require_no_foreign_sevenzip() {
+  FOREIGN_BEFORE="$(foreign_sevenzip)"
+  [ -z "$FOREIGN_BEFORE" ] && return 0
+  echo "test.sh: a 7-Zip that is not the build under test is running:" >&2
+  printf '            %s\n' "$FOREIGN_BEFORE" >&2
+  echo "         The input shard drives the same bundle id and preferences domain, so it will not run" >&2
+  echo "         next to it (it never quits your app). Quit 7-Zip and run again." >&2
+  return 5
+}
+
+# After the input shard: a foreign 7-Zip that was not running before was started by a test.
+check_no_foreign_started() {
+  local now started
+  now="$(foreign_sevenzip)"
+  started="$(printf '%s\n' "$now" | grep -vxF -e "${FOREIGN_BEFORE:-@@none@@}" | grep . || true)"
+  [ -z "$started" ] && return 0
+  echo "TESTS FAILED: the run started a 7-Zip that is not the build under test (left running):" >&2
+  printf '            %s\n' "$started" >&2
+  SUMMARY="$SUMMARY
+  FAIL  a test reached a foreign 7-Zip: $(printf '%s' "$started" | tr '\n' ' ')"
+  [ "$FAILED" -ne 0 ] || FAILED=6
+}
+
+# Quit what the run left of *this tree's* test builds (apps and runners), never anything else.
+quit_test_processes() {
+  local products="$MAC/build/DerivedData/Build/Products/" pids
+  pids="$(ps -axo pid=,comm= 2>/dev/null \
+    | awk -v p="$products" '{ pid = $1; sub(/^[ \t]*[0-9]+[ \t]+/, "") } index($0, p) == 1 && /\.app\/Contents\/MacOS\// { print pid }')"
+  [ -n "$pids" ] || return 0
+  # shellcheck disable=SC2086
+  kill -TERM $pids 2>/dev/null || true
+}
+
+begin_input_shard() {
+  require_no_foreign_sevenzip || return $?
+  finderext_mark        # which copy's extensions Finder runs, for FinderContextMenuTests
+}
+
+end_input_shard() {
+  check_no_foreign_started
+  quit_test_processes
+}
+
 save_prefs() {
   [ "$KEEP_PREFS" = 0 ] || return 0
   [ "$PREFS_SAVED" = 0 ] || return 0
-  local other
-  other="$(pgrep -f '7-Zip\.app/Contents/MacOS/7-Zip' | head -1 || true)"
-  if [ -n "$other" ]; then
-    echo "== warning: 7-Zip is already running (pid $other) although the lock is held;"
-    echo "            the UI tests will terminate it and $APP_DOMAIN is left untouched"
-    return 0
-  fi
   defaults export "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null && PREFS_SAVED=1 || true
   defaults delete "$APP_DOMAIN" >/dev/null 2>&1 || true
   defaults write "$APP_DOMAIN" Lang -string -      # English resource strings for the assertions
@@ -244,7 +292,7 @@ unregister_test_apps() {
 . "$MAC/scripts/finderext-registration.sh"
 finderext_snapshot
 
-cleanup() { restore_prefs; release_app_lock; unregister_test_apps; finderext_restore; }
+cleanup() { quit_test_processes; restore_prefs; release_app_lock; unregister_test_apps; finderext_restore; }
 trap cleanup EXIT INT TERM
 
 needs_input_shard() { printf '%s\n' $TARGETS | grep -qx "$UI_TARGET"; }
@@ -455,6 +503,7 @@ sharded_run() {
   if needs_input_shard; then
     echo "== running the input shard alone (it synthesizes keyboard and mouse events)"
     acquire_app_lock || return 3
+    begin_input_shard || return $?
     save_prefs
     run_shard "$UI_TARGET"
     read -r rc elapsed <"$MAC/build/shard-$UI_TARGET.rc"
@@ -462,6 +511,7 @@ sharded_run() {
       "$MAC/build/test-$UI_TARGET.log" | grep -v CoreSimulator | tail -40 || true
     export_screenshots "$MAC/build/results-$UI_TARGET.xcresult"
     tally "$UI_TARGET" "$MAC/build/test-$UI_TARGET.log" "$rc" "$elapsed"
+    end_input_shard
     restore_prefs
     release_app_lock
   fi
@@ -471,11 +521,17 @@ RUN_STARTED=$(date +%s)
 if [ "$SHARDED" = 1 ]; then
   sharded_run || FAILED=$?
 else
-  if needs_input_shard; then
-    acquire_app_lock || exit 3
-    save_prefs
-  fi
-  for t in $TARGETS; do run_target "$t"; done
+  for t in $TARGETS; do
+    if [ "$t" = "$UI_TARGET" ]; then
+      acquire_app_lock || exit 3
+      begin_input_shard || exit $?
+      save_prefs
+      run_target "$t"
+      end_input_shard
+    else
+      run_target "$t"
+    fi
+  done
 fi
 RUN_ELAPSED=$(( $(date +%s) - RUN_STARTED ))
 

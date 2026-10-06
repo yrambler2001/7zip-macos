@@ -37,15 +37,15 @@ final class FinderCommandInspectionTests: SevenZipUITestCase {
         return URL(string: "sevenzip:///run?argv=" + blob)!
     }
 
-    /// Send the command to **this shard's** instance, and to nothing else: `aimedOnly` forbids the
-    /// unaimed `NSWorkspace.open` fallback, because the app copy this shard drives deliberately
-    /// claims no URL scheme (see the class comment). It is delivered through
+    /// Send the command to **this shard's** instance, and to nothing else: `SevenZipApp.open` has
+    /// no unaimed `NSWorkspace.open` fallback (testreg), which matters here because the app copy
+    /// this shard drives deliberately claims no URL scheme (see the class comment). It is delivered through
     /// `<SZ_STATE_DIR>/reset-request`, which `TestResetWatcher` (merged into `macos`) reads and which
     /// is aimed by construction; false here means that watcher did not take the request, and the
     /// test fails on the spot rather than asserting against somebody else's instance.
     @discardableResult
     private func send(_ argv: [String]) -> Bool {
-        sevenZip.open(commandURL(argv), aimedOnly: true)
+        sevenZip.open(commandURL(argv))
     }
 
     private func makeOutputDirectory(_ name: String) throws -> String {

@@ -66,6 +66,10 @@ open class SevenZipUITestCase: XCTestCase {
         try super.setUpWithError()
         continueAfterFailure = false
         executionTimeAllowance = Self.timeAllowance
+        // testreg: never drive, message or terminate a 7-Zip that is not this shard's build
+        // (XCUIApplication attaches to and terminates by bundle identifier, and the user's
+        // /Applications/7-Zip.app carries the input shard's). Stops the test before it starts.
+        TestShard.assertOnlyTestBuildRuns("before \(name)")
         if Self.reusesTheApp, let existing = Self.instances[Self.key] {
             sevenZip = existing
         } else {
@@ -81,6 +85,8 @@ open class SevenZipUITestCase: XCTestCase {
     open override func tearDown() {
         // `hasSucceeded` is only valid once the run has stopped, and tearDown runs before that,
         // so it would attach a "failure" screenshot to every passing test: count failures instead.
+        // testreg: a test that made Launch Services start or message another copy fails here, by name.
+        if (testRun?.totalFailureCount ?? 0) == 0 { TestShard.assertOnlyTestBuildRuns("after \(name)") }
         let failed = (testRun?.totalFailureCount ?? 0) > 0
         if failed {
             _ = sevenZip?.screenshot("failure-" + Self.slug(name), prefix: screenshotPrefix, test: self)
