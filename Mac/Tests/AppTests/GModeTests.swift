@@ -91,6 +91,12 @@ final class GModeTests: AppHostTestCase {
         let orderBefore = managerOrder
         let url = try addToArchiveURL()
 
+        // In the product the app is active while the dialog is up: `GMode.prepareModal` activates it
+        // (`changesActivation` is off here only so that nothing hands the focus *back* afterwards).
+        // Activate the host so the dialog is key and main as it really is; whether the host happened
+        // to be active used to decide the owner check below (reports/gmode.md section 9).
+        NSApp.activate(ignoringOtherApps: true)
+        spin(0.3)
         var inspected = false
         XCTAssertTrue(ModalProbe.present({ delegate.application(NSApp, open: [url]) }) { window in
             inspected = true
@@ -100,8 +106,20 @@ final class GModeTests: AppHostTestCase {
             XCTAssertNil(window.sheetParent)
             XCTAssertNil(window.parent, "the Compress dialog must not be a child of a file-manager window")
             self.assertCentredOnWorkArea(window)
-            // No file-manager window may own a dialog of this command, even when named explicitly.
-            XCTAssertNil(DialogKit.owner(for: nil, parent: managerWindow))
+            if NSApp.isActive {
+                XCTAssertTrue(NSApp.keyWindow === window, "the Compress dialog does not have the focus")
+                XCTAssertTrue(NSApp.mainWindow === window, "a file-manager window is still main")
+            }
+            // No file-manager window may own a dialog of this command, even when named explicitly:
+            // the Compress dialog itself has no owner, and a box it raises in turn belongs to the
+            // dialog (7zG's message boxes are owned by its dialog), never to a file-manager window.
+            XCTAssertNil(DialogKit.owner(for: window, parent: managerWindow))
+            for controller in MainWindows.controllers {
+                let owner = DialogKit.owner(for: nil, parent: controller.window)
+                XCTAssertTrue(owner == nil || owner === window,
+                              "a nested dialog would belong to \(owner?.title ?? "-"), not to the command's dialog")
+                XCTAssertFalse(owner?.windowController is MainWindowController)
+            }
             XCTAssertEqual(self.managerOrder, orderBefore, "the file-manager windows moved")
             XCTAssertEqual(MainWindows.controllers.count, self.before.count, "a file-manager window appeared")
             // A Dock click while the dialog is up brings the dialog forward, not a window.
