@@ -115,6 +115,15 @@ final class SelColorsTests: AppHostTestCase {
         savedShowGrid = Settings.showGrid
         savedListModes = [Settings.listMode(0), Settings.listMode(1)]
         savedAppearance = NSApp.appearance
+        savedTheme = Settings.string(Settings.Key.theme)
+    }
+
+    /// theme: Light / Dark go through Options > macOS > Theme (FM.Theme -> NSApp.appearance), the
+    /// forced themes the user can choose, rather than setting the appearance behind its back.
+    private var savedTheme: String?
+    private func forceTheme(_ dark: Bool) {
+        Settings.theme = dark ? .dark : .light
+        XCTAssertEqual(NSApp.appearance?.name, dark ? .darkAqua : .aqua, "the forced theme is applied")
     }
 
     override func tearDown() {
@@ -128,6 +137,7 @@ final class SelColorsTests: AppHostTestCase {
         Settings.numPanels = savedNumPanels
         Settings.fullRow = savedFullRow
         Settings.showGrid = savedShowGrid
+        Settings.setString(savedTheme, Settings.Key.theme)
         NSApp.appearance = savedAppearance
         super.tearDown()
     }
@@ -234,7 +244,7 @@ final class SelColorsTests: AppHostTestCase {
         let a = row(panel, "a.txt"), b = row(panel, "b.bin"), c = row(panel, "c.txt")
         XCTAssertTrue(a >= 0 && b >= 0 && c >= 0, "fixture rows")
         for dark in [false, true] {
-            NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            forceTheme(dark)
             for fullRow in [false, true] {
                 for grid in [false, true] {
                     Settings.fullRow = fullRow
@@ -273,7 +283,7 @@ final class SelColorsTests: AppHostTestCase {
                 XCTAssertTrue(wait(for: "flat \(flat)") { panel.loadGeneration != before && !panel.rows.isEmpty })
             }
             for dark in [false, true] {
-                NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                forceTheme(dark)
                 for fullRow in [false, true] {
                     Settings.fullRow = fullRow
                     panel.listFocusOverride = true
@@ -350,7 +360,7 @@ final class SelColorsTests: AppHostTestCase {
                 return cv.visibleItems().count == 5
             })
             for dark in [false, true] {
-                NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                forceTheme(dark)
                 for focused in [true, false] {
                     panel.listFocusOverride = focused
                     select(panel, ["a.txt", "c.txt"], focus: "c.txt")
@@ -420,7 +430,7 @@ final class SelColorsTests: AppHostTestCase {
               let cell = panel.tableView.view(atColumn: 0, row: r, makeIfNecessary: false) as? NSTableCellView,
               let field = cell.textField else { return XCTFail("no row view") }
         for dark in [false, true] {
-            NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            forceTheme(dark)
             rowView.isTargetForDropOperation = true
             var rect = field.convert(field.bounds, to: panel.tableView)
             rect.size.width = min(rect.width, field.intrinsicContentSize.width)
@@ -458,7 +468,7 @@ final class SelColorsTests: AppHostTestCase {
             ("Messages", { MessagesDialog.show(messages: ["a.7z : Data error", "b : CRC failed"], parent: nil) }),
         ]
         for dark in [false, true] {
-            NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            forceTheme(dark)
             for (name, present) in dialogs {
                 let shown = ModalProbe.present(present) { window in
                     self.auditTables(in: window, "\(name) \(self.appearanceName(dark))")

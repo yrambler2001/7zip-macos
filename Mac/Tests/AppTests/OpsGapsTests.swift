@@ -88,7 +88,8 @@ final class OpsGapsTests: AppHostTestCase {
         let tabs = try XCTUnwrap(firstView(of: NSTabView.self, in: window.contentView))
         let help = try XCTUnwrap(button(titled: Lang.text(409, "Help"), in: window.contentView))
         // OptionsDialog.cpp:13-20 order (no Plugins page since dlgfeel).
-        let expected = ["#system", "#sevenZip", "#folders", "#editor", "#settings", "#language"]
+        // theme: the macOS tab last, the Options topic itself (no Windows section for it).
+        let expected = ["#system", "#sevenZip", "#folders", "#editor", "#settings", "#language", "#"]
         XCTAssertEqual(tabs.numberOfTabViewItems, expected.count)
         for index in 0..<tabs.numberOfTabViewItems {
             tabs.selectTabViewItem(at: index)

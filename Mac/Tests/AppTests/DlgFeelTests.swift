@@ -173,8 +173,8 @@ final class DlgFeelTests: AppHostTestCase {
         XCTAssertTrue(ModalProbe.present({ OptionsWindowController.showOptions() }) { _ in })
         defer { ModalProbe.close(window) }
         let tabs = try XCTUnwrap(views(NSTabView.self, in: window.contentView).first)
-        XCTAssertEqual(tabs.tabViewItems.map(\.label), ["System", "7-Zip", "Folders", "Editor", "Settings", "Language"],
-                       "OptionsDialog.cpp's six pages, no Plugins page (finding 22)")
+        XCTAssertEqual(tabs.tabViewItems.map(\.label), ["System", "7-Zip", "Folders", "Editor", "Settings", "Language", "macOS"],
+                       "OptionsDialog.cpp's six pages, no Plugins page (finding 22), then the macOS tab (theme)")
         let banned = ["macOS keeps file associations", "\u{201C}Current\u{201D} means", "Options.WorkDirType",
                       "A value may be an application bundle", "macOS: adds Finder", "Use large memory pages",
                       "Default application", "Description", "Open Login Items", "pluginkit",

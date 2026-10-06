@@ -36,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TestAnimations.installIfNeeded()
         // LoadLangOneTime() before anything reads a string (FM.cpp:615)
         Lang.loadFromSettings()
+        // theme: Options > macOS > Theme (FM.Theme) before the first window (AppTheme.swift)
+        AppTheme.applyAtLaunch()
         SZFolder.timestampShowUTC = Settings.timestampShowUTC   // g_Timestamp_Show_UTC
         NSApp.mainMenu = MainMenu.build()
     }

@@ -102,6 +102,19 @@ final class OptionsSettingsPage: OptionsPageBase {
         memStepper.controlSize = .small
         memStepper.frame = NSRect(x: editRect.maxX - 18, y: editRect.minY - 1, width: 18, height: 22)
         form.add(memUnit, rc, 103)
+        // theme: mirror the macOS page's "Show grid lines" (OptionsMacPage, the same FM.ShowGrid).
+        gridObserver = NotificationCenter.default.addObserver(
+            forName: OptionsGridLines.toggled, object: nil, queue: nil) { [weak self] note in
+            guard let self, note.object as AnyObject? !== self, let on = note.userInfo?["on"] as? Bool,
+                  let box = self.boxes.first(where: { $0.tag == 2505 }) else { return }
+            box.state = on ? .on : .off
+        }
+    }
+
+    private var gridObserver: NSObjectProtocol?
+
+    deinit {
+        if let gridObserver { NotificationCenter.default.removeObserver(gridObserver) }
     }
 
     // MARK: OnInit
@@ -137,6 +150,8 @@ final class OptionsSettingsPage: OptionsPageBase {
 
     @objc private func flagClicked(_ sender: Any?) {
         fmChanged = true
+        // theme: the macOS page's "Show grid lines" is this same setting; keep the two in step.
+        if let box = sender as? NSButton, box.tag == 2505 { OptionsGridLines.post(box.state == .on, from: self) }
         changed()
     }
 

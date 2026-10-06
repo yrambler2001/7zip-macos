@@ -268,6 +268,9 @@ enum FinderIntegration {
             LaunchServicesRegistration.registerIfNeeded()
             // The copy the user runs is the one whose Finder extension Finder uses (appfeel).
             FinderExtensionControl.claimAtLaunchIfNeeded()
+            // theme: the first launch of an installed copy turns the Finder integration on, once
+            // (FirstLaunchIntegration.swift); before the push so the snapshot has the cascaded value.
+            FirstLaunchIntegration.runIfNeeded()
             FinderSettingsBridge.push()
             CompressCommands.purgeStaleEmailDirectories()
             // Commands that arrived during the launch run now (GMode.swift).
