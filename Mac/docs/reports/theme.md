@@ -74,7 +74,37 @@ did-finish-launching block (right after `claimAtLaunchIfNeeded`, before the sett
 
 ## 4. Verification
 
-(filled in below)
+| Check | Result |
+|---|---|
+| `Mac/scripts/build.sh` (Debug) and `build.sh -r` (Release) | exit 0, no warnings in `Mac/` |
+| `test.sh` (SevenZipKitTests) | 401 passed |
+| `test.sh -H` (SevenZipAppTests) | 273 passed (9 new in `ThemeTests`) |
+| `test.sh -u` (input + probe shards) | 61 + 6 + 6 passed |
+
+`ThemeTests` (app-hosted):
+- the setting: absent = System = `NSApp.appearance` nil; Light / Dark applied when the key is written, and again after a test reset (keyless notification); an unknown value reads as System;
+- the macOS tab: last, after the six Windows pages; Apply (not before) switches the whole app, the Options window included; `FM.Theme` is on disk; reopening shows it;
+- grid lines: off by default (zero grid pixels in the list); ticking on the macOS tab ticks the Settings tab and the reverse; Apply redraws the open panel with and then without lines (pixels counted); persisted, both boxes show it on reopen;
+- fit: in `-`, de, ru, fr, ja and ar every control is inside the page, nothing scrolls, the label, the check box and the three drop-down titles fit, and the seven tabs fit in one row;
+- contrast >= 4.5 under forced Light and Dark: main window list cells (a selected row too), header titles, toolbar labels, address text, the face colour (240 grey in Light, dark in Dark); every Options page, Add to Archive, a message box, a progress window;
+- the first-launch decision (installed, ~/Applications, subfolder -> enable; marker or an existing CascadedMenu -> already done; /Volumes, Downloads, Mac/build, App Translocation -> defer; SZ_TEST_SUPPORT, XCTest, the -host / -p1 bundle ids, no appex -> skip; the test host itself -> skip); the run writes once and never re-enables after an untick; a deferred run writes nothing; the PlugInKit commands (`-e use` for all three ids, `-r` of another copy's Quick Action, `-a` of this copy's) checked with the runner replaced, so no real pluginkit call.
+
+`SelColorsTests` now drives Light / Dark through `Settings.theme` (the forced themes) rather than
+setting `NSApp.appearance` directly, so its contrast matrix covers the forced themes.
+
+Screenshots (read and checked): `theme-main-light.png`, `theme-main-dark.png`,
+`theme-options-dark.png` (the Settings page, unchanged layout), `theme-options-macos-tab-light.png`,
+`theme-options-macos-tab-dark.png`, `theme-compress-dark.png`, `theme-msgbox-dark.png`.
+
+**Installed.** The Release build is `/Applications/7-Zip.app` (ad-hoc signed, `codesign -v` ok):
+the user's copy was not running, was backed up to `~/7-Zip-backup.app`, replaced, checked, and the
+backup removed (and unregistered). The first launch of the installed copy really ran the
+first-launch path: `FM.FirstLaunchIntegration = 1` and `Options.CascadedMenu = 1` appeared in
+`com.yrambler2001.7zip`, the Finder Sync extension stayed elected `+` from `/Applications`. A cold
+`open sevenzip:///run?argv=<a -t7z …>` wrote a valid 7z and the app exited. Afterwards
+`pluginkit -m -D -A` lists only `/Applications/7-Zip.app` for FinderSync, QuickActionExtract and
+QuickActionCompress (all `+`), and `sevenzip:` resolves only to `/Applications/7-Zip.app`; this
+tree's build copies were unregistered from Launch Services.
 
 ## 5. Known gaps / follow-ups
 
