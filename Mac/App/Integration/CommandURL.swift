@@ -28,6 +28,10 @@ enum CommandURL {
 
     static let runPath = "/run"
     static let settingsPath = "/settings"
+    /// `sevenzip:///error?code=<ExtensionFailure>`: an extension could not build a command and
+    /// asks the app to say so, because a sandboxed appex has no window of its own to put a message
+    /// box on. Only fixed codes are accepted, so a URL cannot make the app display arbitrary text.
+    static let errorPath = "/error"
 
     /// The test-support host (`Mac/docs/test-support-contract.md`). `sevenzip://test/reset?<query>`
     /// returns a running app to a known state without quitting. Rejected outright unless
@@ -51,6 +55,29 @@ enum CommandURL {
         case settings(show: Bool)
         /// Return the running app to a known state (test support only).
         case testReset(TestResetRequest)
+        /// An extension failed before it had a command line (`errorPath`).
+        case extensionFailure(ExtensionFailure)
+    }
+
+    /// Why an extension could not hand a command over. The app shows `message` in an error box.
+    enum ExtensionFailure: String, Equatable, CaseIterable {
+        /// Finder handed over no file the extension could resolve to a path.
+        case noItems = "noitems"
+        /// The clicked menu item no longer matches any command for the selection.
+        case unknownCommand = "command"
+        /// The command is not offered for this selection (e.g. a folder in an extract selection).
+        case notAvailable = "unavailable"
+
+        var message: String {
+            switch self {
+            case .noItems:
+                return "7-Zip did not receive the selected items from Finder. Select the files again and retry."
+            case .unknownCommand:
+                return "7-Zip could not identify the menu command that was chosen. Open the menu again and retry."
+            case .notAvailable:
+                return "This 7-Zip command is not available for the selected items."
+            }
+        }
     }
 
     /// `SZ_TEST_SUPPORT=1`. Read straight from the environment because this file is Foundation
@@ -92,6 +119,15 @@ enum CommandURL {
             items.append(URLQueryItem(name: "tmp", value: tmpBlob))
         }
         components.queryItems = items
+        return components.url
+    }
+
+    static func errorURL(_ failure: ExtensionFailure) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = ""
+        components.path = errorPath
+        components.queryItems = [URLQueryItem(name: "code", value: failure.rawValue)]
         return components.url
     }
 
@@ -142,6 +178,12 @@ enum CommandURL {
         case settingsPath:
             let show = query.first(where: { $0.name == "show" })?.value == "1"
             return .settings(show: show)
+        case errorPath:
+            guard let code = query.first(where: { $0.name == "code" })?.value,
+                  let failure = ExtensionFailure(rawValue: code) else {
+                throw SevenZipArgumentError("Unsupported URL command", url.absoluteString)
+            }
+            return .extensionFailure(failure)
         default:
             throw SevenZipArgumentError("Unsupported URL command", url.absoluteString)
         }

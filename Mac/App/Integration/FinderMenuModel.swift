@@ -189,6 +189,55 @@ enum FinderMenuModel {
         return out
     }
 
+    // MARK: - Invocation across Finder's process boundary (finderfix)
+
+    /// Every command of a built tree, submenu children included, in menu order (depth first).
+    /// The Finder Sync extension numbers its `NSMenuItem`s in exactly this order.
+    static func flattenCommands(_ nodes: [FinderMenuNode]) -> [FinderMenuCommand] {
+        var out: [FinderMenuCommand] = []
+        func walk(_ nodes: [FinderMenuNode]) {
+            for node in nodes {
+                switch node {
+                case .command(let c): out.append(c)
+                case .separator: break
+                case .submenu(_, _, let children): walk(children)
+                }
+            }
+        }
+        walk(nodes)
+        return out
+    }
+
+    /// The `NSMenuItem.tag` of the command at `index` in `flattenCommands` order. Never 0, which
+    /// is what an item that was not numbered carries.
+    static func menuTag(forIndex index: Int) -> Int { index + 1 }
+
+    /// The command a clicked Finder Sync menu item stands for.
+    ///
+    /// Finder does not show the extension's `NSMenu`: it copies it into its own process, and the
+    /// copy keeps an item's title, image, tag and action but **not** its `representedObject` or
+    /// target. The action message Finder sends back to the extension therefore carries a fresh
+    /// item whose `representedObject` is nil -- measured: `invoke` received `rep=nil, tag=0` for
+    /// "Add to archive..." and "Open archive" (Mac/docs/reports/finderfix.md). So the command is
+    /// found again from what does survive: the tree is rebuilt for the current selection, the tag
+    /// picks the item, and the title must agree. A tag that does not match (the settings changed
+    /// between showing the menu and the click) falls back to the unique item with that title.
+    static func resolveInvocation(tag: Int, title: String,
+                                  nodes: [FinderMenuNode]) -> FinderMenuCommand? {
+        let commands = flattenCommands(nodes)
+        let index = tag - 1
+        if commands.indices.contains(index), commands[index].title == title {
+            return commands[index]
+        }
+        let byTitle = commands.filter { $0.title == title }
+        // Two "Open archive" items (A1 and the first child of A2) run the same command line.
+        if let first = byTitle.first, byTitle.allSatisfy({ $0.prefixArguments == first.prefixArguments
+            && $0.suffixArguments == first.suffixArguments && $0.selectionKind == first.selectionKind }) {
+            return first
+        }
+        return nil
+    }
+
     /// The one command with that verb, or nil when the selection does not offer it.
     static func command(verb: String, selection: FinderSelection,
                         settings: IntegrationSettings = IntegrationSettings()) -> FinderMenuCommand? {

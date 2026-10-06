@@ -109,6 +109,21 @@ final class FinderIntegrationTests: SevenZipUITestCase {
                       || sevenZip.dismissDialog(dialog, button: "OK"))
     }
 
+    // MARK: - An extension that fails says so (finderfix)
+
+    /// `sevenzip:///error?code=noitems` is what the Finder Sync extension or a Quick Action sends
+    /// when it could not build a command: the app must put up an error box, never do nothing.
+    func testExtensionFailureURLShowsAnErrorBox() {
+        launch()
+        XCTAssertTrue(sevenZip.open(URL(string: "sevenzip:///error?code=noitems")!))
+        guard let box = sevenZip.waitForDialog(title: "7-Zip did not receive", timeout: 25) else {
+            return XCTFail("no error box for an extension failure")
+        }
+        screenshot("20-extension-failure-error-box")
+        XCTAssertTrue(sevenZip.dismissDialog(box, button: "OK"))
+        XCTAssertTrue(sevenZip.isRunning)
+    }
+
     // MARK: - 7zG mode from a real argv (03 section 6.4)
 
     /// `argv[1]` is a command word: the file manager is ordered out and only the command's own

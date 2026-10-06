@@ -18,7 +18,10 @@
 // to the app through `sevenzip://`.
 
 import Cocoa
+import os
 import UniformTypeIdentifiers
+
+private let log = Logger(subsystem: ExtensionHandoff.subsystem, category: "QuickAction")
 
 /// Shared body. The view is never meant to be seen: the request completes as soon as the command
 /// has been handed to the app, which is the closest an Action extension gets to "headless".
@@ -33,48 +36,38 @@ class QuickActionController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        collectFileURLs { [weak self] urls in
-            self?.run(with: urls)
-            self?.finish()
-        }
-    }
-
-    /// Every `NSItemProvider` attachment of every input item, resolved to a file URL.
-    private func collectFileURLs(_ completion: @escaping ([URL]) -> Void) {
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
         let providers = items.flatMap { $0.attachments ?? [] }
-        guard !providers.isEmpty else { return completion([]) }
-
-        var urls = [URL?](repeating: nil, count: providers.count)
-        let group = DispatchGroup()
-        let type = UTType.fileURL.identifier
-        for (index, provider) in providers.enumerated() {
-            guard provider.hasItemConformingToTypeIdentifier(type) else { continue }
-            group.enter()
-            provider.loadItem(forTypeIdentifier: type, options: nil) { value, _ in
-                if let url = value as? URL {
-                    urls[index] = url
-                } else if let data = value as? Data,
-                          let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    urls[index] = url
-                }
-                group.leave()
-            }
+        log.log("\(self.commandVerb, privacy: .public): \(providers.count, privacy: .public) attachments, types \(providers.map(\.registeredTypeIdentifiers), privacy: .public)")
+        QuickActionInput.fileURLs(from: providers) { [weak self] urls in
+            guard let self else { return }
+            self.run(with: urls) { self.finish() }
         }
-        group.notify(queue: .main) { completion(urls.compactMap { $0 }) }
     }
 
-    private func run(with urls: [URL]) {
-        guard !urls.isEmpty else { return }
+    private func run(with urls: [URL], completion: @escaping () -> Void) {
+        guard !urls.isEmpty else {
+            ExtensionHandoff.report(.noItems, log: log) { _ in completion() }
+            return
+        }
         let selection = FinderSelection(urls: urls)
         let bundleID = Bundle.main.bundleIdentifier ?? SevenZipBundle.quickActionExtract
         let settings = IntegrationSettings.current(extensionBundleID: bundleID)
         guard let command = FinderMenuModel.command(verb: commandVerb, selection: selection,
-                                                   settings: settings) else { return }
+                                                   settings: settings) else {
+            ExtensionHandoff.report(.notAvailable, log: log) { _ in completion() }
+            return
+        }
         let built = command.argv(for: selection.paths, listFileDirectory: NSTemporaryDirectory())
         guard let url = CommandURL.url(argv: built.argv,
-                                       temporaryFiles: built.temporaryFiles) else { return }
-        NSWorkspace.shared.open(url)
+                                       temporaryFiles: built.temporaryFiles) else {
+            ExtensionHandoff.report(.unknownCommand, log: log) { _ in completion() }
+            return
+        }
+        log.log("\(self.commandVerb, privacy: .public): \(urls.count, privacy: .public) items")
+        // The request is completed only after the system has answered the hand-off: completing
+        // first lets the extension process be torn down while the open is still in flight.
+        ExtensionHandoff.send(url, log: log) { _ in completion() }
     }
 
     private func finish() {
