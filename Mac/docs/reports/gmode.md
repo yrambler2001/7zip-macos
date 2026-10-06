@@ -187,3 +187,56 @@ screenshots were not kept), and only the user can answer it.
   The previous copy was kept at `~/7-Zip-backup.app` until then, and has now been removed.
 - The three extensions are registered only from `/Applications`. `sevenzip:` resolves only to
   `/Applications/7-Zip.app`; the main tree's Debug and Release builds were unregistered again.
+
+## 9. gmodefix: the warm-dialog test depended on the host app's activation
+
+Branch `mac/gmodefix` (from `macos` 45864ef). testreg §4 reported that `test.sh -H` failed
+`GModeTests.testWarmCommandDialogStandsAloneAndLeavesTheWindowsAlone` at
+`XCTAssertNil(DialogKit.owner(for: nil, parent: managerWindow))`. The call returned the Compress
+`DialogWindow` itself, and it failed when run alone too.
+
+**Cause: a test that depended on machine state, not a product bug.** `DialogKit.owner(for:parent:)`
+answers "who owns a new dialog": the explicit parent if it may own one, else `NSApp.keyWindow`,
+`mainWindow`, …, always skipping `for:` itself and, in 7zG mode, every file-manager window. The
+test passed `for: nil`, so the command's own dialog was a valid owner whenever it was the key
+window. `NSApp.keyWindow` is nil while the app is inactive. The hosted tests set
+`GMode.changesActivation = false`, so nothing activates the host, and the result depended on
+whether the test host happened to be the active app when the case ran. The same case, alone, with
+a diagnostic printed from inside the dialog:
+
+| Host state | `isActive` | key / main | `owner(for: nil, parent: fm)` | `owner(for: dialog, parent: fm)` | Result |
+|---|---|---|---|---|---|
+| left inactive (Finder frontmost) | false | nil / nil | nil | nil | pass |
+| `NSApp.activate` before the URL | true | "Add to Archive" / "Add to Archive" | **"Add to Archive"** | nil | the reported failure |
+
+The gmode runs happened to leave the host inactive. testreg's runs did not. testreg's harness
+changes don't touch `-H`: `save_prefs` and the foreign-7-Zip checks run only for the input shard,
+and the new trap's `quit_test_processes` runs only at exit.
+
+The product does the right thing in both states. In real use the app *is* active (`prepareModal`
+activates it once the dialog is key and main). The dialog's own owner is nil: centred on the work
+area, no sheet, no parent. A box the dialog raises in turn is owned by the dialog, as 7zG's message
+boxes are owned by its dialog. In neither state is a file-manager window chosen.
+
+**Fix (test only, `Mac/Tests/AppTests/GModeTests.swift`).** The case now activates the host before
+it sends the URL, so it runs in the real, deterministic state. While the dialog is up it asserts:
+- the dialog is key and main (when the host is active);
+- `owner(for: dialog, parent: fileManagerWindow)` is nil;
+- for every file-manager window passed as the parent, a nested dialog's owner is nil or the command's
+  dialog, and never a `MainWindowController` window.
+
+This still catches the bug the line was meant to catch: if `mayOwnDialogs` let a file-manager window
+through, `owner(for: dialog, parent: fm)` would return it. No app code changed, so the installed
+`/Applications/7-Zip.app` was not rebuilt.
+
+| Command | Result |
+|---|---|
+| `Mac/scripts/build.sh` | exit 0, 0 warnings |
+| `Mac/scripts/test.sh` | 401 passed, 0 failed |
+| `Mac/scripts/test.sh -H` | 264 passed, 0 failed |
+| `Mac/scripts/test.sh -u` | 71 passed, 0 failed (input 59, Probe1 6, Probe2 6). No foreign 7-Zip started. |
+
+Afterwards, `urlsForApplications(toOpen: sevenzip:…)` lists only `/Applications/7-Zip.app`.
+`pluginkit -mAvvv` lists FinderSync, QuickActionCompress and QuickActionExtract only from
+`/Applications/7-Zip.app`. No 7-Zip app process is running, only the installed copy's FinderSync
+extension.
