@@ -56,10 +56,14 @@ Download `7-Zip-26.03-macOS-1.0.0.dmg` (the version in the name changes with eac
 
 ```sh
 brew install --cask yrambler2001/tap/7zip-macos
+brew trust yrambler2001/tap          # once, so that a plain `brew upgrade` includes the cask (Homebrew 7)
 ```
 
-The tap is a personal one ([yrambler2001/tap](https://github.com/yrambler2001/homebrew-tap)). Like
-the DMG, every install and update needs the one-time *Open Anyway* step below.
+Update with `brew upgrade --cask 7zip-macos`. The tap is a personal one
+([yrambler2001/homebrew-tap](https://github.com/yrambler2001/homebrew-tap)), updated automatically
+with each release. Homebrew keeps macOS's quarantine on the download, so, as with the DMG, the
+*Open Anyway* step below is needed after **every** install and every update until the app is
+notarized; the cask does not remove the quarantine for you.
 
 ### From source
 
@@ -139,6 +143,7 @@ Bug reports and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING
 - [docs/architecture.md](docs/architecture.md) — engine, bridge, app, extensions
 - [docs/testing.md](docs/testing.md) — unit, app-hosted and UI tests
 - [docs/upstream.md](docs/upstream.md) — following upstream 7-Zip and the patches to it
+- [docs/releasing.md](docs/releasing.md) — CI, cutting a release, the Homebrew tap, signing secrets
 
 Problems in the archive engine itself (a format, compression, the command-line `7zz`) belong
 upstream at [7-zip.org](https://www.7-zip.org).

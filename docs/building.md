@@ -109,10 +109,13 @@ To release a new version:
 
 ```sh
 Mac/scripts/bump-version.sh patch          # or minor, major, 1.2.0; --upstream 26.04 after an upstream merge
-$EDITOR CHANGELOG.md                       # fill in the new section
-git commit -am "Version 1.0.1" && git tag v1.0.1
-Mac/scripts/package.sh                     # Mac/build/7-Zip-26.03-macOS-1.0.1.dmg
+$EDITOR CHANGELOG.md                       # fill in the new section and date it
+git commit -am "Version 1.0.1" && git tag -a v1.0.1 -m "7-Zip 26.03 for macOS 1.0.1"
+git push origin macos v1.0.1               # the release workflow builds, tests and publishes it
 ```
+
+[releasing.md](releasing.md) describes the workflow, the Homebrew tap and the signing secrets.
+`Mac/scripts/package.sh` makes the same disk image locally.
 
 ## Bundled assets
 
