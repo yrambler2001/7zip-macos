@@ -1,7 +1,8 @@
 # finderext-registration.sh -- sourced by build.sh and test.sh (appfeel, ai/reports/appfeel.md §2;
 # finderfix, ai/reports/finderfix.md).
 #
-# Every 7-Zip.app copy registers its Finder Sync extension and its two Quick Actions under the same
+# Every 7-Zip.app copy registers its Finder Sync extension, its two Quick Actions and (quicklook) its
+# Quick Look preview extension under the same
 # identifiers, and PlugInKit hands Finder one copy of each -- after an xcodebuild, the fresh build.
 # So building or testing used to take Finder's 7-Zip menu away from the installed app, and a
 # worktree build that was later deleted left Finder pointing at nothing. Which copy wins cannot be
@@ -22,7 +23,7 @@
 #   finderext_mark       (testreg) write which copy Finder runs to $MAC/build/finderext-active,
 #                        for the sandboxed UI tests, which cannot ask PlugInKit themselves
 
-FINDEREXT_IDS="com.yrambler2001.7zip.FinderSync com.yrambler2001.7zip.QuickActionExtract com.yrambler2001.7zip.QuickActionCompress"
+FINDEREXT_IDS="com.yrambler2001.7zip.FinderSync com.yrambler2001.7zip.QuickActionExtract com.yrambler2001.7zip.QuickActionCompress com.yrambler2001.7zip.QuickLook"
 FINDEREXT_BEFORE=""
 FINDEREXT_LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 

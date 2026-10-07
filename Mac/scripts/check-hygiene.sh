@@ -70,7 +70,7 @@ WAE="$(awk '
   in_t && /GCC_TREAT_WARNINGS_AS_ERRORS:[[:space:]]*YES/   { print t ":gcc" }
 ' Mac/project.yml)"
 WAE_FAIL=$FAIL
-for need in 7-Zip:swift FinderSync:swift QuickActionExtract:swift QuickActionCompress:swift \
+for need in 7-Zip:swift FinderSync:swift QuickActionExtract:swift QuickActionCompress:swift QuickLook:swift \
             SevenZipKitTests:swift SevenZipAppTests:swift SevenZipKit:gcc; do
   printf '%s\n' "$WAE" | grep -qx "$need" || bad "Mac/project.yml: target ${need%%:*} lost ${need##*:} warnings-as-errors"
 done

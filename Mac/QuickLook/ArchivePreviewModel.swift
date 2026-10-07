@@ -47,6 +47,20 @@ struct ArchivePreviewLimits: Equatable {
     static let standard = ArchivePreviewLimits()
 }
 
+extension ArchivePreviewStatus {
+    /// The status without its message, for the log.
+    var kind: String {
+        switch self {
+        case .complete: return "complete"
+        case .truncated(let n): return "truncated(\(n) more)"
+        case .stopped(let open, let tooMany): return "stopped(open: \(open), tooMany: \(tooMany))"
+        case .encrypted: return "encrypted"
+        case .failed: return "failed"
+        case .cancelled: return "cancelled"
+        }
+    }
+}
+
 /// One row of the tree.
 final class ArchivePreviewNode {
     let name: String
@@ -227,6 +241,10 @@ enum ArchivePreviewBuilder {
                 return preview
             }
             preview.summary.multiVolume = isVolumeName(preview.summary.fileName)
+            if preview.summary.multiVolume {
+                // What one volume says without the others: its format, by signature.
+                preview.summary.types = signatureFormat(path).map { [$0] } ?? []
+            }
             preview.status = .failed(message: failureText(nsError, path: path))
             return preview
         }
@@ -466,6 +484,14 @@ enum ArchivePreviewBuilder {
         (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.uint64Value
     }
 
+    /// The first handler whose signature matches the file's first bytes (the open's first pass).
+    static func signatureFormat(_ path: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard let header = try? handle.read(upToCount: 4096), !header.isEmpty else { return nil }
+        return SZCodecs.formats(matchingHeader: header).first(where: { $0.signatureOffset == 0 })?.name
+    }
+
     static func formatName(forPath path: String) -> String? {
         SZCodecs.format(forArchiveName: path)?.name
     }
@@ -492,9 +518,12 @@ enum ArchivePreviewBuilder {
     /// (GetFolderError's nonOpen_Errors), else the error's description.
     static func failureText(_ error: NSError, path: String) -> String {
         if let message = error.userInfo[SZArchiveOpenErrorMessageKey] as? String, !message.isEmpty {
-            // "<path>\nCannot open the file as [zip] archive\nErrors: ..." -- the path is the
-            // preview's title already.
-            let lines = message.split(separator: "\n").map(String.init).filter { $0 != path && !$0.isEmpty }
+            // "<path>\nCannot open the file as [zip] archive\nErrors: ..." -- the file is the
+            // preview's title already (and the engine may spell the path differently: /tmp for
+            // /private/tmp), so any line naming it goes.
+            let name = (path as NSString).lastPathComponent
+            let lines = message.split(separator: "\n").map(String.init)
+                .filter { !$0.isEmpty && $0 != name && !$0.hasSuffix("/" + name) }
             if !lines.isEmpty { return lines.joined(separator: "\n") }
         }
         if error.domain == SZErrorDomain, error.code == SZError.Code.notArchive.rawValue { return "" }

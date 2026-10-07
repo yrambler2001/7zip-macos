@@ -52,7 +52,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
                                                       isCancelled: { flag.isSet })
             // `log stream --predicate 'subsystem == "com.yrambler2001.7zip"'`: the outcome only; the
             // file's name stays private.
-            Self.log.log("preview of \(path, privacy: .private): \(String(describing: preview.status), privacy: .public), \(preview.listedEntries, privacy: .public)/\(preview.totalEntries, privacy: .public) entries, types \(preview.summary.typeText, privacy: .public), \(Int(Date().timeIntervalSince(start) * 1000), privacy: .public) ms, lang '\(SZLang.shared.currentLanguageCode, privacy: .public)'")
+            Self.log.log("preview of \(path, privacy: .private): \(preview.status.kind, privacy: .public), \(preview.listedEntries, privacy: .public)/\(preview.totalEntries, privacy: .public) entries, types \(preview.summary.typeText, privacy: .public), \(Int(Date().timeIntervalSince(start) * 1000), privacy: .public) ms, lang '\(SZLang.shared.currentLanguageCode, privacy: .public)'")
             DispatchQueue.main.async {
                 self?.previewView.show(preview, fileURL: url, timestampLevel: settings.timestampLevel,
                                        utc: settings.utc)

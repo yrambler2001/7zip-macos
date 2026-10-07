@@ -220,7 +220,6 @@ final class ArchivePreviewView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
     required init?(coder: NSCoder) { fatalError("not used") }
 
     private func build() {
-        wantsLayer = true
         addSubview(band)
         addSubview(bandLine)
         addSubview(scrollView)
@@ -653,8 +652,11 @@ final class PreviewCellView: NSTableCellView {
             field.frame = NSRect(x: 2 + PreviewMetrics.iconSize + 4, y: y,
                                  width: max(0, bounds.width - 22 - PreviewMetrics.subitemPadding), height: height)
         } else {
+            // The text 6 pt from the edge it is aligned to; the field may use the other side's
+            // padding too, so a date that needs the column's exact width is never cut.
             let pad = PreviewMetrics.subitemPadding
-            field.frame = NSRect(x: pad, y: y, width: max(0, bounds.width - 2 * pad), height: height)
+            let x = field.alignment == .right ? 0 : pad
+            field.frame = NSRect(x: x, y: y, width: max(0, bounds.width - pad), height: height)
         }
     }
 }

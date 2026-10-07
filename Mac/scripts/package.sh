@@ -141,7 +141,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # ---------------------------------------------------------------------------
-# 2. The bundle must carry both extensions and the framework, all signed. A
+# 2. The bundle must carry the extensions and the framework, all signed. A
 #    missing appex is silent at build time and only shows up as a Finder menu
 #    that never appears, so it is asserted here.
 # ---------------------------------------------------------------------------
@@ -152,6 +152,8 @@ for part in \
   "Contents/PlugIns/FinderSync.appex" \
   "Contents/PlugIns/QuickActionExtract.appex" \
   "Contents/PlugIns/QuickActionCompress.appex" \
+  "Contents/PlugIns/QuickLook.appex" \
+  "Contents/PlugIns/QuickLook.appex/Contents/Resources/fm-7z.ico" \
   "Contents/Frameworks/SevenZipKit.framework/Resources/Lang/en.ttt" \
   "Contents/Frameworks/SevenZipKit.framework/Resources/Lang/de.txt" \
   "Contents/Resources/SFX/7z.sfx" \
@@ -190,7 +192,8 @@ for part in \
   "Contents/Frameworks/SevenZipKit.framework" \
   "Contents/PlugIns/FinderSync.appex" \
   "Contents/PlugIns/QuickActionExtract.appex" \
-  "Contents/PlugIns/QuickActionCompress.appex"
+  "Contents/PlugIns/QuickActionCompress.appex" \
+  "Contents/PlugIns/QuickLook.appex"
 do
   codesign -dv "$APP/$part" >/dev/null 2>&1 || die "$part is not signed"
 done
@@ -205,7 +208,7 @@ say "   codesign --verify --deep --strict: ok ($(codesign -dv "$APP" 2>&1 | sed 
 # re-links the appex, which is why package.sh always builds rather than trusting Mac/build.
 ENT="$STAGE_ENT"
 mkdir -p "$ENT"
-for ax in FinderSync QuickActionExtract QuickActionCompress; do
+for ax in FinderSync QuickActionExtract QuickActionCompress QuickLook; do
   codesign -d --entitlements - --xml "$APP/Contents/PlugIns/$ax.appex" 2>/dev/null >"$ENT/$ax.plist"
   [ -s "$ENT/$ax.plist" ] || die "$ax.appex has no entitlements at all; Finder will refuse to load it"
   [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$ENT/$ax.plist" 2>/dev/null)" = true ] \
@@ -220,7 +223,17 @@ if [ -s "$ENT/app.plist" ] \
    && /usr/libexec/PlistBuddy -c 'Print :com.apple.security.get-task-allow' "$ENT/app.plist" >/dev/null 2>&1; then
   die "the app carries com.apple.security.get-task-allow; notarization would be refused (CODE_SIGN_INJECT_BASE_ENTITLEMENTS)"
 fi
-say "   all three app extensions are sandboxed, nothing asks for get-task-allow"
+# quicklook: the Quick Look extension parses archives as soon as one is selected in Finder, so it
+# must hold nothing but the sandbox (no network, no file access beyond the previewed file, no
+# shared preferences), and it must reach the app's SevenZipKit rather than carry its own copy.
+QLENT="$(/usr/libexec/PlistBuddy -c 'Print' "$ENT/QuickLook.plist" 2>/dev/null | grep -c ' = ' || true)"
+[ "$QLENT" = 1 ] \
+  || die "QuickLook.appex must carry only com.apple.security.app-sandbox, found $QLENT entitlements"
+[ ! -e "$APP/Contents/PlugIns/QuickLook.appex/Contents/Frameworks" ] \
+  || die "QuickLook.appex embeds its own frameworks; it must link the app's SevenZipKit"
+otool -L "$APP/Contents/PlugIns/QuickLook.appex/Contents/MacOS/QuickLook" | grep -q '@rpath/SevenZipKit.framework' \
+  || die "QuickLook.appex does not link SevenZipKit through @rpath"
+say "   all four app extensions are sandboxed, nothing asks for get-task-allow"
 
 # ---------------------------------------------------------------------------
 # 3. Stage the image contents.
