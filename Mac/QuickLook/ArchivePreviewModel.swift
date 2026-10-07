@@ -242,11 +242,80 @@ enum ArchivePreviewBuilder {
                  timestampLevel: timestampLevel, isCancelled: isCancelled)
         } catch {
             preview.status = .failed(message: failureText(error as NSError, path: path))
+            return preview
+        }
+        if let outer = streamedTarFormat(preview) {
+            _ = listStreamedTar(path: path, outerFormat: outer, into: &preview, limits: limits, deadline: deadline,
+                                timestampLevel: timestampLevel, isCancelled: isCancelled)
         }
         return preview
     }
 
+    /// The outer handler's name when the archive is one stream compressor holding one ".tar".
+    static func streamedTarFormat(_ preview: ArchivePreview) -> String? {
+        guard preview.status == .complete, preview.summary.types.count == 1,
+              let type = preview.summary.types.first, let format = SZCodecs.format(named: type), format.keepName,
+              preview.root.children.count == 1, let item = preview.root.children.first, !item.isDirectory,
+              (item.name as NSString).pathExtension.lowercased() == "tar" else { return nil }
+        return format.name
+    }
+
     // MARK: listing
+
+    /// Collects entries into the tree and the counts, whatever reads them (the Agent folder or the
+    /// streamed tar).
+    struct Accumulator {
+        let limits: ArchivePreviewLimits
+        var anySize = false, anyPacked = false
+        var size: UInt64 = 0, packed: UInt64 = 0
+
+        init(limits: ArchivePreviewLimits) { self.limits = limits }
+
+        /// One entry; `prefix` is its folder path inside the archive ("sub/deep/", "" at the top).
+        mutating func add(prefix: String, name: String, isDirectory: Bool, size itemSize: UInt64?,
+                          packed itemPacked: UInt64?, encrypted: Bool, modified: Date?,
+                          modifiedText: @autoclosure () -> String, into preview: inout ArchivePreview) {
+            if encrypted { preview.summary.encrypted = true }
+            if isDirectory {
+                preview.summary.folders += 1
+            } else {
+                preview.summary.files += 1
+                if let itemSize { size &+= itemSize; anySize = true }
+                if let itemPacked { packed &+= itemPacked; anyPacked = true }
+            }
+            preview.totalEntries += 1
+            guard preview.listedEntries < limits.maxListedEntries, !name.isEmpty else { return }
+            var parent = preview.root
+            for component in prefix.split(separator: "/") where !component.isEmpty {
+                parent = parent.folder(named: String(component))
+            }
+            let node = isDirectory ? parent.folder(named: name) : ArchivePreviewNode(name: name, isDirectory: false)
+            if !isDirectory {
+                node.size = itemSize
+                node.packedSize = itemPacked
+                parent.add(node)
+            }
+            node.isEncrypted = encrypted
+            node.modified = modified
+            node.modifiedText = ArchivePreviewBuilder.oneLine(modifiedText())
+            preview.listedEntries += 1
+        }
+
+        /// Sums, sorting and the status.
+        func finish(_ preview: inout ArchivePreview, stopped: Bool) {
+            preview.summary.size = anySize ? size : nil
+            preview.summary.packedSize = anyPacked ? packed : nil
+            preview.root.computeFolderSums()
+            preview.root.sortRecursively()
+            if stopped {
+                preview.status = .stopped(openStopped: false, tooManyEntries: false)
+            } else if preview.totalEntries > preview.listedEntries {
+                preview.status = .truncated(notShown: preview.totalEntries - preview.listedEntries)
+            } else {
+                preview.status = .complete
+            }
+        }
+    }
 
     /// Reads every item of `folder` in flat mode (CAgentFolder with _flatMode: every item of every
     /// level, folders included, each with its kpidPrefix), counting them all and putting the first
@@ -258,61 +327,75 @@ enum ArchivePreviewBuilder {
             try? folder.loadItems()
         }
         let flat = folder.supportsFlatMode
-        let count = folder.itemCount
+        var accumulator = Accumulator(limits: limits)
         var stopped = false
-        var summary = preview.summary
-        var anySize = false, anyPacked = false
-        var size: UInt64 = 0, packed: UInt64 = 0
-        for index in 0..<count {
+        for index in 0..<folder.itemCount {
             if index % 64 == 0 {
                 if isCancelled() { preview.status = .cancelled; return }
                 if Date() >= deadline { stopped = true; break }
             }
-            let isDirectory = folder.isDirectory(at: index)
-            let itemSize = (folder.propertyOfItem(at: index, propID: .size) as? NSNumber)?.uint64Value
-            let itemPacked = (folder.propertyOfItem(at: index, propID: .packSize) as? NSNumber)?.uint64Value
-            let encrypted = (folder.propertyOfItem(at: index, propID: .encrypted) as? NSNumber)?.boolValue ?? false
-            if encrypted { summary.encrypted = true }
-            if isDirectory {
-                summary.folders += 1
-            } else {
-                summary.files += 1
-                if let itemSize { size &+= itemSize; anySize = true }
-                if let itemPacked { packed &+= itemPacked; anyPacked = true }
+            // kpidPrefix: CAgentFolder::GetItemPrefix answers nothing on this build (no
+            // Z7_AGENT_PROXY2_USE_DIR_PATH_PREFIX), the property does.
+            var prefix = ""
+            if flat {
+                prefix = folder.propertyOfItem(at: index, propID: .prefix) as? String ?? ""
+                if prefix.isEmpty { prefix = folder.prefixOfItem(at: index) }
             }
-            preview.totalEntries += 1
-            guard preview.listedEntries < limits.maxListedEntries else { continue }
+            accumulator.add(
+                prefix: prefix, name: folder.nameOfItem(at: index), isDirectory: folder.isDirectory(at: index),
+                size: (folder.propertyOfItem(at: index, propID: .size) as? NSNumber)?.uint64Value,
+                packed: (folder.propertyOfItem(at: index, propID: .packSize) as? NSNumber)?.uint64Value,
+                encrypted: (folder.propertyOfItem(at: index, propID: .encrypted) as? NSNumber)?.boolValue ?? false,
+                modified: folder.propertyOfItem(at: index, propID: .mtime) as? Date,
+                modifiedText: folder.displayStringOfItem(at: index, propID: .mtime, timestampLevel: timestampLevel),
+                into: &preview)
+        }
+        accumulator.finish(&preview, stopped: stopped)
+    }
 
-            let prefix = flat ? folder.prefixOfItem(at: index) : ""
-            var parent = preview.root
-            for component in prefix.split(separator: "/") where !component.isEmpty {
-                parent = parent.folder(named: String(component))
+    /// The single-stream compressors (KeepName handlers: gzip, bzip2, xz, zstd, lzma, Z) whose
+    /// one item is a ".tar": 7zFM shows that one item and opens it from a temp copy (the stream is
+    /// not seekable, so CArchiveLink cannot open the tar level in place). The preview reads the tar
+    /// from the decompressed stream instead (`SZStreamTar`): nothing is written, and the listing is
+    /// capped like any other. Returns false when the stream is not a tar.
+    static func listStreamedTar(path: String, outerFormat: String, into preview: inout ArchivePreview,
+                                limits: ArchivePreviewLimits, deadline: Date, timestampLevel: SZTimestampLevel,
+                                isCancelled: @escaping () -> Bool) -> Bool {
+        var streamed = ArchivePreview()
+        streamed.summary = preview.summary
+        streamed.summary.folders = 0
+        streamed.summary.files = 0
+        var accumulator = Accumulator(limits: limits)
+        // Polled from the decompressing worker thread too: no captured state is mutated.
+        let checkBreak: () -> Bool = { isCancelled() || Date() >= deadline }
+        do {
+            try SZStreamTar.listTarInsideFile(atPath: path, outerFormat: outerFormat, timestampLevel: timestampLevel,
+                                              checkBreak: { checkBreak() }) { entry in
+                var components = entry.path.split(separator: "/").map(String.init)
+                let name = components.popLast() ?? ""
+                let prefix = components.joined(separator: "/")
+                accumulator.add(prefix: prefix, name: name, isDirectory: entry.isDirectory,
+                                size: entry.isDirectory ? nil : entry.size, packed: nil, encrypted: false,
+                                modified: entry.modified, modifiedText: entry.modifiedText, into: &streamed)
+                return !checkBreak()
             }
-            let name = folder.nameOfItem(at: index)
-            let node = isDirectory ? parent.folder(named: name) : ArchivePreviewNode(name: name, isDirectory: false)
-            if !isDirectory {
-                node.size = itemSize
-                node.packedSize = itemPacked
-                parent.add(node)
-            }
-            node.isEncrypted = encrypted
-            node.modified = folder.propertyOfItem(at: index, propID: .mtime) as? Date
-            node.modifiedText = Self.oneLine(folder.displayStringOfItem(at: index, propID: .mtime,
-                                                                       timestampLevel: timestampLevel))
-            preview.listedEntries += 1
+        } catch {
+            // Not a tar, or the stream ended early; what was read is still shown.
         }
-        summary.size = anySize ? size : nil
-        summary.packedSize = anyPacked ? packed : nil
-        preview.summary = summary
-        preview.root.computeFolderSums()
-        preview.root.sortRecursively()
-        if stopped {
-            preview.status = .stopped(openStopped: false, tooManyEntries: false)
-        } else if preview.totalEntries > preview.listedEntries {
-            preview.status = .truncated(notShown: preview.totalEntries - preview.listedEntries)
-        } else {
-            preview.status = .complete
+        if isCancelled() {
+            preview.status = .cancelled
+            return true
         }
+        guard streamed.totalEntries > 0 else {
+            // Out of time before the first header: the outer level stays, marked as stopped.
+            if Date() >= deadline { preview.status = .stopped(openStopped: false, tooManyEntries: false) }
+            return false
+        }
+        accumulator.finish(&streamed, stopped: Date() >= deadline)
+        streamed.summary.types = preview.summary.types + ["tar"]
+        streamed.summary.solid = nil
+        preview = streamed
+        return true
     }
 
     /// After a stopped open: the outer stream level alone (gzip / bzip2 / xz / zstd / lzma / Z,

@@ -26,6 +26,7 @@ FOUNDATION_EXPORT const unsigned char SevenZipKitVersionString[];
 #import <SevenZipKit/SZBenchmark.h>
 #import <SevenZipKit/SZHasher.h>
 #import <SevenZipKit/SZSplitFile.h>
+#import <SevenZipKit/SZStreamTar.h>
 #import <SevenZipKit/SZUpdater.h>
 
 NS_ASSUME_NONNULL_BEGIN

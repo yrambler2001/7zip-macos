@@ -11,6 +11,9 @@
 #   nested.zip         zip containing test.7z and test.tar.gz (archive inside archive)
 #   test.wim           WIM image: per-file SHA-1 as an IArchiveGetRawProps column (archgaps)
 #   test.xar           xar (/usr/bin/xar): per-file checksum as a raw property (archgaps)
+#   corrupt.7z         the first 48 bytes of test.7z: a 7z signature whose headers are missing
+#                      (quicklook: the preview's "cannot open" case)
+#   notarchive.zip     plain text named .zip (quicklook: not an archive at all)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SEVENZZ="${SEVENZZ:-$ROOT/CPP/7zip/Bundles/Alone2/b/m_arm64/7zz}"
@@ -49,4 +52,6 @@ $Z a -bd -bso0 -twim "$OUT/test.wim" readme.txt notes.md sub
 /usr/bin/xar -cf "$OUT/test.xar" readme.txt notes.md sub
 cd "$OUT"
 $Z a -bd -bso0 -tzip -mx=0 "$OUT/nested.zip" test.7z test.tar.gz
+head -c 48 "$OUT/test.7z" > "$OUT/corrupt.7z"
+printf 'This is plain text, not a zip archive.\n' > "$OUT/notarchive.zip"
 ls -la "$OUT"

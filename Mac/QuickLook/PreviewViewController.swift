@@ -11,6 +11,7 @@
 // the open's checkBreak answer E_ABORT.
 
 import Cocoa
+import os
 import Quartz
 import SevenZipKit
 
@@ -25,6 +26,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     }
 
     private let cancelFlag = CancelFlag()
+    static let log = Logger(subsystem: "com.yrambler2001.7zip", category: "quicklook")
     private var previewView: ArchivePreviewView { view as! ArchivePreviewView }
 
     override var nibName: NSNib.Name? { nil }
@@ -44,9 +46,13 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         let flag = cancelFlag
         let path = url.path
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let start = Date()
             let preview = ArchivePreviewBuilder.build(path: path, limits: .standard,
                                                       timestampLevel: settings.timestampLevel,
                                                       isCancelled: { flag.isSet })
+            // `log stream --predicate 'subsystem == "com.yrambler2001.7zip"'`: the outcome only; the
+            // file's name stays private.
+            Self.log.log("preview of \(path, privacy: .private): \(String(describing: preview.status), privacy: .public), \(preview.listedEntries, privacy: .public)/\(preview.totalEntries, privacy: .public) entries, types \(preview.summary.typeText, privacy: .public), \(Int(Date().timeIntervalSince(start) * 1000), privacy: .public) ms, lang '\(SZLang.shared.currentLanguageCode, privacy: .public)'")
             DispatchQueue.main.async {
                 self?.previewView.show(preview, fileURL: url, timestampLevel: settings.timestampLevel,
                                        utc: settings.utc)
