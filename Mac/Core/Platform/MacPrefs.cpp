@@ -110,8 +110,25 @@ static CFPropertyListRef CopyValue(const char *key)
   return v;
 }
 
+// fix112: Options > macOS > Reset All Settings stops every write for the rest of the process, so
+// the instance that is about to quit cannot put its window and panel state back into the domain it
+// just emptied. Every write of the app and of the engine comes through SetValue / Sync.
+static volatile bool g_WritesSuspended = false;
+
+void SetWritesSuspended(bool suspended)
+{
+  g_WritesSuspended = suspended;
+}
+
+bool WritesSuspended()
+{
+  return g_WritesSuspended;
+}
+
 static void SetValue(const char *key, CFPropertyListRef value)
 {
+  if (g_WritesSuspended)
+    return;
   CFStringRef k = MakeKey(key);
   CFPreferencesSetAppValue(k, value, AppID());
   CFRelease(k);
@@ -272,6 +289,8 @@ void ListKeys(const char *prefix, AStringVector &keys)
 
 void Sync()
 {
+  if (g_WritesSuspended)
+    return;
   CFPreferencesAppSynchronize(AppID());
 }
 

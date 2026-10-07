@@ -122,6 +122,10 @@ FOUNDATION_EXPORT NSString * const SZSettingsStateDirectoryEnvironmentVariable; 
 + (void)setPropertyListValue:(nullable id)value forKey:(NSString *)key;
 + (void)synchronize;
 
+/// fix112 (Reset All Settings): YES drops every write -- the typed setters, the untyped one, the
+/// engine's ZipRegistry accessors and synchronize -- until it is set back to NO. Reads still work.
+@property (class, nonatomic) BOOL writesSuspended;
+
 @end
 
 /// NWorkDir::CInfo (the one engine setting read implicitly by every Agent update).

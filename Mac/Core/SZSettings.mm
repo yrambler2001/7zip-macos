@@ -245,6 +245,8 @@ static NSString *SZEnvironmentValue(NSString *name)
 
 + (void)setPropertyListValue:(nullable id)value forKey:(NSString *)key
 {
+  if (WritesSuspended())
+    return;
   CFStringRef k = (__bridge CFStringRef)key;
   CFStringRef domain = (__bridge CFStringRef)[self applicationID];
   CFPreferencesSetAppValue(k, (__bridge CFPropertyListRef)value, domain);
@@ -253,6 +255,16 @@ static NSString *SZEnvironmentValue(NSString *name)
 + (void)synchronize
 {
   Sync();
+}
+
++ (BOOL)writesSuspended
+{
+  return WritesSuspended();
+}
+
++ (void)setWritesSuspended:(BOOL)writesSuspended
+{
+  SetWritesSuspended(writesSuspended);
 }
 
 @end
