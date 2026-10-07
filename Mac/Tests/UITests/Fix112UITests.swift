@@ -75,11 +75,13 @@ final class Fix112UITests: SevenZipUITestCase {
                              "FM.Columns.FSFolder": Self.userFSFolderLayout]))
         let seed = try XCTUnwrap(sevenZip.seedFile)
         XCTAssertTrue(sevenZip.selectMenuItem("Tools", "Options..."), "Tools > Options...")
-        let options = try XCTUnwrap(sevenZip.waitForDialog(title: "Options"), "no Options window")
-        let tab = options.radioButtons["macOS"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 10), "no macOS tab")
+        // The Options window's tab row is OptionsTabControl: each tab is a radio button whose label
+        // is the page title.
+        let tab = app.descendants(matching: .any).matching(NSPredicate(format: "(elementType == %d OR elementType == %d) AND (label == 'macOS' OR title == 'macOS')", XCUIElement.ElementType.radioButton.rawValue, XCUIElement.ElementType.tab.rawValue)).firstMatch
+        if !tab.waitForExistence(timeout: 15) { sevenZip.dumpTree("fix112-options") }
+        XCTAssertTrue(tab.exists, "no macOS tab")
         tab.click()
-        let reset = options.buttons["Reset All Settings..."]
+        let reset = app.buttons["optionsMacResetAll"]
         XCTAssertTrue(reset.waitForExistence(timeout: 10), "no Reset All Settings... button")
         screenshot("02-options-macos-reset")
         reset.click()
