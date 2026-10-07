@@ -61,7 +61,7 @@ cask caveats and releasing.md say so.
 
 ## 4. Tap repository (local, no remote)
 
-`/Users/yrambler2001/things/a.noindex/homebrew-tap`, one commit: `Casks/7zip-macos.rb`, `README.md`,
+`a local `homebrew-tap` checkout`, one commit: `Casks/7zip-macos.rb`, `README.md`,
 `LICENSE`, `.gitignore`. sha256 = the worktree DMG of this branch (build 326,
 `08c7a940…87df`); the release workflow overwrites it. No `xattr` / quarantine stripping; `uninstall
 quit:`; `zap` for Application Scripts, Caches, Containers, HTTPStorages, Preferences, Saved

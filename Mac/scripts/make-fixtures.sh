@@ -14,8 +14,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SEVENZZ="${SEVENZZ:-$ROOT/CPP/7zip/Bundles/Alone2/b/m_arm64/7zz}"
-if [ ! -x "$SEVENZZ" ]; then
-  SEVENZZ="$HOME/things/a.noindex/7zip/CPP/7zip/Bundles/Alone2/b/m_arm64/7zz"
+if [ ! -x "$SEVENZZ" ] && command -v 7zz >/dev/null 2>&1; then
+  SEVENZZ="$(command -v 7zz)"
 fi
 if [ ! -x "$SEVENZZ" ]; then
   echo "7zz not found; build it with: cd CPP/7zip/Bundles/Alone2 && DEVELOPER_DIR=/Applications/Xcode.app make -j8 -f ../../cmpl_mac_arm64.mak" >&2
