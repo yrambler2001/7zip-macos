@@ -24,21 +24,39 @@ import SevenZipKit
 
 enum URLCommandTokenStore {
 
-    /// `SZ_URL_TOKEN`: with `SZ_TEST_SUPPORT=1` only, a fixed secret the XCUITest harness sets
-    /// at launch, because the sandboxed test runner cannot read the app's domain. Whoever sets a
-    /// launch environment already runs code locally, so this opens nothing to a URL sender.
-    static let testEnvironmentVariable = "SZ_URL_TOKEN"
-
-    /// The secret, nil when there is none or it is malformed.
+    /// The secret, nil when there is none or it is malformed (or a retired test value).
     static var current: String? {
+        #if DEBUG
+        if let fixed = debugTestToken { return fixed }
+        #endif
+        let value = Settings.string(URLCommandToken.settingsKey)
+        return URLCommandToken.isWellFormed(value) ? value : nil
+    }
+
+    #if DEBUG
+    /// Debug builds only -- a Release build contains none of this. The XCUITest runner is
+    /// sandboxed and cannot read the app's domain, so `test.sh` writes a random secret for the run
+    /// into `uitest-url-token` next to the Debug apps, and the runner puts it in its URLs. It is
+    /// also passed as `SZ_URL_TOKEN` (with `SZ_TEST_SUPPORT=1`) to the launches that carry an
+    /// environment; a launch made by a URL from the runner does not, so the file is the source.
+    /// Nothing is written into any settings domain.
+    static let testEnvironmentVariable = "SZ_URL_TOKEN"
+    static let testTokenFileName = "uitest-url-token"
+
+    static var debugTestToken: String? {
         if CommandURL.testSupportEnabled,
            let fixed = CommandURL.environmentValue(testEnvironmentVariable),
            URLCommandToken.isWellFormed(fixed) {
             return fixed
         }
-        let value = Settings.string(URLCommandToken.settingsKey)
-        return URLCommandToken.isWellFormed(value) ? value : nil
+        let file = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent(testTokenFileName).path
+        var st = stat()
+        guard lstat(file, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG, st.st_uid == getuid(),
+              let text = try? String(contentsOfFile: file, encoding: .utf8) else { return nil }
+        let token = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return URLCommandToken.isWellFormed(token) ? token : nil
     }
+    #endif
 
     /// The secret, created now when there is none. Nil only when the random source failed or
     /// settings writes are suspended (the instance that is quitting after a reset).

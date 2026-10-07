@@ -41,8 +41,16 @@ enum URLCommandToken {
     /// 256 bits as 64 lowercase hex digits.
     static let byteCount = 32
 
+    /// Values a test harness of this repository once used. They are public, so no build accepts
+    /// them, wherever they are found (a URL, the settings, a snapshot). The harness now uses a
+    /// random secret per run (`test.sh`, `uitest-url-token`).
+    static let retiredTestTokens: Set<String> = [
+        "5ec113" + String(repeating: "0123456789", count: 5) + "abcdefab",
+    ]
+
     static func isWellFormed(_ token: String?) -> Bool {
         guard let token, token.utf8.count == byteCount * 2 else { return false }
+        if retiredTestTokens.contains(token) { return false }
         return token.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
     }
 
@@ -65,7 +73,7 @@ enum URLCommandToken {
     /// Whether `presented` is the expected token. A missing or malformed value on either side is a
     /// mismatch.
     static func matches(_ presented: String?, expected: String?) -> Bool {
-        guard isWellFormed(expected), let expected, let presented else { return false }
+        guard isWellFormed(expected), isWellFormed(presented), let expected, let presented else { return false }
         return constantTimeEqual(presented, expected)
     }
 }

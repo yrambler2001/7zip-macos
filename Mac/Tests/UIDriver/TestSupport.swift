@@ -145,13 +145,22 @@ public enum TestShard {
          urlTokenVariable: urlToken]
     }
 
-    /// sec113: the app runs a `sevenzip:///run` URL only with its secret. A test instance takes a
-    /// fixed one from its launch environment (`SZ_URL_TOKEN`, honoured only with
-    /// `SZ_TEST_SUPPORT=1`), because this sandboxed runner cannot read the app's domain. A URL
-    /// that launches the app from here arrives without this environment; `test.sh -u` writes the
-    /// same value into the real domain for that case.
+    /// sec113: the app runs a `sevenzip:///run` URL only with its secret. This sandboxed runner
+    /// cannot read the app's domain, so `Mac/scripts/test.sh` writes a random secret for the run
+    /// into `uitest-url-token` next to the Debug apps; a Debug app reads the same file (and
+    /// `SZ_URL_TOKEN`, passed below to the launches that carry an environment). Nothing goes into a
+    /// settings domain, and a Release build has none of this. Without the file (a run not started by
+    /// test.sh) the value is random, and command URLs are refused.
     public static let urlTokenVariable = "SZ_URL_TOKEN"
-    public static let urlToken = "5ec113" + String(repeating: "0123456789", count: 5) + "abcdefab"
+    public static let urlToken: String = {
+        if let app = appURL,
+           let text = try? String(contentsOf: app.deletingLastPathComponent()
+            .appendingPathComponent("uitest-url-token"), encoding: .utf8) {
+            let token = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if token.count == 64 { return token }
+        }
+        return (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
+    }()
 
     /// `sevenzip:///run?argv=<base64url JSON>&token=<urlToken>` -- what the extensions send.
     public static func commandURL(_ argv: [String], token: String? = urlToken) -> URL {

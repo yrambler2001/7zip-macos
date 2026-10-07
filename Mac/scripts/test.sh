@@ -175,7 +175,16 @@ APP_LOCK="${SEVENZIP_APP_LOCK:-$(
 APP_LOCK_HELD=0
 LOCK_SCOPE="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 PREFS_BACKUP="$MAC/build/prefs-backup.plist"
-UITEST_URL_TOKEN="5ec11301234567890123456789012345678901234567890123456789abcdefab"   # = TestShard.urlToken
+# sec113: a random URL secret for this run's UI tests, in a file next to the Debug test apps
+# (`uitest-url-token`). Debug builds read it (URLCommandTokenStore, #if DEBUG), the sandboxed runner
+# reads it through TestShard.urlToken; a Release build has no such code. Nothing is written into
+# any settings domain. Removed when the run ends.
+UITEST_TOKEN_FILE="$DD/Build/Products/Debug/uitest-url-token"
+ui_token_begin() {
+  mkdir -p "$(dirname "$UITEST_TOKEN_FILE")"
+  ( umask 077; od -An -tx1 -N32 /dev/urandom | tr -d ' \n' >"$UITEST_TOKEN_FILE" )
+}
+ui_token_end() { rm -f "$UITEST_TOKEN_FILE"; }
 PREFS_SAVED=0
 
 lock_owner() { cat "$APP_LOCK/owner" 2>/dev/null || echo "unknown"; }
@@ -273,19 +282,10 @@ save_prefs() {
   defaults export "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null && PREFS_SAVED=1 || true
   defaults delete "$APP_DOMAIN" >/dev/null 2>&1 || true
   defaults write "$APP_DOMAIN" Lang -string -      # English resource strings for the assertions
-  # sec113: the URL secret the UI tests put in their command URLs (TestShard.urlToken). A URL that
-  # launches the app from the sandboxed runner arrives without the runner's environment, so that
-  # instance uses this domain; seeded launches get the same value through SZ_URL_TOKEN.
-  defaults write "$APP_DOMAIN" Integration.URLToken -string "$UITEST_URL_TOKEN"
   echo "== preferences of $APP_DOMAIN backed up to $PREFS_BACKUP and cleared"
 }
 
 restore_prefs() {
-  # Never leave the harness's well-known URL secret behind (when there was no domain to back up,
-  # nothing is imported below).
-  if [ "$(defaults read "$APP_DOMAIN" Integration.URLToken 2>/dev/null)" = "$UITEST_URL_TOKEN" ]; then
-    defaults delete "$APP_DOMAIN" Integration.URLToken >/dev/null 2>&1 || true
-  fi
   [ "$PREFS_SAVED" = 1 ] || return 0
   PREFS_SAVED=0
   defaults import "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null || true
@@ -315,7 +315,7 @@ unregister_test_apps() {
 . "$MAC/scripts/finderext-registration.sh"
 finderext_snapshot
 
-cleanup() { quit_test_processes; restore_prefs; release_app_lock; unregister_test_apps; finderext_restore; }
+cleanup() { ui_token_end; quit_test_processes; restore_prefs; release_app_lock; unregister_test_apps; finderext_restore; }
 trap cleanup EXIT INT TERM
 
 needs_input_shard() { printf '%s\n' $TARGETS | grep -qx "$UI_TARGET"; }
@@ -540,6 +540,7 @@ sharded_run() {
   fi
 }
 
+if printf '%s\n' $TARGETS | grep -q 'UITests'; then ui_token_begin; fi
 RUN_STARTED=$(date +%s)
 if [ "$SHARDED" = 1 ]; then
   sharded_run || FAILED=$?

@@ -204,12 +204,16 @@ struct IntegrationSettings: Equatable {
         case none
     }
 
-    /// The app's URL secret (`URLCommandToken`) as an extension reads it: the snapshot the running
-    /// app pushed into this extension's container first -- written at every launch, so it belongs
-    /// to the copy that runs -- then the app's own domain through the read-only shared-preference
-    /// exception. Nil when neither has a well-formed one: the app has never run, and the extension
-    /// says so (`ExtensionFailure.notReady`) instead of sending a command that would be refused.
+    /// The app's URL secret (`URLCommandToken`) as an extension reads it: the app's own domain
+    /// first, through the read-only shared-preference exception -- the authoritative copy -- then
+    /// the snapshot the app pushed into this extension's container (a differently-named build, or
+    /// a Debug test instance whose secret is not in the domain). Nil when neither has a well-formed
+    /// one: the app has never run, and the extension says so (`ExtensionFailure.notReady`) instead
+    /// of sending a command that would be refused.
     static func urlToken(extensionBundleID: String?) -> (token: String?, source: TokenSource) {
+        if let token = preferencesURLToken(), URLCommandToken.isWellFormed(token) {
+            return (token, .preferences)
+        }
         if let bundleID = extensionBundleID {
             var urls = [snapshotURL(forExtension: bundleID)]
             if SevenZipBundle.runningAppIdentifier != SevenZipBundle.app {
@@ -221,9 +225,6 @@ struct IntegrationSettings: Equatable {
                     return (token, .snapshot)
                 }
             }
-        }
-        if let token = preferencesURLToken(), URLCommandToken.isWellFormed(token) {
-            return (token, .preferences)
         }
         return (nil, .none)
     }

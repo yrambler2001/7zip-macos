@@ -88,6 +88,23 @@ final class URLCommandPolicyTests: XCTestCase {
         XCTAssertEqual(URLCommandToken.hex([0x00, 0x0f, 0xa0, 0xff]), "000fa0ff")
     }
 
+    /// The value the UI-test harness once used is public: no build accepts it, as the presented
+    /// token or as the one found in the settings or a snapshot.
+    func testRetiredTestTokenIsNeverAccepted() throws {
+        let published = "5ec113" + String(repeating: "0123456789", count: 5) + "abcdefab"
+        XCTAssertEqual(published.count, 64)
+        XCTAssertTrue(URLCommandToken.retiredTestTokens.contains(published))
+        XCTAssertFalse(URLCommandToken.isWellFormed(published))
+        XCTAssertFalse(URLCommandToken.matches(published, expected: published), "stored and presented")
+        XCTAssertFalse(URLCommandToken.matches(published, expected: String(repeating: "a1", count: 32)))
+        // A snapshot carrying it gives the extension no secret.
+        let file = URL(fileURLWithPath: root + "/retired.plist")
+        try PropertyListSerialization.data(fromPropertyList: [URLCommandToken.settingsKey: published],
+                                           format: .xml, options: 0).write(to: file)
+        let read = IntegrationSettings.snapshotDictionary(at: file)?[URLCommandToken.settingsKey] as? String
+        XCTAssertFalse(URLCommandToken.isWellFormed(read))
+    }
+
     func testTokenTravelsInTheRunURL() throws {
         let token = String(repeating: "0f", count: 32)
         let url = try XCTUnwrap(CommandURL.url(argv: ["t", "-an", "-aiw-!/tmp/a.7z"], token: token))

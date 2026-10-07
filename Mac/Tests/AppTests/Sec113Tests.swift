@@ -124,7 +124,14 @@ final class Sec113Tests: AppHostTestCase {
 
     // MARK: - the secret's lifetime
 
-    func testSecretIsCreatedAndAResetDropsIt() {
+    func testSecretIsCreatedAndAResetDropsIt() throws {
+        if URLCommandTokenStore.debugTestToken != nil {
+            throw XCTSkip("a UI-test run's uitest-url-token is in place; the stored secret is not in use")
+        }
+        // The retired public test value is never the secret, even when found in the settings.
+        Settings.setString(URLCommandToken.retiredTestTokens.first, URLCommandToken.settingsKey)
+        XCTAssertNil(URLCommandTokenStore.current)
+        Settings.setString(nil, URLCommandToken.settingsKey)
         let first = token
         XCTAssertTrue(URLCommandToken.isWellFormed(first))
         XCTAssertEqual(URLCommandTokenStore.ensure(), first, "the secret does not rotate by itself")
