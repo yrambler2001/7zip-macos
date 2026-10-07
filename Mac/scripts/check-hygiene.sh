@@ -49,9 +49,8 @@ else
 fi
 
 # 2. Personal paths. Upstream's own sources are not ours to police.
-# shellcheck disable=SC2016  # a literal $USER placeholder is allowed
-ALLOWED='^(Shared|me|someone|x|you|runner|USER|<[^>]*>|\$USER|\$\{USER\}|…|\.\.\.)$'
-PATHS="$(git grep -nIoE '/Users/[^/[:space:]"'\''`)<>,;:]+' -- . ':!C/' ':!CPP/' ':!Asm/' ':!DOC/' \
+ALLOWED='^(Shared|me|someone|x|you|runner)$'
+PATHS="$(git grep -nIoE '/Users/[A-Za-z0-9._-]+' -- . ':!C/' ':!CPP/' ':!Asm/' ':!DOC/' \
   | awk -F: -v allowed="$ALLOWED" '{ hit = $0; sub(/^[^:]*:[^:]*:/, "", hit); name = hit; sub(/^\/Users\//, "", name);
                                      if (name !~ allowed) print }' || true)"
 if [ -n "$PATHS" ]; then
