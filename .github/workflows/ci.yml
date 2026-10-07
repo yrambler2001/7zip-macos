@@ -1,6 +1,7 @@
-# CI for the macOS port: hygiene, a universal build and disk image, the unit tests on both slices
-# (natively on arm64 and under Rosetta 2 on x86_64), and the app-hosted tests. The XCUITest suites
-# are local only (docs/testing.md): they need a GUI session nobody else uses and granted permissions.
+# CI for the macOS port: hygiene, a universal build and disk image, and the unit tests on both slices
+# (natively on arm64 and under Rosetta 2 on x86_64). The app-hosted tests and the XCUITest suites
+# are local only (docs/testing.md "Why the app-hosted tests do not run on GitHub"): the hosted
+# runner's GUI session is not the one they are written for.
 # How CI relates to releases: docs/releasing.md.
 #
 # Actions are pinned by full commit SHA, with the release tag in a comment. A tag can be moved by
@@ -142,43 +143,4 @@ jobs:
           path: |
             Mac/build/*.log
             Mac/build/*.xcresult
-          retention-days: 7
-
-  # The app-hosted tests (SevenZipAppTests) run XCTest inside the real app, with windows, menus and
-  # dialogs, but no synthesized input. Hosted macOS runners do have a logged-in GUI session, so they
-  # run; but they render real windows on a shared virtual display whose scale and fonts we do not
-  # control, and a few compare pixels. Until they have proven stable there, a failure here is
-  # reported (the job shows red with a warning) without failing the workflow. Local runs remain
-  # the reference: Mac/scripts/test.sh -H.
-  app-hosted:
-    name: App-hosted tests (informational)
-    runs-on: macos-26
-    timeout-minutes: 60
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-toolchain
-      - name: Restore the compilation cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: Mac/build/DerivedData/CompilationCache.noindex
-          key: cc-${{ env.CACHE_VERSION }}-hosted-${{ runner.arch }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('C/**', 'CPP/**', 'Asm/**', 'Mac/**') }}
-          restore-keys: |
-            cc-${{ env.CACHE_VERSION }}-hosted-${{ runner.arch }}-${{ env.DEVELOPER_DIR }}-
-      - name: SevenZipAppTests
-        run: Mac/scripts/test.sh -H
-      - name: Keep the compilation cache bounded
-        if: always()
-        run: Mac/scripts/ci-trim-cache.sh Mac/build/DerivedData/CompilationCache.noindex
-      - name: Upload the test results
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: app-hosted-${{ github.run_number }}
-          path: |
-            Mac/build/*.log
-            Mac/build/*.xcresult
-            Mac/build/screenshots/
           retention-days: 7

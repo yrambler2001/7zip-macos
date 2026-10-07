@@ -35,7 +35,7 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
 - Versioning: one source of truth, `Mac/VERSION`; the build number is the commit count;
   `Mac/scripts/bump-version.sh` raises the version and opens a changelog section.
 - GitHub Actions: CI on every push and pull request (hygiene checks, universal build and disk image,
-  unit tests on Apple silicon and under Rosetta, app-hosted tests), and a release workflow that turns
+  unit tests on Apple silicon and under Rosetta), and a release workflow that turns
   a `v<version>` tag into a tested GitHub Release with the disk image and its SHA-256, ready to sign
   and notarize once a Developer ID exists, and updates the Homebrew cask
   ([docs/releasing.md](docs/releasing.md)).
