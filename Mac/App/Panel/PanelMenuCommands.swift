@@ -157,14 +157,25 @@ extension PanelViewController: NSUserInterfaceValidations {
         }
     }
 
+    /// GetSortControlID (MyLoadMenu.cpp:82-95): the View > Arrange By item checked for a sort
+    /// column. A column without an item of its own (Created, Packed Size, ...) checks Name, as 7zFM
+    /// does after a click on such a header (fix111; the port used to check nothing).
+    static func arrangeAction(for propID: SZPropID) -> Selector {
+        switch propID {
+        case .extension: return #selector(viewArrangeByType(_:))
+        case .mtime: return #selector(viewArrangeByDate(_:))
+        case .size: return #selector(viewArrangeBySize(_:))
+        case .noProperty: return #selector(viewArrangeNoSort(_:))
+        default: return #selector(viewArrangeByName(_:))
+        }
+    }
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(viewFlatView(_:)): item.state = flatMode ? .on : .off
-        case #selector(viewArrangeByName(_:)): item.state = sortPropID == .name ? .on : .off
-        case #selector(viewArrangeByType(_:)): item.state = sortPropID == .extension ? .on : .off
-        case #selector(viewArrangeByDate(_:)): item.state = sortPropID == .mtime ? .on : .off
-        case #selector(viewArrangeBySize(_:)): item.state = sortPropID == .size ? .on : .off
-        case #selector(viewArrangeNoSort(_:)): item.state = sortPropID == .noProperty ? .on : .off
+        case #selector(viewArrangeByName(_:)), #selector(viewArrangeByType(_:)), #selector(viewArrangeByDate(_:)),
+             #selector(viewArrangeBySize(_:)), #selector(viewArrangeNoSort(_:)):
+            item.state = item.action == Self.arrangeAction(for: sortPropID) ? .on : .off
         case #selector(viewLargeIcons(_:)): item.state = listViewMode == 0 ? .on : .off
         case #selector(viewSmallIcons(_:)): item.state = listViewMode == 1 ? .on : .off
         case #selector(viewList(_:)): item.state = listViewMode == 2 ? .on : .off

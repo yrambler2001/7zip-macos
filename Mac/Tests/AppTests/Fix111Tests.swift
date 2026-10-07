@@ -229,6 +229,125 @@ final class Fix111Tests: AppHostTestCase {
         XCTAssertEqual(Formatting.oneLine("plain"), "plain")
     }
 
+    // MARK: - 3. sorting
+
+    private func clickHeader(_ panel: PanelViewController, _ propID: SZPropID) throws {
+        let column = try XCTUnwrap(panel.tableView.tableColumns.first { PanelViewController.propID(of: $0) == propID },
+                                   "no \(propID) column")
+        panel.tableView(panel.tableView, didClick: column)          // LVN_COLUMNCLICK -> OnColumnClick
+    }
+
+    /// The rows in `expected` order (a folder with IFolderCompare sorts on the panel's queue).
+    private func waitOrder(_ panel: PanelViewController, _ expected: [String], _ what: String, line: UInt = #line) {
+        XCTAssertTrue(wait(for: what) { self.names(panel) == expected }, "\(what): \(names(panel))", line: line)
+    }
+
+    private func names(_ panel: PanelViewController) -> [String] {
+        panel.rows.filter { !$0.isParentRow }.map(\.name)
+    }
+
+    private func checkedArrangeItem(_ panel: PanelViewController) -> [String] {
+        let items: [(String, Selector)] = [("Name", #selector(PanelViewController.viewArrangeByName(_:))),
+                                           ("Type", #selector(PanelViewController.viewArrangeByType(_:))),
+                                           ("Date", #selector(PanelViewController.viewArrangeByDate(_:))),
+                                           ("Size", #selector(PanelViewController.viewArrangeBySize(_:))),
+                                           ("Unsorted", #selector(PanelViewController.viewArrangeNoSort(_:)))]
+        return items.compactMap { title, action in
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            _ = panel.validateMenuItem(item)
+            return item.state == .on ? title : nil
+        }
+    }
+
+    private func assertNoSortIndicator(_ panel: PanelViewController, _ when: String, line: UInt = #line) {
+        for column in panel.tableView.tableColumns {
+            XCTAssertNil(panel.tableView.indicatorImage(in: column), "\(when): 7zFM sets no HDF_SORTUP/HDF_SORTDOWN", line: line)
+        }
+        XCTAssertNil(panel.tableView.highlightedTableColumn, "\(when): no LVM_SETSELECTEDCOLUMN", line: line)
+    }
+
+    /// 7zFM 26.0x (PanelSort.cpp SortItemsWithPropID, OnColumnClick; MyLoadMenu.cpp GetSortControlID;
+    /// PanelItems.cpp InitColumns / SaveListViewInfo): a header click sorts by that column, a second
+    /// click reverses it; Size and the times start descending; the header shows no arrow; View >
+    /// Arrange By checks the sort's item, Name for a column without one; the sort is kept per folder
+    /// type (the file system and each archive format apart).
+    func testHeaderClickSortsReversesAndPersistsPerFolderType() throws {
+        let saved = ["FSFolder", "7-Zip.tar"].map { ($0, Settings.columnLayout(forFolderType: $0)) }
+        defer { for (type, layout) in saved { Settings.setColumnLayout(layout, forFolderType: type) } }
+        for (type, _) in saved { Settings.setColumnLayout(nil, forFolderType: type) }
+
+        let dir = makeScratch("sort")
+        try FileManager.default.createDirectory(atPath: dir + "/sub", withIntermediateDirectories: true)
+        touch(dir + "/a.txt", String(repeating: "a", count: 1234))
+        touch(dir + "/b.bin", String(repeating: "b", count: 100_000))
+        touch(dir + "/notes.md", String(repeating: "n", count: 20))
+        let options = SZUpdateOptions.options(archivePath: dir + "/c.tar")
+        options.formatName = "tar"
+        _ = try SZUpdater.update(with: options, sourcePaths: [dir + "/a.txt", dir + "/notes.md"], progress: nil)
+        // Created: b.bin newest, then notes.md, a.txt, c.tar, sub (tar's ctime is when it was written)
+        let base = Date(timeIntervalSince1970: 1_705_314_600)
+        for (i, name) in ["sub", "c.tar", "a.txt", "notes.md", "b.bin"].enumerated() {
+            try FileManager.default.setAttributes([.creationDate: base.addingTimeInterval(Double(i) * 60)],
+                                                  ofItemAtPath: dir + "/" + name)
+        }
+
+        let controller = makeWindow()
+        let panel = controller.focusedPanel
+        navigate(panel, to: dir)
+        waitOrder(panel, ["sub", "a.txt", "b.bin", "c.tar", "notes.md"], "fresh: Name ascending")
+        XCTAssertEqual(checkedArrangeItem(panel), ["Name"])
+        assertNoSortIndicator(panel, "fresh")
+
+        try clickHeader(panel, .size)
+        waitOrder(panel, ["sub", "b.bin", "c.tar", "a.txt", "notes.md"], "Size starts descending")
+        XCTAssertEqual(checkedArrangeItem(panel), ["Size"])
+        assertNoSortIndicator(panel, "size 1")
+        try clickHeader(panel, .size)
+        waitOrder(panel, ["sub", "notes.md", "a.txt", "c.tar", "b.bin"], "a second click reverses")
+        assertNoSortIndicator(panel, "size 2")
+        try clickHeader(panel, .name)
+        waitOrder(panel, ["sub", "a.txt", "b.bin", "c.tar", "notes.md"], "order")
+        try clickHeader(panel, .name)
+        waitOrder(panel, ["sub", "notes.md", "c.tar", "b.bin", "a.txt"], "Name reversed")
+        try clickHeader(panel, .ctime)
+        waitOrder(panel, ["sub", "b.bin", "notes.md", "a.txt", "c.tar"], "Created starts descending")
+        XCTAssertEqual(checkedArrangeItem(panel), ["Name"], "GetSortControlID: a column without an item checks Name")
+        assertNoSortIndicator(panel, "created")
+
+        // Ctrl+F6 / View > Arrange By > Size: the same SortItemsWithPropID
+        panel.viewArrangeBySize(nil)
+        waitOrder(panel, ["sub", "b.bin", "c.tar", "a.txt", "notes.md"], "order")
+        panel.viewArrangeByDate(nil)
+        XCTAssertEqual(checkedArrangeItem(panel), ["Date"])
+        panel.viewArrangeNoSort(nil)
+        XCTAssertEqual(checkedArrangeItem(panel), ["Unsorted"])
+        panel.viewArrangeBySize(nil)
+        try clickHeader(panel, .size)                     // size ascending, kept for the file system
+
+        // An archive folder type has its own sort: Name ascending until changed there.
+        let tar = try XCTUnwrap(panel.rows.first { $0.name == "c.tar" })
+        panel.openRow(tar, insideOnly: false, formatHint: nil)
+        XCTAssertTrue(wait(for: "inside c.tar") { panel.currentPath.hasSuffix("c.tar/") })
+        waitOrder(panel, ["a.txt", "notes.md"], "order")
+        XCTAssertEqual(panel.sortPropID, .name)
+        XCTAssertTrue(panel.ascending)
+        try clickHeader(panel, .size)
+        XCTAssertTrue(wait(for: "tar sorted by size") { self.names(panel) == ["a.txt", "notes.md"] && panel.sortPropID == .size })
+        panel.goUp()
+        XCTAssertTrue(wait(for: "back on disk") { panel.currentPath == dir + "/" })
+        XCTAssertEqual(panel.sortPropID, .size, "the file system's sort came back")
+        XCTAssertTrue(panel.ascending)
+        waitOrder(panel, ["sub", "notes.md", "a.txt", "c.tar", "b.bin"], "order")
+
+        // A new window reads the saved sort of its folder type.
+        controller.window?.close()
+        let second = makeWindow()
+        navigate(second.focusedPanel, to: dir)
+        XCTAssertEqual(second.focusedPanel.sortPropID, .size)
+        waitOrder(second.focusedPanel, ["sub", "notes.md", "a.txt", "c.tar", "b.bin"], "new window")
+        assertNoSortIndicator(second.focusedPanel, "new window")
+    }
+
     // MARK: - 4. status bar insets
 
     /// Windows (fresh 7zFM 26.03, 96 dpi): each part's text ink starts 2 px into the part, the
@@ -248,21 +367,30 @@ final class Fix111Tests: AppHostTestCase {
         controller.showWindow(nil)
         let panels = controller.panels
         XCTAssertEqual(panels.count, 2)
-        for panel in panels {
-            navigate(panel, to: dir)
+        for panel in panels { navigate(panel, to: dir) }
+        // Select a.txt in both panels; a late refresh (the folder just changed) may clear it once.
+        func filled(_ panel: PanelViewController) -> Bool {
             let row = rowIndex(panel, "a.txt")
-            panel.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-            panel.focusedIndex = row
+            guard row >= 0 else { return false }
+            if !panel.tableView.selectedRowIndexes.contains(row) {
+                panel.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                panel.focusedIndex = row
+            }
             panel.refreshStatusBar()
+            return panel.statusBarTexts.dropFirst().allSatisfy { !$0.isEmpty }
         }
         controller.window?.contentView?.layoutSubtreeIfNeeded()
-        XCTAssertTrue(wait(for: "split laid out") { panels[1].view.frame.minX > 300 })
+        XCTAssertTrue(wait(for: "split laid out, a.txt selected in both panels") {
+            panels[1].view.frame.minX > 300 && panels.allSatisfy(filled)
+        }, "status: \(panels.map(\.statusBarTexts))")
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
         if let window = controller.window { attach(window, "04-status") }
         for (index, panel) in panels.enumerated() {
             panel.view.layoutSubtreeIfNeeded()
             let starts = [0] + PanelMetrics.statusSectionEdges
             let ink = statusInk(panel)
-            XCTAssertEqual(ink.count, 4, "panel \(index): ink runs \(ink)")
+            XCTAssertEqual(ink.count, 4, "panel \(index): ink runs \(ink), width \(panel.view.bounds.width), "
+                           + "texts \(panel.statusBarTexts), hidden \(panel.statusSections.map(\.isHidden))")
             guard ink.count == 4 else { continue }
             let first = index == 0 ? 2 + PanelMetrics.statusCornerInset : 2
             XCTAssertEqual(ink[0], first, accuracy: 1, "panel \(index) part 0 ink at \(ink[0])")
