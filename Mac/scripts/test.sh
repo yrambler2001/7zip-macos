@@ -281,6 +281,11 @@ save_prefs() {
 }
 
 restore_prefs() {
+  # Never leave the harness's well-known URL secret behind (when there was no domain to back up,
+  # nothing is imported below).
+  if [ "$(defaults read "$APP_DOMAIN" Integration.URLToken 2>/dev/null)" = "$UITEST_URL_TOKEN" ]; then
+    defaults delete "$APP_DOMAIN" Integration.URLToken >/dev/null 2>&1 || true
+  fi
   [ "$PREFS_SAVED" = 1 ] || return 0
   PREFS_SAVED=0
   defaults import "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null || true
