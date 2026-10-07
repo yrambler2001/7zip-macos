@@ -880,12 +880,22 @@ enum Settings {
 
     static var elimDupExtractValue: Bool { elimDupExtract ?? true }
 
-    /// `Options.WriteZoneIdExtract`: -1 not set (= no), 0 no, 1 yes, 2 Office files only.
+    /// `Options.WriteZoneIdExtract`: 0 no, 1 yes, 2 Office files only.
     /// On macOS this drives `com.apple.quarantine` propagation (01 section 9 #23).
+    ///
+    /// **Deliberate difference (sec113):** a missing value reads as **1 (All)**, not "no" as on
+    /// Windows, so files extracted from a quarantined download stay quarantined, as Archive
+    /// Utility does (docs/parity.md). A value the user chose, 0 included, is stored and kept;
+    /// setting -1 removes the key, i.e. returns to that default.
+    static let writeZoneIdExtractDefault = 1
+
     static var writeZoneIdExtract: Int {
-        get { sentinelInteger(Key.writeZoneIdExtract) }
+        get { hasKey(Key.writeZoneIdExtract) ? sentinelInteger(Key.writeZoneIdExtract) : writeZoneIdExtractDefault }
         set { setSentinelInteger(newValue, Key.writeZoneIdExtract) }
     }
+
+    /// Whether the user ever chose a value (the Options page writes only then).
+    static var writeZoneIdExtractDefined: Bool { hasKey(Key.writeZoneIdExtract) }
 
     /// `Options.ContextMenu`: absent = all items (Flags = (UInt32)-1, Flags_Def = false).
     static var contextMenuFlags: ContextMenuFlags {

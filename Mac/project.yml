@@ -667,6 +667,8 @@ targets:
       - path: App/Integration/CommandURL.swift
       - path: App/Integration/FinderMenuModel.swift
       - path: App/Integration/IntegrationSettings.swift
+      # sec113: the URL secret's format and the command policy (IntegrationSettings reads the secret).
+      - path: App/Integration/URLCommandPolicy.swift
       # finderfix: the aimed hand-off to the containing app and the Quick Action input resolver.
       - path: App/Integration/ExtensionHandoff.swift
       - path: App/Integration/FinderMenuBuilder.swift
@@ -722,6 +724,8 @@ targets:
       - path: App/Integration/CommandURL.swift
       - path: App/Integration/FinderMenuModel.swift
       - path: App/Integration/IntegrationSettings.swift
+      # sec113: the URL secret's format and the command policy (IntegrationSettings reads the secret).
+      - path: App/Integration/URLCommandPolicy.swift
       # finderfix: the aimed hand-off to the containing app and the Quick Action input resolver.
       - path: App/Integration/ExtensionHandoff.swift
       - path: App/Integration/QuickActionInput.swift
@@ -756,6 +760,8 @@ targets:
       - path: App/Integration/CommandURL.swift
       - path: App/Integration/FinderMenuModel.swift
       - path: App/Integration/IntegrationSettings.swift
+      # sec113: the URL secret's format and the command policy (IntegrationSettings reads the secret).
+      - path: App/Integration/URLCommandPolicy.swift
       # finderfix: the aimed hand-off to the containing app and the Quick Action input resolver.
       - path: App/Integration/ExtensionHandoff.swift
       - path: App/Integration/QuickActionInput.swift
@@ -806,6 +812,8 @@ targets:
       - path: App/Integration/CommandURL.swift
       - path: App/Integration/FinderMenuModel.swift
       - path: App/Integration/IntegrationSettings.swift
+      # sec113: the URL secret's format and the command policy (IntegrationSettings reads the secret).
+      - path: App/Integration/URLCommandPolicy.swift
       # finderfix: the aimed hand-off to the containing app and the Quick Action input resolver.
       - path: App/Integration/ExtensionHandoff.swift
       - path: App/Integration/FinderMenuBuilder.swift

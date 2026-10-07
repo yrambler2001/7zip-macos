@@ -10,6 +10,9 @@
 // The `NSMessage` names below must match `NSServices` in `Mac/App/Info.plist`.
 
 import AppKit
+import os
+
+private let servicesLog = Logger(subsystem: "com.yrambler2001.7zip", category: "Services")
 
 final class ServicesProvider: NSObject {
 
@@ -70,10 +73,24 @@ final class ServicesProvider: NSObject {
             return
         }
         let built = command.argv(for: selection.paths)
+        // sec113: any process can invoke a service (`NSPerformService`) with a pasteboard of its
+        // choosing, a sandboxed one included. The command is the menu's own, but the items are
+        // not the user's choice then, so the same target checks as a URL apply: nothing in
+        // `~/Library` or a system folder, no symbolic link that leads there (`URLCommandPolicy`).
+        let checked: (argv: [String], temporaryFiles: [String])
+        switch URLCommandPolicy.standard().evaluate(argv: built.argv, temporaryFiles: built.temporaryFiles) {
+        case .refuse(let reason):
+            CommandURL.removeTemporaryFiles(built.temporaryFiles)
+            servicesLog.error("refused service \(verb, privacy: .public): \(reason, privacy: .public)")
+            error.pointee = URLCommandPolicy.refusalMessage as NSString
+            return
+        case .allow(let argv, let temporaryFiles):
+            checked = (argv, temporaryFiles)
+        }
         // 7zG mode (GMode.swift): its own windows, not a file-manager window's sheets.
         GMode.submit {
             _ = GMode.run {
-                CommandExecutor.run(argv: built.argv, temporaryFiles: built.temporaryFiles, parentWindow: nil)
+                CommandExecutor.run(argv: checked.argv, temporaryFiles: checked.temporaryFiles, parentWindow: nil)
             }
         }
     }

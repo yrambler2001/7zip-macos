@@ -312,7 +312,7 @@ enum ExtractCommands {
         switch Settings.writeZoneIdExtract {
         case 1: options.zoneIDMode = .all
         case 2: options.zoneIDMode = .office
-        default: options.zoneIDMode = .none      // -1 (unset) and 0 both mean "no"
+        default: options.zoneIDMode = .none      // 0 means "no"; unset reads as 1 (sec113)
         }
     }
 

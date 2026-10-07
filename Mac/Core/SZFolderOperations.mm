@@ -201,8 +201,11 @@ static BOOL SZFinishOperation(HRESULT hr, NSString *message, NSString *operation
     // CPanel::CopyTo: `if (ci.WriteZone != (UInt32)(Int32)-1) options.ZoneIdMode = ci.WriteZone`
     CContextMenuInfo ci;
     ci.Load();
+    // sec113: an unset value (-1) is All on macOS, not None as on Windows, so a copy out of a
+    // quarantined archive stays quarantined (Settings.writeZoneIdExtract, docs/parity.md).
     switch ((Int32)ci.WriteZone)
     {
+        case -1:
         case 1: return SZZoneIDModeAll;
         case 2: return SZZoneIDModeOffice;
         default: return SZZoneIDModeNone;

@@ -58,13 +58,21 @@ class QuickActionController: NSViewController {
             ExtensionHandoff.report(.notAvailable, log: log) { _ in completion() }
             return
         }
+        // sec113: the app runs a command URL only with its secret; without one (the app has not
+        // run yet) it is asked to launch and say so.
+        let secret = IntegrationSettings.urlToken(extensionBundleID: bundleID)
+        guard let token = secret.token else {
+            ExtensionHandoff.report(.notReady, log: log) { _ in completion() }
+            return
+        }
         let built = command.argv(for: selection.paths, listFileDirectory: NSTemporaryDirectory())
-        guard let url = CommandURL.url(argv: built.argv,
-                                       temporaryFiles: built.temporaryFiles) else {
+        guard let url = CommandURL.url(argv: built.argv, temporaryFiles: built.temporaryFiles,
+                                       token: token) else {
+            CommandURL.removeTemporaryFiles(built.temporaryFiles)
             ExtensionHandoff.report(.unknownCommand, log: log) { _ in completion() }
             return
         }
-        log.log("\(self.commandVerb, privacy: .public): \(urls.count, privacy: .public) items")
+        log.log("\(self.commandVerb, privacy: .public): \(urls.count, privacy: .public) items (secret from \(secret.source.rawValue, privacy: .public))")
         // The request is completed only after the system has answered the hand-off: completing
         // first lets the extension process be torn down while the open is still in flight.
         ExtensionHandoff.send(url, log: log) { _ in completion() }

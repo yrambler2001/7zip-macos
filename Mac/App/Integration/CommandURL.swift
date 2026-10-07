@@ -7,7 +7,15 @@
 // `CommandExecutor`. Nothing about the argument grammar changes between the three routes.
 //
 //   sevenzip:///run?argv=<base64url JSON array of strings>[&tmp=<base64url JSON array of paths>]
+//                  &token=<the app's URL secret>
 //   sevenzip:///settings[?show=1]
+//   sevenzip:///error?code=<ExtensionFailure>
+//
+// sec113: any process can open a URL, so `run` needs the secret the app generated
+// (`URLCommandToken`, read by the extensions from the settings snapshot or the app's domain) and
+// must have one of the shapes the extensions build (`URLCommandPolicy`). `settings` and `error` stay
+// token-free: the first only re-pushes settings and may show the Options window, the second only
+// shows one of three fixed texts -- neither reads, writes or runs anything.
 //
 // `tmp` names the temporary list files the sender created; the receiver deletes them once the
 // command line has been parsed, which is what the Win32 side achieves with `CEventSetEnd`
@@ -67,6 +75,9 @@ enum CommandURL {
         case unknownCommand = "command"
         /// The command is not offered for this selection (e.g. a folder in an extract selection).
         case notAvailable = "unavailable"
+        /// The extension found no URL secret: the app has not run since it was installed (or since
+        /// a reset). Opening this URL launches the app, which creates the secret at launch.
+        case notReady = "notready"
 
         var message: String {
             switch self {
@@ -76,6 +87,8 @@ enum CommandURL {
                 return "7-Zip could not identify the menu command that was chosen. Open the menu again and retry."
             case .notAvailable:
                 return "This 7-Zip command is not available for the selected items."
+            case .notReady:
+                return "7-Zip has finished setting up its Finder integration. Choose the command again."
             }
         }
     }
@@ -108,7 +121,9 @@ enum CommandURL {
 
     // MARK: - Building
 
-    static func url(argv: [String], temporaryFiles: [String] = []) -> URL? {
+    /// The `run` URL. `token` is the app's secret (`URLCommandToken`); without it the app refuses
+    /// the command.
+    static func url(argv: [String], temporaryFiles: [String] = [], token: String? = nil) -> URL? {
         guard let argvBlob = encode(argv) else { return nil }
         var components = URLComponents()
         components.scheme = scheme
@@ -118,8 +133,17 @@ enum CommandURL {
         if !temporaryFiles.isEmpty, let tmpBlob = encode(temporaryFiles) {
             items.append(URLQueryItem(name: "tmp", value: tmpBlob))
         }
+        if let token { items.append(URLQueryItem(name: URLCommandToken.queryName, value: token)) }
         components.queryItems = items
         return components.url
+    }
+
+    /// The `token` query item of a command URL, nil when there is none (or several).
+    static func token(in url: URL) -> String? {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let tokens = items.filter { $0.name == URLCommandToken.queryName }
+        guard tokens.count == 1 else { return nil }
+        return tokens[0].value
     }
 
     static func errorURL(_ failure: ExtensionFailure) -> URL? {

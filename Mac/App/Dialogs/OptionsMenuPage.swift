@@ -60,6 +60,8 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
     private let itemsTable = NSTableView()                                        // IDL_SYSTEM_OPTIONS 100
     private var itemChecked = [Bool](repeating: true, count: OptionsMenuPage.menuItems.count)
     private var zoneRawValue = -1
+    private var zoneChanged = false
+    private var zoneWasDefined = false
     // Per-control change flags: CMenuPage keeps one _*_Changed per control and
     // CContextMenuInfo::Save writes a bool pair only when its CBoolPair::Def is set
     // (MenuPage.cpp:370-436, ZipRegistryMac.cpp:433-443).
@@ -122,6 +124,8 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         iconsCheckbox.state = Settings.menuIconsValue ? .on : .off
         elimDupCheckbox.state = Settings.elimDupExtractValue ? .on : .off
         zoneRawValue = Settings.writeZoneIdExtract
+        zoneWasDefined = Settings.writeZoneIdExtractDefined
+        zoneChanged = false
         rebuildZoneCombo()
         cascadedChanged = false
         iconsChanged = false
@@ -159,8 +163,10 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
             let title: String
             switch value {
             // MenuPage.cpp:213-216: MY_IDNO is lang id 407, MY_IDYES is 406 (kLangPairs).
-            case 0: title = "* " + Lang.text(407, "No")
-            case 1: title = Lang.text(406, "Yes")
+            // sec113: the `*` marks the default, which is Yes (All) on macOS -- a deliberate
+            // difference from Windows' `* No` (docs/parity.md).
+            case 0: title = Lang.text(407, "No")
+            case 1: title = "* " + Lang.text(406, "Yes")
             case 2: title = Lang.text(3441, "For Office files")
             default: title = String(value)
             }
@@ -245,6 +251,7 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         switch sender {
         case let combo as NSPopUpButton where combo === zoneCombo:
             zoneRawValue = combo.selectedItem?.tag ?? 0
+            zoneChanged = true
         case let button as NSButton where button === cascadedCheckbox:
             cascadedChanged = true
         case let button as NSButton where button === iconsCheckbox:
@@ -264,8 +271,10 @@ final class OptionsMenuPage: OptionsPageBase, NSTableViewDataSource, NSTableView
         if cascadedChanged || cascadedWasDefined { Settings.cascadedMenu = cascadedCheckbox.state == .on }
         if iconsChanged || iconsWasDefined { Settings.menuIcons = iconsCheckbox.state == .on }
         if elimDupChanged || elimDupWasDefined { Settings.elimDupExtract = elimDupCheckbox.state == .on }
-        // MenuPage.cpp:337-342: index <= 0 is stored as -1 ("not set").
-        Settings.writeZoneIdExtract = zoneRawValue <= 0 ? -1 : zoneRawValue
+        // MenuPage.cpp:337-342 stores index <= 0 as -1 ("not set" = No). sec113: unset means Yes
+        // on macOS, so an explicit No is stored as 0, and nothing is written unless the user
+        // changed the value or had already chosen one.
+        if zoneChanged || zoneWasDefined { Settings.writeZoneIdExtract = max(zoneRawValue, 0) }
         if flagsChanged || Settings.contextMenuFlagsDefined {
             var flags: Settings.ContextMenuFlags = []
             for (i, checked) in itemChecked.enumerated() where checked {

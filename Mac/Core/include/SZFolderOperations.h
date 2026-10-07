@@ -66,7 +66,7 @@ NS_ASSUME_NONNULL_BEGIN
                      error:(NSError **)error
     NS_SWIFT_NAME(copyItems(at:toPath:zoneMode:zoneSourcePath:progress:));
 
-/// `Options.WriteZoneIdExtract` as an SZZoneIDMode: -1 (unset) and 0 are None, 1 All,
+/// `Options.WriteZoneIdExtract` as an SZZoneIDMode: 0 is None, -1 (unset, sec113) and 1 All,
 /// 2 Office files only (CContextMenuInfo::WriteZone).
 @property (class, nonatomic, readonly) SZZoneIDMode registryZoneMode;
 

@@ -333,9 +333,16 @@ enum TestResetCoordinator {
 
     private static func applySettings(_ request: TestResetRequest) {
         if let path = request.defaultsPath {
+            // sec113: the URL secret is not a setting a test seeds; it survives the replacement
+            // (unless the plist brings its own), so the URLs a test builds keep working.
+            let token = URLCommandTokenStore.current
             if !Settings.replaceDomainContents(fromPlistAt: path) {
                 NSLog("7-Zip test reset: cannot read the defaults plist at %@", path)
             }
+            if URLCommandTokenStore.current == nil, let token {
+                Settings.setString(token, URLCommandToken.settingsKey)
+            }
+            URLCommandTokenStore.ensure()
         }
         if let language = request.language {
             // The Options > Language page applies the switch live and posts the group notification

@@ -81,13 +81,17 @@ enum DockDropDetector {
     /// (no file-manager window) and the command runs once the app is up.
     func application(_ application: NSApplication, open urls: [URL]) {
         var files: [URL] = []
+        // sec113: who sent the URL, read now while the Apple event is current. Logged only: the
+        // URL's token is the check, and a sender has often exited by the time it is resolved.
+        let sender = NSAppleEventManager.shared().currentAppleEvent
+            .flatMap(DockDropDetector.senderBundleIdentifier(of:))
         for url in urls {
             if url.isFileURL {
                 files.append(url)
             } else if URLCommands.isShellCommand(url) {
-                GMode.submit { URLCommands.handle(url) }
+                GMode.submit { URLCommands.handle(url, sender: sender) }
             } else {
-                URLCommands.handle(url)
+                URLCommands.handle(url, sender: sender)
             }
         }
         if !files.isEmpty {

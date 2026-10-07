@@ -49,6 +49,11 @@ final class FinderSync: FIFinderSync {
             URL(fileURLWithPath: "/Volumes"),
             URL(fileURLWithPath: SevenZipBundle.realHomeDirectory + "/Library/CloudStorage"),
         ]
+        // sec113: whether the app's URL secret is readable from here, and from where. Only the
+        // availability is logged, never the value.
+        let found = IntegrationSettings.urlToken(extensionBundleID: SevenZipBundle.finderSync)
+        let fromPreferences = URLCommandToken.isWellFormed(IntegrationSettings.preferencesURLToken())
+        log.log("URL secret: \(found.source.rawValue, privacy: .public); in the app's domain: \(fromPreferences ? "readable" : "absent", privacy: .public)")
     }
 
     // MARK: - Observation (deliberate no-ops)
@@ -133,15 +138,24 @@ final class FinderSync: FIFinderSync {
             ExtensionHandoff.report(.unknownCommand, log: log)
             return
         }
+        // sec113: the app runs a command URL only with its secret. Without one (the app has not
+        // run yet) the app is asked to launch and say so, and nothing is sent.
+        let secret = IntegrationSettings.urlToken(extensionBundleID: SevenZipBundle.finderSync)
+        guard let token = secret.token else {
+            ExtensionHandoff.report(.notReady, log: log)
+            return
+        }
         let built = command.argv(for: selection.paths, listFileDirectory: NSTemporaryDirectory())
-        guard let url = CommandURL.url(argv: built.argv, temporaryFiles: built.temporaryFiles) else {
+        guard let url = CommandURL.url(argv: built.argv, temporaryFiles: built.temporaryFiles,
+                                       token: token) else {
+            CommandURL.removeTemporaryFiles(built.temporaryFiles)
             ExtensionHandoff.report(.unknownCommand, log: log)
             return
         }
         // A sandboxed extension may open a URL but not spawn a process; the app parses the same
         // argv 7zG would have received. Errors (a folder in an extract selection, an unsupported
         // type) are reported by the app, which owns the message boxes.
-        log.log("invoke: \(command.verb, privacy: .public)")
+        log.log("invoke: \(command.verb, privacy: .public) (secret from \(secret.source.rawValue, privacy: .public))")
         ExtensionHandoff.send(url, log: log)
     }
 }
