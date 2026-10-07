@@ -1,0 +1,12 @@
+// Version.xcconfig -- every target's version settings (pub3), from Mac/VERSION.
+//
+// MARKETING_VERSION      -> CFBundleShortVersionString of the app, the framework and the three
+//                           extensions (their Info.plists say $(MARKETING_VERSION)).
+// CURRENT_PROJECT_VERSION -> CFBundleVersion, the build number: the commit count of HEAD, or a
+//                           CI-provided BUILD_NUMBER. build.sh / test.sh write it into
+//                           Mac/build/BuildNumber.xcconfig before every xcodebuild; a build that
+//                           did not go through them (Xcode itself) gets 1.
+#include "VERSION"
+MARKETING_VERSION = $(PORT_VERSION)
+CURRENT_PROJECT_VERSION = 1
+#include? "build/BuildNumber.xcconfig"

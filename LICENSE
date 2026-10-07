@@ -3,7 +3,7 @@
 
 This repository combines upstream 7-Zip (C/, CPP/, Asm/, DOC/), Copyright (C) 1999-2026
 Igor Pavlov, with a macOS port (Mac/, docs/, ai/ and the files at the repository root),
-Copyright (C) 2026 yrambler2001. Both are distributed under the licences of 7-Zip:
+Copyright (C) 2026 Yurii Synyshyn (yrambler2001). Both are distributed under the licences of 7-Zip:
 
   - the GNU Lesser General Public License, version 2.1 or (at your option) any later version,
     for all files that do not state otherwise -- including the whole macOS port. Its full text

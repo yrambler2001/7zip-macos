@@ -303,6 +303,9 @@ enum MainMenu {
         let a = MenuActions.self
         item(menu, 960, lang: 960, "&Contents...\tF1", key: fkey(1), action: #selector(a.helpContents(_:)))    // IDM_HELP_CONTENTS
         menu.addItem(.separator())
+        // macOS addition (pub3), no Windows resource ID: the update check (UpdateCheck.swift).
+        item(menu, 0, lang: UpdateCheck.LangID.menuItem, "Check for &Updates...",
+             action: #selector(AppDelegate.helpCheckForUpdates(_:)))
         item(menu, 961, lang: 961, "&About 7-Zip...", action: #selector(a.helpAbout(_:)))                      // IDM_ABOUT
         NSApp.helpMenu = menu
         let top = NSMenuItem()

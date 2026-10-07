@@ -93,6 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // are both set, and it is started last so the window already exists when the first reset
         // arrives.
         TestResetWatcher.startIfNeeded()
+
+        // pub3: the update check (macOS addition, UpdateCheck.swift): File Manager launches only,
+        // never under test support, at most once a day, a few seconds after launching.
+        UpdateCheck.scheduleStartupCheck()
     }
 
     /// Whether `applicationDidFinishLaunching` creates the default window. Not when the launch

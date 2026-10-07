@@ -19,12 +19,15 @@ failure.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app
-Mac/scripts/build.sh               # Debug, ad-hoc signed -> Mac/build/Debug/7-Zip.app
-Mac/scripts/build.sh --release     # Release
+Mac/scripts/build.sh               # Debug, host architecture, ad-hoc signed -> Mac/build/Debug/7-Zip.app
+Mac/scripts/build.sh --release     # Release, universal (arm64 + x86_64)
 Mac/scripts/run.sh                 # build, then open the app
 Mac/scripts/test.sh                # unit tests (see testing.md for the other suites)
+Mac/scripts/test.sh -A x86_64      # the same tests on the Intel slice, under Rosetta 2
 Mac/scripts/verify.sh              # clean build + every suite, summary in Mac/build/verify-latest.md
-Mac/scripts/package.sh             # the disk image, Mac/build/7-Zip-26.03.dmg
+Mac/scripts/package.sh             # the universal disk image, Mac/build/7-Zip-26.03-macOS-1.0.0.dmg
+Mac/scripts/version.sh             # the version: 7-Zip 26.03 for macOS 1.0.0, build number, DMG name
+Mac/scripts/bump-version.sh minor  # raise the port version (major|minor|patch|X.Y.Z)
 Mac/scripts/parity-check.sh        # progress of the parity checklist (ai/PROGRESS.md)
 ```
 
@@ -42,8 +45,74 @@ Everything generated goes to `Mac/build/` (git-ignored), including the Xcode der
   Quick Actions (`Mac/QuickAction/`).
 - Test targets — see [testing.md](testing.md).
 
-Debug builds are currently arm64 only (`ARCHS` in `Mac/project.yml`); the release pipeline builds
-the universal (Apple Silicon + Intel) app.
+## Universal build (Apple Silicon + Intel)
+
+`ARCHS` is `arm64 x86_64` for every target. A **Release** build (`build.sh --release`,
+`package.sh`) always builds both slices (`ONLY_ACTIVE_ARCH = NO`); a **Debug** build builds the
+destination's architecture only — the host's by default, or the one given with `build.sh -a` /
+`test.sh -A`.
+
+The two slices of the engine differ the way upstream's own clang makefiles do:
+
+| Slice | Assembler | As upstream's |
+|---|---|---|
+| arm64 | `Asm/arm64/LzmaDecOpt.S`, with `Z7_LZMA_DEC_OPT` for `C/LzmaDec.c` | `cmpl_mac_arm64.mak` (`USE_ASM=1`) |
+| x86_64 | none: every `*Opt.c` is compiled as C, `LzmaDec.c` without `Z7_LZMA_DEC_OPT` | `cmpl_mac_x64.mak` (`USE_ASM=`) |
+
+Upstream's x86 assembler (`Asm/x86/*.asm`) is MASM syntax and is not assembled. In
+`Mac/project.yml` the x86_64 slice excludes `LzmaDecOpt.S` (`EXCLUDED_SOURCE_FILE_NAMES[arch=x86_64]`)
+and the define comes from `SZ_LZMA_DEC_OPT_DEFS[arch=arm64]`. The engine target builds with clang
+modules off, as upstream's makefiles do (with modules on, `C/AesOpt.c` does not compile for x86_64).
+The hardware AES, SHA and CRC paths are chosen at run time on both slices, as upstream does.
+
+Check a build with `lipo -info` (`package.sh` refuses an image with a binary that is not universal):
+
+```sh
+find Mac/build/Release/7-Zip.app/ -type f -perm +111 -exec sh -c 'file -b "$1" | grep -q Mach-O && lipo -info "$1"' _ {} \;
+```
+
+### Testing the Intel slice under Rosetta
+
+On Apple Silicon the x86_64 slice runs under Rosetta 2. Install it once with
+`softwareupdate --install-rosetta --agree-to-license`, then:
+
+```sh
+Mac/scripts/test.sh -A x86_64        # unit tests (SevenZipKitTests), x86_64, Mac/build/DerivedData-x86_64
+Mac/scripts/test.sh -A x86_64 -H     # the app-hosted tests too
+```
+
+`VersionTests/testRunningSlice` asserts that the slice under test is the one asked for.
+
+## Versions
+
+One file holds the version: `Mac/VERSION`.
+
+```
+PORT_VERSION = 1.0.0         the port's own semantic version
+UPSTREAM_VERSION = 26.03     the 7-Zip engine (must equal MY_VERSION in C/7zVersion.h)
+```
+
+- `Mac/Version.xcconfig` includes it for every target: `MARKETING_VERSION = $(PORT_VERSION)` is
+  `CFBundleShortVersionString` of the app, the framework and the three extensions (their
+  `Info.plist`s say `$(MARKETING_VERSION)`).
+- `CFBundleVersion` is the **build number**: `$BUILD_NUMBER` when set (CI), else the commit count of
+  `HEAD`. `build.sh` and `test.sh` write it to `Mac/build/BuildNumber.xcconfig`, which the xcconfig
+  includes optionally; a build straight from Xcode gets `1`.
+- The user-visible name is **7-Zip 26.03 for macOS 1.0.0**: the About box, the update check, the
+  disk image `7-Zip-26.03-macOS-1.0.0.dmg` and its volume name. `Mac/scripts/version.sh` prints
+  each form.
+- Releases are tagged `v<PORT_VERSION>` (`v1.0.0`) at
+  <https://github.com/yrambler2001/7zip-macos/releases>; the app's update check compares that tag
+  with its own version.
+
+To release a new version:
+
+```sh
+Mac/scripts/bump-version.sh patch          # or minor, major, 1.2.0; --upstream 26.04 after an upstream merge
+$EDITOR CHANGELOG.md                       # fill in the new section
+git commit -am "Version 1.0.1" && git tag v1.0.1
+Mac/scripts/package.sh                     # Mac/build/7-Zip-26.03-macOS-1.0.1.dmg
+```
 
 ## Bundled assets
 
@@ -73,8 +142,8 @@ security find-identity -v -p codesigning
 xcrun notarytool store-credentials 7zip-notary --apple-id you@example.com --team-id TEAMID
 # every release:
 Mac/scripts/package.sh -i "Developer ID Application: Your Name (TEAMID)" -T TEAMID -p 7zip-notary
-spctl --assess --type open --context context:primary-signature -v Mac/build/7-Zip-26.03.dmg
-xcrun stapler validate Mac/build/7-Zip-26.03.dmg
+spctl --assess --type open --context context:primary-signature -v Mac/build/7-Zip-26.03-macOS-1.0.0.dmg
+xcrun stapler validate Mac/build/7-Zip-26.03-macOS-1.0.0.dmg
 ```
 
 The app needs one hardened-runtime entitlement, `com.apple.security.automation.apple-events`

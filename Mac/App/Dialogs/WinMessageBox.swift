@@ -33,9 +33,14 @@ import AppKit
 
 enum WinMessageBox {
 
-    /// MB_OK 0, MB_OKCANCEL 1, MB_YESNOCANCEL 3, MB_YESNO 4 -- the four 7zFM uses.
+    /// MB_OK 0, MB_OKCANCEL 1, MB_YESNOCANCEL 3, MB_YESNO 4 -- the four 7zFM uses -- plus `custom`.
     enum Buttons {
         case ok, okCancel, yesNo, yesNoCancel
+        /// macOS addition (pub3, the update check): up to three buttons with titles of their own,
+        /// answered as `.button1` ... `.button3` in this order; `escape` is the index of the button
+        /// Esc and the close box press (nil: none). Each button is at least the 75 px of a Windows
+        /// message-box button and wider when its title needs it (TaskDialog's custom buttons).
+        case custom([String], escape: Int?)
 
         var results: [Result] {
             switch self {
@@ -43,7 +48,22 @@ enum WinMessageBox {
             case .okCancel: return [.ok, .cancel]
             case .yesNo: return [.yes, .no]
             case .yesNoCancel: return [.yes, .no, .cancel]
+            case .custom(let titles, _): return Array(Result.customButtons.prefix(titles.count))
             }
+        }
+
+        /// The button's caption: the lang text of a standard answer, or the custom title.
+        func title(of result: Result) -> String {
+            if case .custom(let titles, _) = self, let i = Result.customButtons.firstIndex(of: result), i < titles.count {
+                return Lang.stripMnemonic(titles[i])
+            }
+            return result.title
+        }
+
+        /// Custom titles: buttons as wide as their text needs (nil: the fixed Windows width).
+        var customTitles: [String]? {
+            if case .custom(let titles, _) = self { return titles.map(Lang.stripMnemonic) }
+            return nil
         }
 
         /// What Esc, the close box and Cmd+W answer: IDCANCEL when there is a Cancel button, IDOK for
@@ -53,6 +73,9 @@ enum WinMessageBox {
             case .ok: return .ok
             case .okCancel, .yesNoCancel: return .cancel
             case .yesNo: return nil
+            case .custom(let titles, let escape):
+                guard let escape, escape >= 0, escape < min(titles.count, Result.customButtons.count) else { return nil }
+                return Result.customButtons[escape]
             }
         }
     }
@@ -64,6 +87,10 @@ enum WinMessageBox {
     /// IDOK 1, IDCANCEL 2, IDYES 6, IDNO 7.
     enum Result: Int {
         case ok = 1, cancel = 2, yes = 6, no = 7
+        /// The buttons of `Buttons.custom`, first to third (pub3).
+        case button1 = 101, button2 = 102, button3 = 103
+
+        static let customButtons: [Result] = [.button1, .button2, .button3]
 
         var title: String {
             switch self {
@@ -71,6 +98,7 @@ enum WinMessageBox {
             case .cancel: return Lang.text(402, "Cancel")
             case .yes: return Lang.text(406, "Yes")
             case .no: return Lang.text(407, "No")
+            case .button1, .button2, .button3: return ""     // Buttons.title(of:) has the text
             }
         }
 
@@ -79,7 +107,7 @@ enum WinMessageBox {
             switch self {
             case .yes: return Self.mnemonic(Lang.get(406, "&Yes"))
             case .no: return Self.mnemonic(Lang.get(407, "&No"))
-            case .ok, .cancel: return nil
+            case .ok, .cancel, .button1, .button2, .button3: return nil
             }
         }
 
@@ -180,7 +208,12 @@ struct WinMessageBoxLayout {
         (s as NSString).size(withAttributes: [.font: font]).width * segoeScale
     }
 
-    init(text: String, caption: String, buttonCount: Int, hasIcon: Bool) {
+    /// A custom button's width: the 75 px of MessageBox's buttons, or its title plus 2 x 12 px.
+    static func customButtonWidth(_ title: String) -> CGFloat {
+        max(buttonSize.width, ceil(width(title)) + 24)
+    }
+
+    init(text: String, caption: String, buttonCount: Int, hasIcon: Bool, customTitles: [String]? = nil) {
         lines = Self.wrap(text, width: Self.wrapWidth)
         let widest = lines.map(Self.width).max() ?? 0
         let staticWidth = ceil(widest) + 2
@@ -192,7 +225,13 @@ struct WinMessageBoxLayout {
         let content = hasIcon ? max(staticHeight, Self.iconBlock) : staticHeight
         bandTop = 23 + content + 21
         let n = CGFloat(max(buttonCount, 1))
-        let buttonsWidth = (n * Self.buttonSize.width + (n - 1) * (Self.buttonPitch - Self.buttonSize.width + 0.5)).rounded()
+        // The gap between two buttons (83 - 75 px); custom buttons keep it at their own widths.
+        let gap = Self.buttonPitch - Self.buttonSize.width
+        let widths: [CGFloat] = customTitles.map { $0.prefix(Int(n)).map(Self.customButtonWidth) }
+            ?? Array(repeating: Self.buttonSize.width, count: Int(n))
+        let buttonsWidth = customTitles == nil
+            ? (n * Self.buttonSize.width + (n - 1) * (gap + 0.5)).rounded()
+            : widths.reduce(0, +) + (n - 1) * gap
         let width = max(textX + staticWidth + rightMargin,
                         27 + buttonsWidth + 15,
                         ceil(Self.width(caption)) + 54)
@@ -201,10 +240,18 @@ struct WinMessageBoxLayout {
         textFrame = NSRect(x: textX, y: textY, width: width - textX - rightMargin, height: staticHeight)
         iconFrame = hasIcon ? Self.iconRect : nil
         let buttonY = bandTop + (iconTaller ? 10 : 9)
-        let lastX = width - 15 - Self.buttonSize.width
-        buttonFrames = (0..<Int(n)).map { i in
-            NSRect(x: lastX - CGFloat(Int(n) - 1 - i) * Self.buttonPitch, y: buttonY,
-                   width: Self.buttonSize.width, height: Self.buttonSize.height)
+        if customTitles == nil {
+            let lastX = width - 15 - Self.buttonSize.width
+            buttonFrames = (0..<Int(n)).map { i in
+                NSRect(x: lastX - CGFloat(Int(n) - 1 - i) * Self.buttonPitch, y: buttonY,
+                       width: Self.buttonSize.width, height: Self.buttonSize.height)
+            }
+        } else {
+            var x = width - 15 - buttonsWidth
+            buttonFrames = widths.map { w in
+                defer { x += w + gap }
+                return NSRect(x: x, y: buttonY, width: w, height: Self.buttonSize.height)
+            }
         }
     }
 
@@ -263,7 +310,7 @@ final class WinMessageBoxWindow: NSWindow {
         self.icon = icon
         ownerWindow = owner
         layout = WinMessageBoxLayout(text: text, caption: caption, buttonCount: buttons.results.count,
-                                     hasIcon: icon != .none)
+                                     hasIcon: icon != .none, customTitles: buttons.customTitles)
         // MB_YESNO has no Cancel: its close box is disabled (SC_CLOSE is not in its system menu).
         super.init(contentRect: NSRect(origin: .zero, size: layout.clientSize),
                    styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -290,12 +337,16 @@ final class WinMessageBoxWindow: NSWindow {
         text.frame = layout.textFrame
         content.addSubview(text)
         for (i, answer) in boxButtons.results.enumerated() {
-            let button = NSButton(title: answer.title, target: self, action: #selector(buttonClicked(_:)))
+            let button = NSButton(title: boxButtons.title(of: answer), target: self, action: #selector(buttonClicked(_:)))
             button.bezelStyle = .rounded
             button.font = DialogMetrics.font
             button.tag = answer.rawValue
             // The first button is the default (DM_GETDEFID: IDYES / IDOK); Escape belongs to Cancel.
-            if i == 0 { button.keyEquivalent = "\r" } else if answer == .cancel { button.keyEquivalent = "\u{1b}" }
+            if i == 0 {
+                button.keyEquivalent = "\r"
+            } else if answer == .cancel || (answer == boxButtons.escapeResult && WinMessageBox.Result.customButtons.contains(answer)) {
+                button.keyEquivalent = "\u{1b}"
+            }
             // RcPlace.button: the push bezel fills its frame; Windows draws 1 px inside its rect.
             button.frame = layout.buttonFrames[i].insetBy(dx: 1, dy: 0)
             content.addSubview(button)
@@ -381,7 +432,7 @@ final class WinMessageBoxWindow: NSWindow {
     /// Ctrl+C in a Windows message box: the caption, the text and the buttons between dashed lines.
     func copyAsText() {
         let rule = String(repeating: "-", count: 27)
-        let buttons = boxButtons.results.map { $0.title + "   " }.joined()
+        let buttons = boxButtons.results.map { boxButtons.title(of: $0) + "   " }.joined()
         let text = [rule, caption, rule, message, rule, buttons, rule, ""].joined(separator: "\r\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

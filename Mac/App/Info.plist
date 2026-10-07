@@ -898,7 +898,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>26.03</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -916,7 +916,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>2603</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -934,7 +934,7 @@
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>7-Zip needs access to removable volumes to compress and extract files stored there.</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>7-Zip Copyright (c) 1999-2026 Igor Pavlov. macOS port Copyright (c) 2026 Yurii Synyshyn.</string>
+	<string>7-Zip Copyright (c) 1999-2026 Igor Pavlov. macOS port © 2026 Yurii Synyshyn (yrambler2001).</string>
 	<key>NSMainNibFile</key>
 	<string></string>
 	<key>NSPrincipalClass</key>

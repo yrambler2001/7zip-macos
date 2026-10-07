@@ -14,6 +14,7 @@ page (`RcDialog(template:)`), placed with `RcPlace` in the dialog font, fixed si
 |---|---|
 | LTEXT "Theme:" 8,10 76×8 + CBS_DROPDOWNLIST 88,8 120 wide | System (default) / Light / Dark. The label + combo row in the IDD_COMPRESS "Archive format:" style (label 2 DLU under the combo's top). |
 | checkbox 8,30 300×10 "Show grid lines" | LVS_EX_GRIDLINES. |
+| checkbox 8,46 300×10 "Check for updates at startup" | added by `pub3` (`FM.CheckUpdates`, lang 9950, default on); see [pub3.md](pub3.md). |
 
 **Theme.** `FM.Theme` = `system` (stored as no key) / `light` / `dark`, `Support/AppTheme.swift`.
 It sets `NSApp.appearance` (nil / `.aqua` / `.darkAqua`), so it covers every window of the process:

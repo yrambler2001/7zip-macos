@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # package.sh -- build a distributable disk image of 7-Zip.app. Works from any directory.
 #
-# Produces a read-only compressed (UDZO) .dmg holding the Release app, with both Finder
+# Produces a read-only compressed (UDZO) .dmg holding the universal (arm64 + x86_64) Release app,
+# named after Mac/VERSION (7-Zip-26.03-macOS-1.0.0.dmg, volume "7-Zip 26.03 for macOS 1.0.0"), with both Finder
 # extensions and the SevenZipKit framework embedded and signed, plus a symlink to /Applications
 # so the user can drag one onto the other. Prints the SHA-256 of the image at the end.
 #
@@ -11,7 +12,7 @@
 #   -n, --notarize          submit the image to Apple and staple the ticket (needs credentials)
 #   -p, --notary-profile <N>  notarytool keychain profile (xcrun notarytool store-credentials)
 #       --apple-id <EMAIL>  notarytool Apple ID; needs --team and NOTARY_PASSWORD as well
-#   -o, --out <PATH>        image to write (default Mac/build/7-Zip-<version>.dmg)
+#   -o, --out <PATH>        image to write (default Mac/build/7-Zip-<upstream>-macOS-<port>.dmg)
 #   -s, --skip-build        package the Release app already in Mac/build
 #   -N, --no-verify         skip the codesign / spctl checks on the finished image
 #   -q, --quiet             print only the verdict lines
@@ -19,6 +20,7 @@
 #
 # Env (each is the fallback for the matching option):
 #   SIGN_IDENTITY, DEVELOPMENT_TEAM, NOTARY_PROFILE, NOTARY_APPLE_ID, NOTARY_PASSWORD
+#   BUILD_NUMBER (CFBundleVersion; default the commit count of HEAD)
 #   DEVELOPER_DIR (default /Applications/Xcode.app)
 #
 # Signing, and why notarization is guarded
@@ -116,10 +118,15 @@ else
 fi
 [ -d "$APP" ] || die "no app bundle at $APP"
 
+# Versions (pub3): the names come from Mac/VERSION, and the bundle must agree with it.
+# shellcheck source=version.sh
+. "$MAC/scripts/version.sh"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 BUILDNO="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
-VOLNAME="7-Zip $VERSION"
-OUT="${OUT:-$MAC/build/7-Zip-$VERSION.dmg}"
+[ "$VERSION" = "$PORT_VERSION" ] \
+  || die "the app says version $VERSION but Mac/VERSION says $PORT_VERSION; drop --skip-build"
+VOLNAME="$VERSION_NAME"
+OUT="${OUT:-$MAC/build/$DMG_NAME}"
 mkdir -p "$(dirname "$OUT")"
 
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/7zip-dmg.XXXXXX")"
@@ -161,6 +168,21 @@ NLANG="$(ls "$LANGDIR" | grep -cE '\.(txt|ttt)$' || true)"
 [ "$NLANG" = 93 ] || die "expected 93 language files in the framework, found $NLANG"
 NICNS="$(ls "$APP/Contents/Resources" | grep -c '^doc-.*\.icns$' || true)"
 [ "$NICNS" -ge 27 ] || die "expected at least 27 document icons, found $NICNS"
+# Universal: every Mach-O in the bundle carries both slices (the app, the framework, the three
+# extensions), or an Intel Mac would refuse part of it.
+ARCH_REPORT=""
+while IFS= read -r -d '' f; do
+  file -b "$f" | grep -q 'Mach-O' || continue
+  archs="$(lipo -archs "$f" 2>/dev/null || true)"
+  case " $archs " in *" arm64 "*) ;; *) archs="$archs (no arm64)" ;; esac
+  case " $archs " in *" x86_64 "*) ;; *) archs="$archs (no x86_64)" ;; esac
+  case "$archs" in
+    *"(no "*) die "${f#$APP/} is not universal (lipo: '$archs'); build with Mac/scripts/build.sh --release" ;;
+  esac
+  ARCH_REPORT+="   ${f#$APP/}: $archs"$'\n'
+done < <(find "$APP" -type f -perm +111 -print0)
+say "   every Mach-O is universal:"
+[ "$QUIET" = 1 ] || printf '%s' "$ARCH_REPORT"
 say "   version $VERSION ($BUILDNO), $NLANG language files, $NICNS document icons, $(du -sh "$APP" | cut -f1) on disk"
 
 # Every nested code item has to be signed, and the outer signature has to seal them.
@@ -303,7 +325,7 @@ SUM="$(shasum -a 256 "$OUT" | cut -d' ' -f1)"
 echo
 echo "OK: $OUT"
 echo "    volume name   $VOLNAME"
-echo "    version       $VERSION ($BUILDNO), arm64, macOS 14.0+"
+echo "    version       $VERSION_NAME (build $BUILDNO), universal (arm64 + x86_64), macOS 14.0+"
 echo "    size          $SIZE"
 echo "    signature     $([ "$ADHOC" = 1 ] && echo "ad-hoc" || echo "$IDENTITY")$([ "$NOTARIZE" = 1 ] && echo ", notarized and stapled" || echo ", not notarized")"
 echo "    sha256        $SUM"

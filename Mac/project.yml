@@ -9,6 +9,11 @@ options:
   createIntermediateGroups: true
   generateEmptyDirectories: true
   groupSortPosition: top
+# pub3: the version of every target comes from Mac/VERSION through this xcconfig
+# (MARKETING_VERSION = PORT_VERSION, CURRENT_PROJECT_VERSION = the build number).
+configFiles:
+  Debug: Version.xcconfig
+  Release: Version.xcconfig
 settings:
   base:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
@@ -18,7 +23,9 @@ settings:
     DEVELOPMENT_TEAM: ""
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: NO
-    ARCHS: arm64
+    # pub3: universal (Apple Silicon + Intel). Release builds both slices; Debug builds the
+    # destination's architecture only (arm64 natively, x86_64 for a Rosetta test run).
+    ARCHS: "arm64 x86_64"
     ONLY_ACTIVE_ARCH: YES
     CLANG_CXX_LIBRARY: libc++
     GCC_C_LANGUAGE_STANDARD: gnu17
@@ -37,6 +44,7 @@ settings:
       # A Release build is the one we ship, so it must not ask to be debuggable. Measured before
       # the change: all four binaries in the Release bundle carried the key.
       CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+      ONLY_ACTIVE_ARCH: NO
 # -----------------------------------------------------------------------------
 # fastui scope: a test-only copy of the app. Same sources and resources as the
 # 7-Zip target, minus the three app extensions (a test never loads them, and
@@ -145,16 +153,28 @@ targets:
       base:
         PRODUCT_NAME: SevenZipCore
         CLANG_CXX_LANGUAGE_STANDARD: c++11
+        # pub3: plain textual includes, as upstream's makefiles compile. With clang modules on, the
+        # x86_64 slice fails in C/AesOpt.c: <wmmintrin.h> is a submodule of _Builtin_intrinsics that
+        # does not make <emmintrin.h>'s __m128i visible ("missing '#include <emmintrin.h>'").
+        CLANG_ENABLE_MODULES: NO
         GCC_OPTIMIZATION_LEVEL: 2
-        GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "NDEBUG=1", "_REENTRANT=1", "_FILE_OFFSET_BITS=64", "_LARGEFILE_SOURCE=1"]
+        # SZ_LZMA_DEC_OPT_DEFS: Z7_LZMA_DEC_OPT on arm64 only, where Asm/arm64/LzmaDecOpt.S
+        # provides LzmaDec_DecodeReal_3. The x86_64 slice is upstream's clang x64 build without
+        # USE_ASM (var_mac_x64.mak: USE_ASM=, 7zip_gcc.mak:1266-1345): the x86 .asm files are MASM
+        # syntax, so every *Opt.c is compiled as C and LzmaDec.c without Z7_LZMA_DEC_OPT. The
+        # define only matters to LzmaDec.c (the one file that tests it), so a target-wide
+        # per-arch setting replaces the per-file flag, which Xcode cannot make per-arch.
+        SZ_LZMA_DEC_OPT_DEFS: ""
+        "SZ_LZMA_DEC_OPT_DEFS[arch=arm64]": "Z7_LZMA_DEC_OPT"
+        GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "NDEBUG=1", "_REENTRANT=1", "_FILE_OFFSET_BITS=64", "_LARGEFILE_SOURCE=1", "$(SZ_LZMA_DEC_OPT_DEFS)"]
         GCC_TREAT_WARNINGS_AS_ERRORS: NO
         GCC_WARN_INHIBIT_ALL_WARNINGS: NO
         CLANG_WARN_DOCUMENTATION_COMMENTS: NO
         GCC_WARN_64_TO_32_BIT_CONVERSION: NO
         CLANG_WARN_COMMA: NO
         CLANG_WARN_STRICT_PROTOTYPES: NO
-        # LzmaDecOpt.S has no __aarch64__ guard: a universal build must exclude it
-        # for x86_64 and drop Z7_LZMA_DEC_OPT there (ARCHS is arm64-only for now).
+        # LzmaDecOpt.S has no __aarch64__ guard: the x86_64 slice excludes it (and has no
+        # Z7_LZMA_DEC_OPT, above).
         "EXCLUDED_SOURCE_FILE_NAMES[arch=x86_64]": LzmaDecOpt.S
     sources:
       # Platform layer (macOS implementations of the link-time obligations,
@@ -206,7 +226,6 @@ targets:
       - path: ../C/Lzma2DecMt.c
       - path: ../C/Lzma2Enc.c
       - path: ../C/LzmaDec.c
-        compilerFlags: "-DZ7_LZMA_DEC_OPT"
       - path: ../C/LzmaEnc.c
       - path: ../C/Md5.c
       - path: ../C/MtCoder.c
