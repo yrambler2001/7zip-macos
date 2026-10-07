@@ -9,11 +9,12 @@ keyboard map, settings and 93 languages — plus Finder integration.
 > fork of [ip7z/7zip](https://github.com/ip7z/7zip) that adds a macOS app. Please report problems
 > with the Mac app here, not to 7-Zip.
 
-Current version: **7-Zip 26.04 for macOS 1.1.0**.
+Current version: **7-Zip 26.04 for macOS 1.1.2**.
 
-![The main window, light](docs/images/main-light.png)
-
-![The main window, dark](docs/images/main-dark.png)
+<p align="center">
+  <img src="docs/images/window-main-light.avif" width="913" alt="The main window, light theme"><br>
+  <img src="docs/images/window-main-dark.avif" width="913" alt="The main window, dark theme">
+</p>
 
 ## Features
 
@@ -34,13 +35,29 @@ Current version: **7-Zip 26.04 for macOS 1.1.0**.
 - **Native**: Swift and AppKit on top of the unchanged C/C++ engine. No emulation, no
   third-party code, no network access except the optional update check.
 
-| Add to archive | Extract |
-|---|---|
-| ![Add to archive](docs/images/add-to-archive.png) | ![Extract](docs/images/extract.png) |
+**Add to archive**
 
-| Context menu with the 7-Zip verbs | Options ▸ macOS |
-|---|---|
-| ![Context menu](docs/images/context-menu.png) | ![Options, macOS tab](docs/images/options-macos-dark.png) |
+<p align="center"><img src="docs/images/window-add-to-archive.avif" width="742" alt="Add to archive"></p>
+
+**Extract**
+
+<p align="center"><img src="docs/images/window-extract.avif" width="637" alt="Extract"></p>
+
+**Benchmark**
+
+<p align="center"><img src="docs/images/window-benchmark.avif" width="861" alt="Benchmark"></p>
+
+**Properties of an item inside an archive**
+
+<p align="center"><img src="docs/images/window-properties.avif" width="874" alt="Properties of an item inside an archive"></p>
+
+**Options ▸ macOS**
+
+<p align="center"><img src="docs/images/window-options-macos.avif" width="597" alt="Options ▸ macOS"></p>
+
+**Finder's right-click menu with the 7-Zip submenu**
+
+<p align="center"><img src="docs/images/window-finder-context-menu.avif" width="1125" alt="Finder's right-click menu with the 7-Zip submenu"></p>
 
 ## Install
 

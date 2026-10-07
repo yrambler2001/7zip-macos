@@ -31,7 +31,7 @@ Where to read:
   (e.g. `01 §3.7`, `01b §4.19`) in code comments and reports, and keep the Windows resource
   ID in a comment next to each menu item and dialog control.
 - Tests write screenshots to `Mac/build/screenshots/` (git-ignored). Images for the docs live in
-  `docs/images/` and are retaken with `Mac/scripts/showcase.sh`.
+  `docs/images/` and are full-window screenshots taken by hand (main window 870x500 pt); `Mac/scripts/showcase.sh` renders reference shots into `Mac/build/screenshots/`.
 
 ## Build, run, test
 

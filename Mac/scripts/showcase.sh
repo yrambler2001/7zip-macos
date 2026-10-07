@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# showcase.sh -- retake the images in docs/images/ (README, docs/parity.md). Works from any directory.
+# showcase.sh -- render reference screenshots of the app into Mac/build/screenshots/. Works from any directory.
+# The README images in docs/images/ are full-window screenshots taken by hand with the macOS screenshot
+# tool (main window sized 870x500 pt); this script no longer overwrites them.
 #
 # Usage: Mac/scripts/showcase.sh [--no-ui]
 #   --no-ui     only the in-process images (skip the context-menu shot, which needs XCUITest)
@@ -9,7 +11,7 @@
 #    and renders the main window, Add to Archive, Extract and Options in Light and Dark at 2x.
 # 2. ShowcaseUITests (XCUITest, input shard: needs the GUI session and automation mode) opens the
 #    panel's context menu in that folder.
-# 3. The results (Mac/build/screenshots/showcase-*.png) are copied into docs/images/.
+# 3. The results stay in Mac/build/screenshots/showcase-*.png (git-ignored).
 # Look at every image before committing it: no user name or machine detail may be visible.
 # The document-icon sheets and the font comparison are not retaken here (ai/reports/docicons.md,
 # ai/reports/feel3.md).
@@ -40,22 +42,4 @@ if [ "$UI" = 1 ]; then
   "$ROOT/Mac/scripts/test.sh" -o ShowcaseUITests
 fi
 
-copy() {
-  if [ -f "$SHOTS/showcase-$1.png" ]; then
-    cp "$SHOTS/showcase-$1.png" "$IMAGES/$2.png"
-    echo "docs/images/$2.png"
-  else
-    echo "showcase.sh: missing $SHOTS/showcase-$1.png" >&2
-  fi
-}
-mkdir -p "$IMAGES"
-copy main-light main-light
-copy main-dark main-dark
-copy add-to-archive-light add-to-archive
-copy add-to-archive-dark add-to-archive-dark
-copy extract-light extract
-copy extract-dark extract-dark
-copy options-dark options-dark
-copy options-macos-light options-macos-light
-copy options-macos-dark options-macos-dark
-if [ "$UI" = 1 ]; then copy context-menu context-menu; fi
+ls "$SHOTS"/showcase-*.png 2>/dev/null || echo "showcase.sh: no showcase images were produced" >&2

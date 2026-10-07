@@ -90,10 +90,11 @@ TZ=America/Los_Angeles TEST_RUNNER_TZ=America/Los_Angeles Mac/scripts/test.sh
 Tests write their screenshots to `Mac/build/screenshots/` (git-ignored); the UI tests attach them to
 the result bundle and `test.sh` exports them there. Nothing a test writes ends up in git.
 
-The images in [`docs/images/`](images/) are retaken with `Mac/scripts/showcase.sh`: it builds a
-neutral demo folder in `/Users/Shared/7-Zip Demo/`, renders the windows (opt-in tests
-`ShowcaseScreenshotTests` and `ShowcaseUITests`) and copies the results into `docs/images/`. Look
-at every image before committing it: no user name or machine detail may be visible.
+The images in [`docs/images/`](images/) are full-window screenshots taken by hand with the macOS
+screenshot tool (window capture, main window sized 870x500 pt). `Mac/scripts/showcase.sh` renders
+reference shots of the same windows into `Mac/build/screenshots/` (opt-in tests
+`ShowcaseScreenshotTests` and `ShowcaseUITests`, in the neutral folder `/Users/Shared/7-Zip Demo/`).
+Look at every image before committing it: no user name or machine detail may be visible.
 
 ## Reference-data tests
 

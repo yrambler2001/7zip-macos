@@ -1,5 +1,5 @@
 // ShowcaseUITests.swift -- the one showcase image that needs a real menu on screen: the panel's
-// context menu with the 7-Zip submenu open (docs/images/context-menu.png), taken in the neutral
+// context menu with the 7-Zip submenu open (not used by the README), taken in the neutral
 // demo folder `/Users/Shared/7-Zip Demo/` that `ShowcaseScreenshotTests` (app-hosted) creates.
 //
 // Opt-in like the app-hosted half: runs only when `Mac/build/showcase/RUN` exists (or
