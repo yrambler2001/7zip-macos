@@ -3,7 +3,8 @@ import SevenZipKit
 
 /// Fixtures are created by Mac/scripts/make-fixtures.sh from a fixed 4-file tree:
 ///   readme.txt (12 B), notes.md (21 B), sub/big.txt (3000 B), sub/deep/inner.txt (10 B)
-/// all with mtime 2024-01-02 15:30 local time.
+/// all with mtime 2024-01-02 14:30:00 UTC (an absolute instant, so the assertions read it in UTC and
+/// hold in any time zone; a check in Calendar.current failed on UTC CI runners).
 final class SevenZipKitTests: XCTestCase {
 
     static var fixtures: String {
@@ -20,6 +21,13 @@ final class SevenZipKitTests: XCTestCase {
         // tests assert English strings
         try? SZLang.shared.loadLanguage(code: "-")
     }
+
+    /// Gregorian in UTC: the fixtures' mtime is an instant, not a wall-clock time (make-fixtures.sh).
+    static let utcCalendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }()
 
     private func fixture(_ name: String) -> String {
         (Self.fixtures as NSString).appendingPathComponent(name)
@@ -46,8 +54,8 @@ final class SevenZipKitTests: XCTestCase {
 
         // mtime preserved by every format (minute precision is enough: zip has 2 s resolution)
         let mtime = try XCTUnwrap(root.propertyOfItem(at: readme, propID: .mtime) as? Date, file: file, line: line)
-        let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: mtime)
-        XCTAssertEqual([comps.year, comps.month, comps.day, comps.hour, comps.minute], [2024, 1, 2, 15, 30], file: file, line: line)
+        let comps = Self.utcCalendar.dateComponents([.year, .month, .day, .hour, .minute], from: mtime)
+        XCTAssertEqual([comps.year, comps.month, comps.day, comps.hour, comps.minute], [2024, 1, 2, 14, 30], file: file, line: line)
         XCTAssertFalse(root.displayStringOfItem(at: readme, propID: .mtime, timestampLevel: .min).isEmpty, file: file, line: line)
 
         // columns: Name must be first (CAgent renames kpidPath to kpidName)

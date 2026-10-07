@@ -29,8 +29,11 @@ printf 'hello 7-zip\n' > "$WORK/src/readme.txt"
 printf '%s\n' "line 1" "line 2" "line 3" > "$WORK/src/notes.md"
 head -c 3000 /dev/zero | tr '\0' 'A' > "$WORK/src/sub/big.txt"
 printf 'deep file\n' > "$WORK/src/sub/deep/inner.txt"
-# fixed timestamps so the archives are reproducible
-find "$WORK/src" -exec touch -t 202401021530.00 {} +
+# fixed timestamps so the archives are reproducible: 2024-01-02 14:30:00 UTC whatever the local time
+# zone (the committed fixtures were made in CET as 15:30 local, the same instant). The unit tests
+# assert this instant in UTC; the DOS times that zip also stores are wall-clock and follow TZ.
+export TZ=UTC
+find "$WORK/src" -exec touch -t 202401021430.00 {} +
 rm -f "$OUT"/*.7z "$OUT"/*.zip "$OUT"/*.tar.gz "$OUT"/*.tar.xz "$OUT"/*.tar
 cd "$WORK/src"
 Z="$SEVENZZ"
