@@ -2,8 +2,16 @@
 
 Every edit to `C/`, `CPP/`, `Asm/` is listed here. All hunks are pure `#ifdef _WIN32` /
 `#ifndef _WIN32` splits or Windows-typedef fixes; Windows behaviour is unchanged. The exact
-unified diff is `Mac/docs/upstream-patches.diff` (copied verbatim from
-`02-engine-api.md` §4.2 and applied with `git apply`).
+unified diff is `Mac/docs/upstream-patches.diff`, generated against the upstream mirror with
+`git diff main -- C CPP Asm DOC > Mac/docs/upstream-patches.diff`.
+
+**Base: 7-Zip 26.04.** Re-verified when 26.04 was merged (`mac/up2604`): the merge applied every
+hunk without a conflict and the patch lines are unchanged from 26.03. Each one is still needed --
+26.04 touched none of the code paths they fix. In particular, 26.04 corrected the
+`MY_CPU_LE_` typo in `CProxyArc2::Load`, which enables the zero-copy name branch for
+`PROP_DATA_TYPE_wchar_t_PTR_Z_LE`; with the 4-byte `wchar_t` of macOS that type is UTF-32 and no
+handler returns it, so the names still come through the `GetProperty` branch the `AgentProxy.cpp`
+patch fixes.
 
 | File | Hunk | Reason |
 |---|---|---|
@@ -23,4 +31,4 @@ unified diff is `Mac/docs/upstream-patches.diff` (copied verbatim from
 | `CPP/7zip/UI/Common/WorkDir.cpp` | `GetWorkDir`: an `#elif defined(__APPLE__)` branch next to the `_WIN32` one applies `ForRemovableOnly` -- the work dir is the archive's folder (`kCurrent`) unless the archive is on a removable volume -- and declares `MacPath_IsOnRemovableVolume` (implemented in `Mac/Core/Platform/MacVolume.cpp`: removable media, or ejectable and not internal) | the Options > Folders "for removable drives only" box (`IDX_FOLDERS_WORK_FOR_REMOVABLE`, 01b §4.8, PROGRESS 169) was read and saved but ignored, because the drive-type test is Windows-only; both callers (`CWorkDirTempFile` in the agent's update path and `SZUpdater`) go through `GetWorkDir`, so no bridge-side copy of the rule could reach the agent path (`mac/navgaps`). Windows preprocesses exactly as before. |
 | `CPP/Windows/ResourceString.h` | `MyLoadString(HINSTANCE, UINT, UString&)` overload wrapped in `#ifdef _WIN32` | no Win32 module handle on macOS; the `UINT` overloads are implemented by `Mac/Core/Platform/SevenZipCoreMac.cpp` |
 
-Nothing else in `C/`, `CPP/`, `Asm/`, `DOC/` is modified. To verify: `git diff macos -- C CPP Asm DOC`.
+Nothing else in `C/`, `CPP/`, `Asm/`, `DOC/` is modified. To verify: `git diff main -- C CPP Asm DOC` (with `main` the upstream mirror).
