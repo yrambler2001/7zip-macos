@@ -140,7 +140,7 @@ enum FirstLaunchIntegration {
         let env = currentEnvironment()
         let decision = run(env) {
             let embedded = FinderExtensionControl.embeddedAppexPath
-            DispatchQueue.global(qos: .utility).async { electAll(embeddedPath: embedded) }
+            FinderExtensionControl.launchQueue.async { electAll(embeddedPath: embedded) }
         }
         if case .deferred(let why) = decision { NSLog("7-Zip: first-launch Finder integration deferred: %@", why) }
     }

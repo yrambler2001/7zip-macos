@@ -5,6 +5,30 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
+## [1.2.0] — 2026-10-08
+
+7-Zip 26.04 for macOS 1.2.0: Quick Look preview for archives.
+
+### Added
+
+- **Quick Look preview for archives.** Selecting an archive in Finder (the preview pane, or the
+  space bar) shows its type, method, file and folder counts, sizes and compression ratio, and its
+  contents as a tree with 7-Zip's Name, Size, Packed Size and Modified columns, icons and font,
+  folders first. **Open in 7-Zip** opens it in the app. Every archive type 7-Zip registers is
+  covered, compressed tarballs (`.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, …) included.
+  The preview never asks for a password (an archive with encrypted file names says so), stops
+  after about 2 seconds or 10 000 entries ("…and N more — open in 7-Zip"), and never writes
+  anything. Options ▸ macOS ▸ **Quick Look preview for archives** turns it off and on; it is on
+  by default and Reset All Settings turns it back on. The document icons Finder shows are
+  unchanged.
+
+### Fixed
+
+- After an update that replaces 7-Zip in place (`brew upgrade`, dragging a new copy over the old
+  one), the Finder menu, the two Quick Actions and the Quick Look preview could disappear until
+  they were switched on again. 7-Zip now registers its missing extensions at launch. It never
+  switches one on that you turned off.
+
 ## [1.1.3] — 2026-10-07
 
 7-Zip 26.04 for macOS 1.1.3: security hardening of the Finder integration.
@@ -152,6 +176,7 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
   behaves correctly on macOS; Windows behaviour is unchanged. See
   [Mac/docs/upstream-patches.md](Mac/docs/upstream-patches.md).
 
+[1.2.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.2.0
 [1.1.3]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.3
 [1.1.2]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.2
 [1.1.1]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.1

@@ -372,13 +372,29 @@ final class ThemeTests: AppHostTestCase {
         for theme in [AppTheme.light, .dark] {
             force(theme)
             // Options: every page, and the macOS tab's screenshots
-            let (controller, window, _) = try openOptions()
+            let (controller, window, tabs) = try openOptions()
             for index in 0..<controller.pageCount {
                 controller.selectPage(index)
                 window.contentView?.layoutSubtreeIfNeeded()
                 checkTexts(in: window, "Options page \(index) \(theme)", minimum: 1)
             }
             controller.selectPage(controller.pageCount - 1)
+            // quicklook: the host carries no QuickLook.appex, so its box is disabled ("This copy of
+            // 7-Zip has no Quick Look extension."). The screenshot shows what an installed copy
+            // shows: this copy's extension registered, never elected -- on (QuickLookPreviewTests).
+            let mac = try page(OptionsMacPage.self, tabs)
+            let savedRunner = FinderExtensionControl.runner
+            FinderExtensionControl.runner = { args in
+                args.first == "-m" ? (0, " " + "    com.yrambler2001.7zip.QuickLook(1.2.0)\tX\t2026\t"
+                                      + "/Applications/7-Zip.app/Contents/PlugIns/QuickLook.appex\n") : (0, "")
+            }
+            mac.quickLookAppexPath = "/Applications/7-Zip.app/Contents/PlugIns/QuickLook.appex"
+            var stateRead = false
+            mac.refreshQuickLookState { stateRead = true }
+            XCTAssertTrue(wait(for: "Quick Look state") { stateRead })
+            FinderExtensionControl.runner = savedRunner
+            XCTAssertTrue(mac.quickLookBox.isEnabled)
+            XCTAssertEqual(mac.quickLookBox.state, .on, "on by default in an installed copy")
             shot(window, "options-macos-tab-\(theme.rawValue)")
             if theme == .dark {
                 controller.selectPage(4)                    // Settings, a Windows page

@@ -9,7 +9,7 @@ keyboard map, settings and 93 languages — plus Finder integration.
 > fork of [ip7z/7zip](https://github.com/ip7z/7zip) that adds a macOS app. Please report problems
 > with the Mac app here, not to 7-Zip.
 
-Current version: **7-Zip 26.04 for macOS 1.1.3**.
+Current version: **7-Zip 26.04 for macOS 1.2.0**.
 
 <p align="center">
   <img src="docs/images/window-main-light.avif" width="913" alt="The main window, light theme"><br>
@@ -33,6 +33,9 @@ Current version: **7-Zip 26.04 for macOS 1.1.3**.
   **Benchmark**, **Split**, **Combine**, **Link**, Properties and comments.
 - **Finder integration** — a 7-Zip submenu on Finder's right-click menu, Quick Actions, Services,
   and document icons for 40 archive types.
+- **Quick Look preview** — select an archive in Finder (or press Space) to see its summary and
+  its contents as 7-Zip lists them, without opening the app; **Open in 7-Zip** is one click away.
+  Options ▸ macOS turns it off.
 - **93 languages** — the official 7-Zip translations, switchable while the app runs.
 - **Light and Dark** themes: Light by default, Dark or following the system in Options ▸ macOS.
 - **Native**: Swift and AppKit on top of the unchanged C/C++ engine. No emulation, no
@@ -72,7 +75,7 @@ Requires **macOS 14 (Sonoma) or newer**, on Apple Silicon or Intel (the release 
 
 ### Disk image
 
-Download `7-Zip-26.04-macOS-1.1.3.dmg` (the version in the name changes with each release) from
+Download `7-Zip-26.04-macOS-1.2.0.dmg` (the version in the name changes with each release) from
 [Releases](https://github.com/yrambler2001/7zip-macos/releases), open it and drag **7-Zip** onto
 **Applications**. The app is universal: one download for Apple Silicon and Intel Macs.
 
@@ -134,6 +137,11 @@ The five **7-Zip: …** Services need nothing; they are in every app's Services 
 chooses which of the eleven menu entries Finder shows, as on Windows. If the menu never appears,
 `pluginkit -m -p com.apple.FinderSync -v` shows whether the extension is enabled (`+`) and which
 copy of 7-Zip it belongs to.
+
+The **Quick Look preview** is on from the first launch: select an archive in Finder and look at the
+preview pane, or press Space. Options ▸ macOS ▸ **Quick Look preview for archives** switches it off
+(it is the same switch as System Settings ▸ General ▸ Login Items & Extensions ▸ Quick Look). If
+Finder still shows the plain icon right after installing, run `qlmanage -r` or log out and back in.
 
 The app itself is not sandboxed (it is a file manager), so macOS asks once for access to Desktop,
 Documents, Downloads, removable and network volumes as you open them. The Finder extensions are

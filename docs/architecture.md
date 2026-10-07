@@ -10,7 +10,8 @@ SevenZipKit bridge (Mac/Core/)            Objective-C++; pure Objective-C header
 7-Zip.app (Mac/App/)                      Swift + AppKit: windows, panels, dialogs, menus, settings
         ├── FinderSync.appex              Finder context menu and toolbar button
         ├── QuickActionExtract.appex      Finder Quick Actions
-        └── QuickActionCompress.appex
+        ├── QuickActionCompress.appex
+        └── QuickLook.appex               Quick Look preview of archives (links the app's SevenZipKit)
 ```
 
 ## Engine
@@ -52,7 +53,23 @@ carrying the engine's HRESULT and message.
 | `Integration/` | Finder integration, the `sevenzip://` URL commands, the 7zG-style command line |
 
 The app is not sandboxed (it is a file manager); the extensions are, and forward commands to the
-app through the `sevenzip://` URL scheme.
+app through the `sevenzip://` URL scheme — all but the Quick Look extension, which only reads.
+
+### Quick Look preview
+
+`Mac/QuickLook/` is a view-based `com.apple.quicklook.preview` extension for every archive type the
+app declares. It links the app's `SevenZipKit.framework` through
+`@executable_path/../../../../Frameworks`, so there is one engine in the bundle. On a background
+queue `ArchivePreviewBuilder` opens the archive with `SZArchiveOpener` (no password delegate: an
+archive with encrypted headers is reported, not unlocked), reads every item in flat mode into a
+tree, and stops after 2 s or 10 000 entries; a `.tar.gz` / `.tar.bz2` / `.tar.xz` / `.tar.zst` is
+listed from its decompressed stream (`SZStreamTar`: the outer handler writes into an in-memory
+pipe that the tar handler reads sequentially), so nothing is ever extracted. `ArchivePreviewView`
+draws it with the panel's own code (`Formatting`, `PanelArchiveIcons`, `ListFontChoice`,
+`WinChrome`). The extension's only entitlement is the sandbox; the app pushes the language, theme
+and time format into its container (`QuickLookPreferences`). Options ▸ macOS switches it through
+PlugInKit (`QuickLookExtensionControl`), like the Finder extension. "Open in 7-Zip" opens the file
+with the containing app through Launch Services, not through `sevenzip://`.
 
 ### Command URLs
 

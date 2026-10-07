@@ -149,8 +149,16 @@ enum FinderExtensionControl {
     /// Makes this copy's appex the one Finder runs: removes the registration of every other copy
     /// (deleted ones included), then adds this one. Blocking.
     static func claim(embeddedPath: String) {
+        claim(identifier: identifier, embeddedPath: embeddedPath)
+    }
+
+    /// The same for any of this app's extension identifiers (the Quick Actions, Quick Look).
+    /// Registering never changes the election: `-a` only adds the path; whether the identifier is
+    /// elected use or ignore stays what the user (or the first launch) made it.
+    static func claim(identifier: String, embeddedPath: String) {
         let mine = canonical(embeddedPath)
-        for registration in allRegistrations() where canonical(registration.path) != mine {
+        let all = parse(runner(["-m", "-D", "-A", "-v", "-i", identifier]).output, identifier: identifier)
+        for registration in all where canonical(registration.path) != mine {
             _ = runner(["-r", registration.path])
         }
         _ = runner(["-a", embeddedPath])
@@ -174,15 +182,60 @@ enum FinderExtensionControl {
         return state
     }
 
-    /// At launch of a real copy: when Finder runs another copy's extension, take it over, so the
-    /// app the user runs is the one Finder's menu calls back. The election is left alone. Test
-    /// instances (SZ_TEST_SUPPORT=1) never touch PlugInKit.
+    /// What a launch does with one of this copy's extensions (pure; AppFeelTests / QuickLookPreviewTests).
+    enum LaunchRegistration: Equatable {
+        /// PlugInKit has no registration at all -- the app was replaced in place (a `brew upgrade`,
+        /// a drag from the disk image over the old copy) after its path had been removed, and Launch
+        /// Services does not bring it back (measured on macOS 26): add this copy's appex.
+        case register
+        /// Another copy is registered: remove it and add this one.
+        case takeOver
+        /// This copy is registered: nothing to do, whatever the election (`+`, none, or the user's
+        /// `-`, which is never flipped).
+        case leave
+    }
+
+    static func launchRegistration(active: Registration?, embeddedPath: String) -> LaunchRegistration {
+        guard let active else { return .register }
+        return canonical(active.path) == canonical(embeddedPath) ? .leave : .takeOver
+    }
+
+    /// Every PlugInKit call made at launch (this claim, the first-launch election, Quick Look's)
+    /// runs on this one serial queue, in the order the launch asks for them, so a registration and
+    /// an election never interleave.
+    static let launchQueue = DispatchQueue(label: "com.yrambler2001.7zip.pluginkit", qos: .utility)
+
+    /// This copy's extensions besides Quick Look: identifier and appex file name.
+    static let finderExtensions: [(identifier: String, appex: String)] = [
+        (identifier, "FinderSync.appex"),
+        ("com.yrambler2001.7zip.QuickActionExtract", "QuickActionExtract.appex"),
+        ("com.yrambler2001.7zip.QuickActionCompress", "QuickActionCompress.appex"),
+    ]
+
+    /// One extension at launch: register it when missing, take it over from another copy, leave a
+    /// registered one alone. The election is never touched. Blocking.
+    @discardableResult
+    static func registerAtLaunch(identifier: String, embeddedPath: String) -> LaunchRegistration {
+        let active = parse(runner(["-m", "-v", "-i", identifier]).output, identifier: identifier).first
+        let action = launchRegistration(active: active, embeddedPath: embeddedPath)
+        if action != .leave { claim(identifier: identifier, embeddedPath: embeddedPath) }
+        return action
+    }
+
+    /// At launch of a real copy: the Finder Sync extension and both Quick Actions are registered
+    /// from this copy -- taken over from another copy (so the app the user runs is the one Finder's
+    /// menu calls back), or re-added when PlugInKit lost them. The election is left alone, so a user
+    /// who turned the integration off keeps it off. Test instances (SZ_TEST_SUPPORT=1) never touch
+    /// PlugInKit.
     static func claimAtLaunchIfNeeded() {
         guard !TestSupport.isEnabled, let embeddedPath = embeddedAppexPath else { return }
-        DispatchQueue.global(qos: .utility).async {
-            if case .otherCopy = currentState(embeddedPath: embeddedPath) {
-                claim(embeddedPath: embeddedPath)
-            }
+        let plugIns = (embeddedPath as NSString).deletingLastPathComponent
+        let present = finderExtensions.compactMap { ext -> (String, String)? in
+            let path = (plugIns as NSString).appendingPathComponent(ext.appex)
+            return FileManager.default.fileExists(atPath: path) ? (ext.identifier, canonical(path)) : nil
+        }
+        launchQueue.async {
+            for (identifier, path) in present { registerAtLaunch(identifier: identifier, embeddedPath: path) }
         }
     }
 
