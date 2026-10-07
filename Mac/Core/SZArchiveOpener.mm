@@ -926,6 +926,17 @@ static BOOL SZStatFile(NSString *path, uint64_t *size, struct timespec *mtime)
     NSString *path = [folder isKindOfClass:[SZFileSystemFolder class]]
         ? [(SZFileSystemFolder *)folder fullPathOfItemAtIndex:index]
         : [folder.fullPath stringByAppendingString:[folder nameOfItemAtIndex:index]];
+    // A directory (an app bundle, a package) is never an archive: the engine would open it as a
+    // file and fail with E_FAIL. Answer as Open does for any other non-archive (S_FALSE), as
+    // openArchiveAtPath does (fix111).
+    BOOL isDir = NO;
+    if ([folder isDirectoryAtIndex:index]
+        || ([[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDir] && isDir))
+    {
+      if (error)
+        *error = [SZErrors errorWithCode:SZErrorCodeNotArchive message:[NSString stringWithFormat:@"%@ is a directory", path]];
+      return nil;
+    }
     return [self openWithStream:NULL openPath:path displayPath:path formatHint:formatHint passwordDelegate:passwordDelegate
                        progress:progress outerFolder:folder outerItemIndex:index tempDirectory:nil error:error];
   }

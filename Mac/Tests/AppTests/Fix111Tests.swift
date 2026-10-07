@@ -1,0 +1,456 @@
+// Fix111Tests.swift -- the 1.1.1 fixes in the real panel (ai/reports/fix111.md):
+//
+//   1. an app bundle (a Chrome web-app shim in ~/Applications/Chrome Apps.localized, a copied
+//      application) opens as a folder; it used to be tried as an archive and fail with
+//      "E_FAIL Unspecified error"; a folder of odd entries opens without a message;
+//   2. every row's text sits on the same baseline, whatever characters the name holds (the CR of
+//      the Finder's "Icon\r" started a second line and pushed the name up);
+//   3. the header sorts on a click and reverses on a second one, View > Arrange By follows it;
+//   4. the status bar's text insets.
+
+import AppKit
+import SevenZipKit
+import XCTest
+@testable import SevenZipAppHost
+
+final class Fix111Tests: AppHostTestCase {
+
+    override var screenshotPrefix: String { "fix111" }
+
+    private var controllers: [MainWindowController] = []
+    private var scratchDirectories: [String] = []
+    private var savedNumPanels = 1
+    private var savedPanelPaths: [String?] = []
+    private var savedListModes: [Int] = []
+    private var savedAppearance: NSAppearance?
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        savedNumPanels = Settings.numPanels
+        savedPanelPaths = [Settings.panelPath(0), Settings.panelPath(1)]
+        savedListModes = [Settings.listMode(0), Settings.listMode(1)]
+        savedAppearance = NSApp.appearance
+        NSApp.appearance = NSAppearance(named: .aqua)
+    }
+
+    override func tearDown() {
+        while NSApp.modalWindow != nil { NSApp.abortModal() }
+        for controller in controllers { controller.window?.close() }
+        controllers = []
+        for path in scratchDirectories {
+            if let walker = FileManager.default.enumerator(atPath: path) {
+                for case let rel as String in walker { chmod(path + "/" + rel, 0o755) }
+            }
+            try? FileManager.default.removeItem(atPath: path)
+        }
+        scratchDirectories = []
+        for (i, path) in savedPanelPaths.enumerated() { Settings.setPanelPath(path, i) }
+        for (i, mode) in savedListModes.enumerated() { Settings.setListMode(mode, i) }
+        Settings.numPanels = savedNumPanels
+        NSApp.appearance = savedAppearance
+        super.tearDown()
+    }
+
+    // MARK: helpers
+
+    private func makeScratch(_ name: String) -> String {
+        let path = (TestPaths.artifacts as NSString).appendingPathComponent("fix111-\(name)-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        scratchDirectories.append(path)
+        return path
+    }
+
+    private func touch(_ path: String, _ text: String = "") {
+        XCTAssertTrue(FileManager.default.createFile(atPath: path, contents: Data(text.utf8)), path)
+    }
+
+    private func setXattr(_ path: String, _ name: String, _ value: [UInt8]) {
+        _ = value.withUnsafeBytes { setxattr(path, name, $0.baseAddress, value.count, 0, XATTR_NOFOLLOW) }
+    }
+
+    /// A Chrome "web app" shim as Chrome writes it.
+    private func makeChromeShim(_ path: String) {
+        let fm = FileManager.default
+        for dir in ["Contents/MacOS", "Contents/Resources/en-US.lproj", "Contents/_CodeSignature"] {
+            try? fm.createDirectory(atPath: path + "/" + dir, withIntermediateDirectories: true)
+        }
+        touch(path + "/Contents/Info.plist", "<plist><dict/></plist>")
+        touch(path + "/Contents/PkgInfo", "APPL????")
+        touch(path + "/Contents/MacOS/app_mode_loader", "#!/bin/sh\n")
+        chmod(path + "/Contents/MacOS/app_mode_loader", 0o755)
+        touch(path + "/Contents/Resources/app.icns")
+        chmod(path + "/Contents/Resources", 0o700)
+        touch(path + "/Contents/_CodeSignature/CodeResources")
+        setXattr(path, "com.apple.FinderInfo", [UInt8](repeating: 0, count: 32))
+    }
+
+    private func makeWindow(size: NSSize = NSSize(width: 1000, height: 600)) -> MainWindowController {
+        Settings.numPanels = 1
+        Settings.setListMode(3, 0)
+        let controller = MainWindowController()
+        controllers.append(controller)
+        controller.window?.setContentSize(size)
+        controller.showWindow(nil)
+        return controller
+    }
+
+    private func navigate(_ panel: PanelViewController, to path: String) {
+        var done = false
+        panel.navigate(to: path) { _ in done = true }
+        XCTAssertTrue(wait(for: "panel bound to \(path)") { done })
+        panel.view.window?.contentView?.layoutSubtreeIfNeeded()
+    }
+
+    private func rowIndex(_ panel: PanelViewController, _ name: String) -> Int {
+        panel.rows.firstIndex { $0.name == name } ?? -1
+    }
+
+    // MARK: - 1. app bundles and odd entries
+
+    /// ~/Applications/Chrome Apps.localized/<web app>.app: the folder lists, Enter on the app shim
+    /// enters it (7zFM: IsItem_Folder -> OpenFolder), and nothing reports an error.
+    func testChromeAppShimOpensAsAFolder() throws {
+        let scratch = makeScratch("apps")
+        let apps = scratch + "/Chrome Apps.localized"
+        let shimName = "Panasonic - Osprzęt elektroinstalacyjny.app"
+        makeChromeShim(apps + "/" + shimName)
+        touch(apps + "/Icon\r")
+        setXattr(apps + "/Icon\r", "com.apple.ResourceFork", Array(repeating: 3, count: 900))
+        try FileManager.default.createDirectory(atPath: apps + "/.localized", withIntermediateDirectories: true)
+        let controller = makeWindow()
+        let panel = controller.focusedPanel
+        navigate(panel, to: apps)
+        XCTAssertEqual(panel.currentPath, apps + "/")
+        let shim = rowIndex(panel, shimName)
+        XCTAssertGreaterThanOrEqual(shim, 0, "rows: \(panel.rows.map(\.name))")
+        XCTAssertGreaterThanOrEqual(rowIndex(panel, "Icon\r"), 0)
+
+        panel.openRow(panel.rows[shim], insideOnly: false, formatHint: nil)
+        XCTAssertTrue(wait(for: "entered the app shim") { panel.currentPath == apps + "/" + shimName + "/" },
+                      "path \(panel.currentPath)")
+        XCTAssertEqual(panel.rows.filter { !$0.isParentRow }.map(\.name), ["Contents"])
+        let contents = try XCTUnwrap(panel.rows.first { $0.name == "Contents" })
+        panel.openRow(contents, insideOnly: false, formatHint: nil)
+        XCTAssertTrue(wait(for: "entered Contents") { panel.currentPath.hasSuffix(shimName + "/Contents/") })
+        XCTAssertEqual(Set(panel.rows.filter { !$0.isParentRow }.map(\.name)),
+                       ["MacOS", "Resources", "_CodeSignature", "Info.plist", "PkgInfo"])
+        XCTAssertTrue(recordedBoxes.isEmpty, "message boxes: \(recordedBoxes.map(\.text))")
+
+        // A real application bundle, from the address bar.
+        navigate(panel, to: "/System/Applications/Calculator.app")
+        XCTAssertEqual(panel.currentPath, "/System/Applications/Calculator.app/")
+        XCTAssertEqual(panel.rows.filter { !$0.isParentRow }.map(\.name), ["Contents"])
+        XCTAssertTrue(recordedBoxes.isEmpty, "message boxes: \(recordedBoxes.map(\.text))")
+    }
+
+    /// Broken and looping links, unreadable entries, a FIFO, resource forks, names with control
+    /// characters and emoji: the folder opens without a message and lists every entry.
+    func testOddEntriesOpenWithoutAnError() throws {
+        let dir = makeScratch("odd")
+        let fm = FileManager.default
+        try fm.createSymbolicLink(atPath: dir + "/broken", withDestinationPath: "nowhere")
+        try fm.createSymbolicLink(atPath: dir + "/loop1", withDestinationPath: "loop2")
+        try fm.createSymbolicLink(atPath: dir + "/loop2", withDestinationPath: "loop1")
+        try fm.createDirectory(atPath: dir + "/noread", withIntermediateDirectories: true)
+        chmod(dir + "/noread", 0)
+        touch(dir + "/nofile", "x")
+        chmod(dir + "/nofile", 0)
+        XCTAssertEqual(mkfifo(dir + "/pipe", 0o644), 0)
+        touch(dir + "/rsrc", "data")
+        setXattr(dir + "/rsrc", "com.apple.ResourceFork", Array(repeating: 1, count: 4000))
+        for name in ["Icon\r", "two\nlines", "emoji 😀🇺🇦.txt"] { touch(dir + "/" + name) }
+        makeChromeShim(dir + "/Shim.app")
+        let controller = makeWindow()
+        let panel = controller.focusedPanel
+        navigate(panel, to: dir)
+        XCTAssertEqual(panel.currentPath, dir + "/")
+        XCTAssertEqual(Set(panel.rows.filter { !$0.isParentRow }.map(\.name)),
+                       ["broken", "loop1", "loop2", "noread", "nofile", "pipe", "rsrc", "Icon\r", "two\nlines",
+                        "emoji 😀🇺🇦.txt", "Shim.app"])
+        XCTAssertTrue(recordedBoxes.isEmpty, "message boxes: \(recordedBoxes.map(\.text))")
+        // the list draws every row (icons, cells) without trouble
+        panel.tableView.layoutSubtreeIfNeeded()
+        _ = panel.tableView.bitmapImageRepForCachingDisplay(in: panel.tableView.visibleRect)
+    }
+
+    // MARK: - 2. one baseline for every row
+
+    /// Names with a CR (the Finder's "Icon\r"), an LF, a tab, emoji, Arabic, stacked combining
+    /// marks, Tibetan and Thai stacks: every name's text field puts its first baseline where a
+    /// plain ASCII name's is, and its text stays on one line inside the row.
+    func testEveryRowSharesOneBaseline() throws {
+        let dir = makeScratch("baseline")
+        let names = ["Icon\r", "Icon", "plain.txt", "two\nlines", "cr\r\nlf.txt", "tab\there", "bell\u{7}.txt",
+                     "emoji 😀🇺🇦👩‍👩‍👧.txt", "عربي.txt", "Z̷̢̛͓a̸l̶g̵o̴.txt", "ཀྵྐྵྐྵ.txt", "ด้้้้้้้.txt",
+                     "日本語.txt", "\u{2028}sep.txt"]
+        for name in names { touch(dir + "/" + name) }
+        let controller = makeWindow()
+        let panel = controller.focusedPanel
+        navigate(panel, to: dir)
+        let table = panel.tableView
+        let nameColumn = try XCTUnwrap(table.tableColumns.firstIndex { PanelViewController.propID(of: $0) == .name })
+        let plain = rowIndex(panel, "plain.txt")
+        func baseline(_ row: Int) throws -> (CGFloat, NSTextField) {
+            let cell = try XCTUnwrap(table.view(atColumn: nameColumn, row: row, makeIfNecessary: true) as? PanelCellView)
+            cell.layoutSubtreeIfNeeded()
+            let field = try XCTUnwrap(cell.textField)
+            let top = field.convert(NSPoint(x: 0, y: field.isFlipped ? 0 : field.bounds.height), to: cell)
+            let fromRowTop = cell.isFlipped ? top.y : cell.bounds.height - top.y
+            return (fromRowTop + field.firstBaselineOffsetFromTop, field)
+        }
+        let (reference, _) = try baseline(plain)
+        XCTAssertEqual(reference, PanelMetrics.textBaseline(for: PanelMetrics.listFont), accuracy: 0.01)
+        for name in names {
+            let row = rowIndex(panel, name)
+            XCTAssertGreaterThanOrEqual(row, 0, name.debugDescription)
+            let (b, field) = try baseline(row)
+            XCTAssertEqual(b, reference, accuracy: 0.01, "\(name.debugDescription): baseline \(b), plain \(reference)")
+            XCTAssertFalse(field.stringValue.unicodeScalars.contains { Formatting.isControl($0) },
+                           "\(name.debugDescription) shows \(field.stringValue.debugDescription)")
+        }
+        // The CR name draws its text on the same rows of pixels as a plain one.
+        let iconRow = rowIndex(panel, "Icon\r")
+        XCTAssertEqual(panel.rows[iconRow].displayName, "Icon")
+        if let window = panel.view.window { attach(window, "02-baselines") }
+        let ink = { (row: Int) -> NSRect? in self.inkBox(table, row: row, column: nameColumn) }
+        let iconInk = try XCTUnwrap(ink(iconRow))
+        let plainInk = try XCTUnwrap(ink(rowIndex(panel, "Icon")))
+        XCTAssertEqual(iconInk, plainInk, "Icon\\r ink \(iconInk) vs Icon \(plainInk)")
+    }
+
+    /// Other columns show LF and CR as spaces (PanelListNotify.cpp:470-479), the name column
+    /// draws nothing for a control character, and a name of control characters only shows "_".
+    func testControlCharactersInCellText() {
+        XCTAssertEqual(Formatting.displayName("Icon\r"), "Icon")
+        XCTAssertEqual(Formatting.displayName("a\nb\tc\u{7}"), "abc")
+        XCTAssertEqual(Formatting.displayName("\r"), "_")
+        XCTAssertEqual(Formatting.displayName("x\u{202E}y"), "x_y")
+        XCTAssertEqual(Formatting.oneLine("line 1\r\nline 2"), "line 1  line 2")
+        XCTAssertEqual(Formatting.oneLine("plain"), "plain")
+    }
+
+    // MARK: - 3. sorting
+
+    private func clickHeader(_ panel: PanelViewController, _ propID: SZPropID) throws {
+        let column = try XCTUnwrap(panel.tableView.tableColumns.first { PanelViewController.propID(of: $0) == propID },
+                                   "no \(propID) column")
+        panel.tableView(panel.tableView, didClick: column)          // LVN_COLUMNCLICK -> OnColumnClick
+    }
+
+    /// The rows in `expected` order (a folder with IFolderCompare sorts on the panel's queue).
+    private func waitOrder(_ panel: PanelViewController, _ expected: [String], _ what: String, line: UInt = #line) {
+        XCTAssertTrue(wait(for: what) { self.names(panel) == expected }, "\(what): \(names(panel))", line: line)
+    }
+
+    private func names(_ panel: PanelViewController) -> [String] {
+        panel.rows.filter { !$0.isParentRow }.map(\.name)
+    }
+
+    private func checkedArrangeItem(_ panel: PanelViewController) -> [String] {
+        let items: [(String, Selector)] = [("Name", #selector(PanelViewController.viewArrangeByName(_:))),
+                                           ("Type", #selector(PanelViewController.viewArrangeByType(_:))),
+                                           ("Date", #selector(PanelViewController.viewArrangeByDate(_:))),
+                                           ("Size", #selector(PanelViewController.viewArrangeBySize(_:))),
+                                           ("Unsorted", #selector(PanelViewController.viewArrangeNoSort(_:)))]
+        return items.compactMap { title, action in
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            _ = panel.validateMenuItem(item)
+            return item.state == .on ? title : nil
+        }
+    }
+
+    private func assertNoSortIndicator(_ panel: PanelViewController, _ when: String, line: UInt = #line) {
+        for column in panel.tableView.tableColumns {
+            XCTAssertNil(panel.tableView.indicatorImage(in: column), "\(when): 7zFM sets no HDF_SORTUP/HDF_SORTDOWN", line: line)
+        }
+        XCTAssertNil(panel.tableView.highlightedTableColumn, "\(when): no LVM_SETSELECTEDCOLUMN", line: line)
+    }
+
+    /// 7zFM 26.0x (PanelSort.cpp SortItemsWithPropID, OnColumnClick; MyLoadMenu.cpp GetSortControlID;
+    /// PanelItems.cpp InitColumns / SaveListViewInfo): a header click sorts by that column, a second
+    /// click reverses it; Size and the times start descending; the header shows no arrow; View >
+    /// Arrange By checks the sort's item, Name for a column without one; the sort is kept per folder
+    /// type (the file system and each archive format apart).
+    func testHeaderClickSortsReversesAndPersistsPerFolderType() throws {
+        let saved = ["FSFolder", "7-Zip.tar"].map { ($0, Settings.columnLayout(forFolderType: $0)) }
+        defer { for (type, layout) in saved { Settings.setColumnLayout(layout, forFolderType: type) } }
+        for (type, _) in saved { Settings.setColumnLayout(nil, forFolderType: type) }
+
+        let dir = makeScratch("sort")
+        try FileManager.default.createDirectory(atPath: dir + "/sub", withIntermediateDirectories: true)
+        touch(dir + "/a.txt", String(repeating: "a", count: 1234))
+        touch(dir + "/b.bin", String(repeating: "b", count: 100_000))
+        touch(dir + "/notes.md", String(repeating: "n", count: 20))
+        let options = SZUpdateOptions.options(archivePath: dir + "/c.tar")
+        options.formatName = "tar"
+        _ = try SZUpdater.update(with: options, sourcePaths: [dir + "/a.txt", dir + "/notes.md"], progress: nil)
+        // Created: b.bin newest, then notes.md, a.txt, c.tar, sub (tar's ctime is when it was written)
+        let base = Date(timeIntervalSince1970: 1_705_314_600)
+        for (i, name) in ["sub", "c.tar", "a.txt", "notes.md", "b.bin"].enumerated() {
+            try FileManager.default.setAttributes([.creationDate: base.addingTimeInterval(Double(i) * 60)],
+                                                  ofItemAtPath: dir + "/" + name)
+        }
+
+        let controller = makeWindow()
+        let panel = controller.focusedPanel
+        navigate(panel, to: dir)
+        waitOrder(panel, ["sub", "a.txt", "b.bin", "c.tar", "notes.md"], "fresh: Name ascending")
+        XCTAssertEqual(checkedArrangeItem(panel), ["Name"])
+        assertNoSortIndicator(panel, "fresh")
+
+        try clickHeader(panel, .size)
+        waitOrder(panel, ["sub", "b.bin", "c.tar", "a.txt", "notes.md"], "Size starts descending")
+        XCTAssertEqual(checkedArrangeItem(panel), ["Size"])
+        assertNoSortIndicator(panel, "size 1")
+        try clickHeader(panel, .size)
+        waitOrder(panel, ["sub", "notes.md", "a.txt", "c.tar", "b.bin"], "a second click reverses")
+        assertNoSortIndicator(panel, "size 2")
+        try clickHeader(panel, .name)
+        waitOrder(panel, ["sub", "a.txt", "b.bin", "c.tar", "notes.md"], "order")
+        try clickHeader(panel, .name)
+        waitOrder(panel, ["sub", "notes.md", "c.tar", "b.bin", "a.txt"], "Name reversed")
+        try clickHeader(panel, .ctime)
+        waitOrder(panel, ["sub", "b.bin", "notes.md", "a.txt", "c.tar"], "Created starts descending")
+        XCTAssertEqual(checkedArrangeItem(panel), ["Name"], "GetSortControlID: a column without an item checks Name")
+        assertNoSortIndicator(panel, "created")
+
+        // Ctrl+F6 / View > Arrange By > Size: the same SortItemsWithPropID
+        panel.viewArrangeBySize(nil)
+        waitOrder(panel, ["sub", "b.bin", "c.tar", "a.txt", "notes.md"], "order")
+        panel.viewArrangeByDate(nil)
+        XCTAssertEqual(checkedArrangeItem(panel), ["Date"])
+        panel.viewArrangeNoSort(nil)
+        XCTAssertEqual(checkedArrangeItem(panel), ["Unsorted"])
+        panel.viewArrangeBySize(nil)
+        try clickHeader(panel, .size)                     // size ascending, kept for the file system
+
+        // An archive folder type has its own sort: Name ascending until changed there.
+        let tar = try XCTUnwrap(panel.rows.first { $0.name == "c.tar" })
+        panel.openRow(tar, insideOnly: false, formatHint: nil)
+        XCTAssertTrue(wait(for: "inside c.tar") { panel.currentPath.hasSuffix("c.tar/") })
+        waitOrder(panel, ["a.txt", "notes.md"], "order")
+        XCTAssertEqual(panel.sortPropID, .name)
+        XCTAssertTrue(panel.ascending)
+        try clickHeader(panel, .size)
+        XCTAssertTrue(wait(for: "tar sorted by size") { self.names(panel) == ["a.txt", "notes.md"] && panel.sortPropID == .size })
+        panel.goUp()
+        XCTAssertTrue(wait(for: "back on disk") { panel.currentPath == dir + "/" })
+        XCTAssertEqual(panel.sortPropID, .size, "the file system's sort came back")
+        XCTAssertTrue(panel.ascending)
+        waitOrder(panel, ["sub", "notes.md", "a.txt", "c.tar", "b.bin"], "order")
+
+        // A new window reads the saved sort of its folder type.
+        controller.window?.close()
+        let second = makeWindow()
+        navigate(second.focusedPanel, to: dir)
+        XCTAssertEqual(second.focusedPanel.sortPropID, .size)
+        waitOrder(second.focusedPanel, ["sub", "notes.md", "a.txt", "c.tar", "b.bin"], "new window")
+        assertNoSortIndicator(second.focusedPanel, "new window")
+    }
+
+    // MARK: - 4. status bar insets
+
+    /// Windows (fresh 7zFM 26.03, 96 dpi): each part's text ink starts 2 px into the part, the
+    /// first one 2 px from the client's left edge, which is 1 px inside the window's border. On the
+    /// Mac the panel at the window's left edge moves its first part's text in by the rounded corner's
+    /// reach (`statusCornerInset`), so it no longer runs into the frame; the other parts, and the
+    /// first part of the right-hand panel, keep Windows' 2 px.
+    func testStatusBarTextInsets() throws {
+        let dir = makeScratch("status")
+        touch(dir + "/a.txt", String(repeating: "x", count: 1234))
+        Settings.numPanels = 2
+        Settings.setListMode(3, 0)
+        Settings.setListMode(3, 1)
+        let controller = MainWindowController()
+        controllers.append(controller)
+        controller.window?.setContentSize(NSSize(width: 1200, height: 500))
+        controller.showWindow(nil)
+        let panels = controller.panels
+        XCTAssertEqual(panels.count, 2)
+        for panel in panels { navigate(panel, to: dir) }
+        // Select a.txt in both panels; a late refresh (the folder just changed) may clear it once.
+        func filled(_ panel: PanelViewController) -> Bool {
+            let row = rowIndex(panel, "a.txt")
+            guard row >= 0 else { return false }
+            if !panel.tableView.selectedRowIndexes.contains(row) {
+                panel.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                panel.focusedIndex = row
+            }
+            panel.refreshStatusBar()
+            return panel.statusBarTexts.dropFirst().allSatisfy { !$0.isEmpty }
+        }
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertTrue(wait(for: "split laid out, a.txt selected in both panels") {
+            panels[1].view.frame.minX > 300 && panels.allSatisfy(filled)
+        }, "status: \(panels.map(\.statusBarTexts))")
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        if let window = controller.window { attach(window, "04-status") }
+        for (index, panel) in panels.enumerated() {
+            panel.view.layoutSubtreeIfNeeded()
+            let starts = [0] + PanelMetrics.statusSectionEdges
+            let ink = statusInk(panel)
+            XCTAssertEqual(ink.count, 4, "panel \(index): ink runs \(ink), width \(panel.view.bounds.width), "
+                           + "texts \(panel.statusBarTexts), hidden \(panel.statusSections.map(\.isHidden))")
+            guard ink.count == 4 else { continue }
+            let first = index == 0 ? 2 + PanelMetrics.statusCornerInset : 2
+            XCTAssertEqual(ink[0], first, accuracy: 1, "panel \(index) part 0 ink at \(ink[0])")
+            for part in 1...3 {
+                XCTAssertEqual(ink[part] - starts[part], 2, accuracy: 1, "panel \(index) part \(part) ink at \(ink[part])")
+            }
+        }
+        if #available(macOS 26, *) { XCTAssertEqual(PanelMetrics.statusCornerInset, 8) }
+    }
+
+    /// The first ink column of each status part's text, in points from the panel's left edge.
+    private func statusInk(_ panel: PanelViewController) -> [CGFloat] {
+        let view = panel.view
+        let rect = NSRect(x: 0, y: 0, width: view.bounds.width, height: 22)
+        let area = view.isFlipped ? NSRect(x: 0, y: view.bounds.height - 22, width: rect.width, height: 22) : rect
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: area) else { return [] }
+        view.cacheDisplay(in: area, to: rep)
+        let scale = CGFloat(rep.pixelsWide) / area.width
+        let starts = [0] + PanelMetrics.statusSectionEdges
+        var result: [CGFloat] = []
+        for (i, start) in starts.enumerated() {
+            let end = i + 1 < starts.count ? starts[i + 1] - 2 : min(start + 200, area.width)
+            var found: CGFloat?
+            columns: for x in Int(start * scale)..<Int(end * scale) {
+                for y in 0..<rep.pixelsHigh {
+                    guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                    let lum = (c.redComponent + c.greenComponent + c.blueComponent) / 3 * c.alphaComponent + (1 - c.alphaComponent)
+                    if lum < 0.45 { found = CGFloat(x) / scale; break columns }
+                }
+            }
+            if let found { result.append(found) }
+        }
+        return result
+    }
+
+    // MARK: - rendering helpers
+
+    /// The bounding box (row coordinates, from the row's top) of the dark pixels of a cell.
+    private func inkBox(_ table: NSTableView, row: Int, column: Int) -> NSRect? {
+        let rect = table.frameOfCell(atColumn: column, row: row).integral
+        guard let raw = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(rect.width) * 2,
+                                         pixelsHigh: Int(rect.height) * 2, bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 32),
+              let rep = raw.retagging(with: .sRGB), let data = rep.bitmapData else { return nil }
+        rep.size = rect.size
+        table.cacheDisplay(in: rect, to: rep)
+        var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+        // skip the icon: text only (from the label's x)
+        let startX = Int(PanelMetrics.labelX) * 2
+        for y in 0..<rep.pixelsHigh {
+            for x in startX..<rep.pixelsWide {
+                let p = data + y * rep.bytesPerRow + x * 4
+                let a = Int(p[3])
+                let lum = (Int(p[0]) + 255 - a + Int(p[1]) + 255 - a + Int(p[2]) + 255 - a) / 3
+                if lum < 140 { minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y) }
+            }
+        }
+        guard maxX >= 0 else { return nil }
+        return NSRect(x: CGFloat(minX) / 2, y: CGFloat(minY) / 2,
+                      width: CGFloat(maxX - minX + 1) / 2, height: CGFloat(maxY - minY + 1) / 2)
+    }
+}

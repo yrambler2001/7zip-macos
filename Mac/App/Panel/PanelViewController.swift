@@ -157,6 +157,9 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
     static var statusSectionEdges: [CGFloat] { PanelMetrics.statusSectionEdges }
     /// The dividers in front of sections 1-3.
     private var statusDividers: [NSView] = []
+    /// The first part's text from the status bar's left edge; moved in at the window's rounded
+    /// corner (PanelMetrics.statusLeadingInset, fix111).
+    private var statusLabelLeading: NSLayoutConstraint?
 
     init(index: Int) {
         panelIndex = index
@@ -332,12 +335,15 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             status.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             status.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             status.heightAnchor.constraint(equalToConstant: WinChrome.statusHeight - 1),
-            statusLabel.leadingAnchor.constraint(equalTo: status.leadingAnchor, constant: 1),
             statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Self.statusSectionEdges[0] - 2),
             statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: status.trailingAnchor, constant: -2),
             statusLabel.firstBaselineAnchor.constraint(equalTo: status.topAnchor, constant: textBaseline),
             root.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),   // kPanelSizeMin
         ])
+        let leading = statusLabel.leadingAnchor.constraint(equalTo: status.leadingAnchor,
+                                                           constant: PanelMetrics.statusTextOrigin)
+        statusLabelLeading = leading
+        statusConstraints.append(leading)
         NSLayoutConstraint.activate(statusConstraints)
         view = root
         applyListViewMode()
@@ -1097,6 +1103,22 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             if statusSections[i].isHidden != hidden { statusSections[i].isHidden = hidden }
             if statusDividers[i].isHidden != hidden { statusDividers[i].isHidden = hidden }
         }
+        updateStatusLeadingInset()
+    }
+
+    /// The first part's text keeps Windows' place (ink 2 px into the part), moved in by as much as
+    /// the window's rounded bottom-left corner reaches over it when this panel's status bar starts
+    /// at the window's left edge (fix111): Windows 11 draws the client area inside a 1 px border
+    /// with an 8 px corner, so its text clears the frame; a macOS window has no border and a 10 pt
+    /// (16 pt on macOS 26) corner, which cut into the first digit.
+    func updateStatusLeadingInset() {
+        guard let leading = statusLabelLeading else { return }
+        var atCorner = false
+        if let window = view.window, !window.styleMask.contains(.fullScreen) {
+            atCorner = abs(view.convert(NSPoint.zero, to: nil).x) < 0.5     // the parts run left to right
+        }
+        let constant = PanelMetrics.statusTextOrigin + (atCorner ? PanelMetrics.statusCornerInset : 0)
+        if leading.constant != constant { leading.constant = constant }
     }
 
     /// The four status-bar parts as shown, for tests and accessibility.

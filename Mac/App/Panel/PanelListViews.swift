@@ -95,11 +95,17 @@ extension PanelViewController {
         text.font = isName ? PanelMetrics.listFont : PanelMetrics.listDigitsFont
         text.lineBreakMode = .byTruncatingTail
         text.alignment = alignment
+        text.usesSingleLineMode = true
         text.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(text)
         cell.textField = text
         let inset = PanelMetrics.textFieldInset
-        var constraints = [text.centerYAnchor.constraint(equalTo: cell.centerYAnchor)]
+        // fix111: the baseline, not the field's centre, is pinned. A field is as high as the line its
+        // text needs, so a name whose glyphs come from a taller fallback font (emoji, Tibetan, stacked
+        // combining marks) or that held a line break grew the field and moved its text off the line
+        // every other row uses; Windows draws every label on the same baseline (listfeel §2).
+        var constraints = [text.firstBaselineAnchor.constraint(equalTo: cell.topAnchor,
+                                                                constant: PanelMetrics.textBaseline(for: text.font ?? PanelMetrics.listFont))]
         if isName {
             let image = NSImageView()
             image.translatesAutoresizingMaskIntoConstraints = false
