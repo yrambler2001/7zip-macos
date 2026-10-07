@@ -9,7 +9,7 @@ keyboard map, settings and 93 languages — plus Finder integration.
 > fork of [ip7z/7zip](https://github.com/ip7z/7zip) that adds a macOS app. Please report problems
 > with the Mac app here, not to 7-Zip.
 
-Current version: **7-Zip 26.04 for macOS 1.1.3**.
+Current version: **7-Zip 26.04 for macOS 1.2.0**.
 
 <p align="center">
   <img src="docs/images/window-main-light.avif" width="913" alt="The main window, light theme"><br>
@@ -75,7 +75,7 @@ Requires **macOS 14 (Sonoma) or newer**, on Apple Silicon or Intel (the release 
 
 ### Disk image
 
-Download `7-Zip-26.04-macOS-1.1.3.dmg` (the version in the name changes with each release) from
+Download `7-Zip-26.04-macOS-1.2.0.dmg` (the version in the name changes with each release) from
 [Releases](https://github.com/yrambler2001/7zip-macos/releases), open it and drag **7-Zip** onto
 **Applications**. The app is universal: one download for Apple Silicon and Intel Macs.
 
