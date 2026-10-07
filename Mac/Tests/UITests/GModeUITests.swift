@@ -48,19 +48,15 @@ final class GModeUITests: SevenZipUITestCase {
         }
     }
 
-    /// `sevenzip:///run?argv=<base64url JSON>` -- CommandURL.url(argv:), spelled out because the
-    /// UI-test bundle does not compile the app's sources.
+    /// `sevenzip:///run?argv=<base64url JSON>&token=<secret>` -- CommandURL.url(argv:token:), built
+    /// by the harness because the UI-test bundle does not compile the app's sources (sec113).
     private func commandURL(_ argv: [String]) throws -> URL {
-        let data = try JSONSerialization.data(withJSONObject: argv)
-        let blob = data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        return try XCTUnwrap(URL(string: "sevenzip:///run?argv=" + blob))
+        TestShard.commandURL(argv)
     }
 
     /// Finder's "Add to archive..." for `one.txt` (03 §1.4 B5).
     private func addToArchiveURL() throws -> URL {
-        try commandURL(["a", "-ad", "-saa", "-i!" + scratch + "/one.txt", "--", scratch + "/one"])
+        try commandURL(["a", "-iw-!" + scratch + "/one.txt", "-ad", "-saa", "--", scratch + "/one"])
     }
 
     /// Delivers `url` as the Finder extension does: aimed at this shard's app, activating it only

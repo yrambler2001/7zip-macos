@@ -141,7 +141,41 @@ public enum TestShard {
     public static func environment(for owner: String) -> [String: String] {
         ["SZ_TEST_SUPPORT": "1",
          "SZ_DISABLE_ANIMATIONS": "1",
-         "SZ_STATE_DIR": stateDirectory(for: owner)]
+         "SZ_STATE_DIR": stateDirectory(for: owner),
+         urlTokenVariable: urlToken]
+    }
+
+    /// sec113: the app runs a `sevenzip:///run` URL only with its secret. This sandboxed runner
+    /// cannot read the app's domain, so `Mac/scripts/test.sh` writes a random secret for the run
+    /// into `uitest-url-token` next to the Debug apps; a Debug app reads the same file (and
+    /// `SZ_URL_TOKEN`, passed below to the launches that carry an environment). Nothing goes into a
+    /// settings domain, and a Release build has none of this. Without the file (a run not started by
+    /// test.sh) the value is random, and command URLs are refused.
+    public static let urlTokenVariable = "SZ_URL_TOKEN"
+    public static let urlToken: String = {
+        if let app = appURL,
+           let text = try? String(contentsOf: app.deletingLastPathComponent()
+            .appendingPathComponent("uitest-url-token"), encoding: .utf8) {
+            let token = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if token.count == 64 { return token }
+        }
+        return (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
+    }()
+
+    /// `sevenzip:///run?argv=<base64url JSON>&token=<urlToken>` -- what the extensions send.
+    public static func commandURL(_ argv: [String], token: String? = urlToken) -> URL {
+        let data = try! JSONSerialization.data(withJSONObject: argv)
+        let blob = data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        var components = URLComponents()
+        components.scheme = "sevenzip"
+        components.host = ""
+        components.path = "/run"
+        components.queryItems = [URLQueryItem(name: "argv", value: blob)]
+            + (token.map { [URLQueryItem(name: "token", value: $0)] } ?? [])
+        return components.url!
     }
 
     // MARK: helpers

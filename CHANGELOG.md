@@ -5,6 +5,32 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
+## [1.1.3] — 2026-10-07
+
+7-Zip 26.04 for macOS 1.1.3: security hardening of the Finder integration.
+
+### Security
+
+- Commands that the Finder extension and the Quick Actions hand to 7-Zip are now authenticated:
+  each carries a secret that only 7-Zip and its own extensions can read, created on first launch
+  and renewed by Options ▸ macOS ▸ Reset All Settings. Other applications and web pages can no
+  longer start 7-Zip commands through the `sevenzip:` / `x-7zip:` link schemes.
+- 7-Zip also checks every such command against the commands its Finder menu actually offers:
+  extract into the archive's own folder, test, add next to the selected items, compress and email,
+  checksums and open. Anything else, including targets inside `~/Library` (other than iCloud Drive
+  and cloud storage folders) or system folders and symbolic links that lead there, is refused with
+  a message. The Services menu items apply the same target checks. The full command line
+  (`7-Zip.app/Contents/MacOS/7-Zip a …`) is unchanged.
+- The update check's **Download** button opens only this project's release pages on GitHub.
+
+### Changed
+
+- **Propagate Zone.Id** (Options ▸ 7-Zip) is **Yes** by default, on a fresh install and after
+  Reset All Settings: files extracted from a downloaded (quarantined) archive keep the quarantine
+  flag, as with Archive Utility. A value you chose is kept; *No* is now stored when you pick it.
+- If you choose a Finder or Quick Action command before 7-Zip has ever been opened, 7-Zip opens,
+  finishes setting up and asks you to choose the command again.
+
 ## [1.1.2] — 2026-10-07
 
 7-Zip 26.04 for macOS 1.1.2.
@@ -126,6 +152,7 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
   behaves correctly on macOS; Windows behaviour is unchanged. See
   [Mac/docs/upstream-patches.md](Mac/docs/upstream-patches.md).
 
+[1.1.3]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.3
 [1.1.2]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.2
 [1.1.1]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.1
 [1.1.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.0

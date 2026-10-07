@@ -54,6 +54,30 @@ carrying the engine's HRESULT and message.
 The app is not sandboxed (it is a file manager); the extensions are, and forward commands to the
 app through the `sevenzip://` URL scheme.
 
+### Command URLs
+
+Any process can open a URL, so the app accepts `sevenzip:///run` (and `x-7zip:`) only when both
+hold:
+
+- **The URL carries the app's secret** (`&token=`). The app creates 256 random bits on its first
+  launch and stores them under `Integration.URLToken` in its settings domain. The Finder extension
+  and the Quick Actions read it from the settings snapshot the app writes into their containers at
+  every launch, or from the app's domain (read-only shared-preference entitlement). The comparison
+  is constant-time. **Reset All Settings** discards it and the relaunched app makes a new one. An
+  extension that finds none (the app has never been opened) does not send its command: it launches
+  the app, which creates the secret and asks the user to choose the command again.
+- **The command is one the extensions build** (`URLCommandPolicy`): the argv must equal what the
+  Finder menu model produces for the items it names (extract into the archive's folder, test, add
+  next to the items, compress and email, checksums, open), with list files only from the
+  extensions' temporary folders, and no target in `~/Library` (except iCloud Drive and
+  `CloudStorage`) or a system folder once symbolic links are resolved. Services apply the same
+  target checks.
+
+A refused URL runs nothing, is logged (`log stream --predicate 'subsystem == "com.yrambler2001.7zip"'`)
+and shows one error box. `sevenzip:///settings` and `sevenzip:///error?code=` need no secret: they
+only push settings, show the Options window or show one of a few fixed messages. The full 7zG
+grammar remains available to the command line (`7-Zip.app/Contents/MacOS/7-Zip a …`).
+
 ## Resources
 
 `Mac/Resources/`: `Lang/`, `SFX/`, `Help/` (from the official release, see

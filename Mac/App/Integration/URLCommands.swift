@@ -21,11 +21,15 @@ enum URLCommands {
     /// Handles one `sevenzip://` (or `x-7zip://`) URL. Returns the 7zG exit code, which the
     /// Services and the tests use; a URL sender gets no code back (`NSWorkspace.open` is fire and
     /// forget, exactly like `CreateProcess` without `waitFinish`).
+    ///
+    /// `sender` is the bundle identifier of the process that sent the URL's Apple event, when it
+    /// could be resolved (`DockDropDetector.senderBundleIdentifier`). It is logged, never trusted:
+    /// a sender has often exited by the time the event is handled, and the token is the check.
     @discardableResult
-    static func handle(_ url: URL, parentWindow: NSWindow? = nil) -> SevenZipExitCode {
+    static func handle(_ url: URL, parentWindow: NSWindow? = nil, sender: String? = nil) -> SevenZipExitCode {
         // finderfix: every URL that arrives is logged, so "nothing happened" can be told apart
         // from "the app never got it" (`log stream --predicate 'subsystem == "com.yrambler2001.7zip"'`).
-        log.log("received \(url.scheme ?? "", privacy: .public) URL \(url.path, privacy: .public)")
+        log.log("received \(url.scheme ?? "", privacy: .public) URL \(url.path, privacy: .public) from \(sender ?? "unknown sender", privacy: .public)")
         let action: CommandURL.Action
         do {
             action = try CommandURL.parse(url)
@@ -46,10 +50,24 @@ enum URLCommands {
 
         switch action {
         case .run(let argv, let temporaryFiles):
-            // 7zG mode (GMode.swift): the command's dialogs are windows of their own, never sheets or
-            // children of a file-manager window, and a launch made for it quits when it ends.
-            return GMode.run {
-                CommandExecutor.run(argv: argv, temporaryFiles: temporaryFiles, parentWindow: parentWindow)
+            // sec113: the secret first, then the shape. Nothing of the command runs on a refusal,
+            // and nothing the URL names is deleted.
+            guard URLCommandTokenStore.accepts(CommandURL.token(in: url)) else {
+                return refuse(CommandURL.token(in: url) == nil ? "no token" : "wrong token",
+                              sender: sender, parentWindow: parentWindow)
+            }
+            switch URLCommandPolicy.standard().evaluate(argv: argv, temporaryFiles: temporaryFiles) {
+            case .refuse(let reason):
+                return refuse(reason, sender: sender, parentWindow: parentWindow)
+            case .allow(let checkedArgv, let checkedTemporaryFiles):
+                log.log("accepted URL command \(argv.first ?? "", privacy: .public) from \(sender ?? "unknown sender", privacy: .public)")
+                // 7zG mode (GMode.swift): the command's dialogs are windows of their own, never
+                // sheets or children of a file-manager window, and a launch made for it quits when
+                // it ends.
+                return GMode.run {
+                    CommandExecutor.run(argv: checkedArgv, temporaryFiles: checkedTemporaryFiles,
+                                        parentWindow: parentWindow)
+                }
             }
         case .settings(let show):
             FinderSettingsBridge.push()
@@ -68,6 +86,14 @@ enum URLCommands {
             // focus from the test runner, and the window is not being shown for the first time.
             return TestResetCoordinator.handle(request)
         }
+    }
+
+    /// A refused `run` URL: logged with the reason and the sender, and one error box that does not
+    /// say which check failed. In 7zG mode, so no file-manager window appears for it.
+    private static func refuse(_ reason: String, sender: String?, parentWindow: NSWindow?) -> SevenZipExitCode {
+        log.error("refused URL command (\(reason, privacy: .public)) from \(sender ?? "unknown sender", privacy: .public)")
+        GMode.run { CommandExecutor.showError(URLCommandPolicy.refusalMessage, parent: parentWindow) }
+        return .userError
     }
 
     /// Whether `url` is a 7zG-style shell command -- a command line, an extension's failure report,
@@ -173,14 +199,21 @@ enum FinderSettingsBridge {
         return out
     }
 
+    /// The file `push` writes: the settings plus, sec113, the URL secret, so an extension uses the
+    /// secret of the copy that last ran (`IntegrationSettings.urlToken`).
+    static func snapshotDictionary() -> [String: Any] {
+        var dictionary = snapshot().dictionary
+        if let token = URLCommandTokenStore.current { dictionary[URLCommandToken.settingsKey] = token }
+        return dictionary
+    }
+
     /// Writes the snapshot into every extension container that exists. Containers are created by
     /// the system the first time an extension runs, so a missing one is not an error -- the
     /// extension then falls back to reading the app's preferences domain directly.
     @discardableResult
     static func push() -> [String] {
-        let settings = snapshot()
         guard let data = try? PropertyListSerialization.data(
-            fromPropertyList: settings.dictionary, format: .xml, options: 0) else { return [] }
+            fromPropertyList: snapshotDictionary(), format: .xml, options: 0) else { return [] }
         var written: [String] = []
         for bundleID in extensionBundleIDs {
             let url = IntegrationSettings.snapshotURL(forExtension: bundleID)
@@ -259,6 +292,10 @@ enum FinderIntegration {
     static func install() {
         guard !installed else { return }
         installed = true
+
+        // sec113: the URL secret exists before the first URL is handled -- also on the launch an
+        // extension's `notready` report caused.
+        URLCommandTokenStore.ensure()
 
         // NSServices: the provider must exist before the first service is invoked.
         NSApp.servicesProvider = ServicesProvider.shared

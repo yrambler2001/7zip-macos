@@ -21,7 +21,8 @@ pages.
 | `7zG.exe`, a separate process | the same app in command mode (`7-Zip.app/Contents/MacOS/7-Zip a archive.7z files…`) |
 | Registry `HKCU\Software\7-Zip` | `UserDefaults`, under the same value names |
 | Recycle Bin | the Trash; Shift-Command-Backspace deletes permanently |
-| `Zone.Identifier` stream ("Propagate Zone.Id") | the `com.apple.quarantine` attribute, same policy |
+| `Zone.Identifier` stream ("Propagate Zone.Id"), default No | the `com.apple.quarantine` attribute; default **Yes** (1.1.3), so files extracted from a downloaded archive stay quarantined as with Archive Utility. A value you chose is kept |
+| Any program can start `7zG.exe` with any command | the Finder extension and Quick Actions hand commands to the app through a URL that carries a secret and must be one of the menu's own commands; the full command line is the app's executable |
 | Ctrl shortcuts, Insert key | Command shortcuts; Space selects; Option-Space toggles the selection |
 | Drive letters, network neighbourhood | mounted volumes |
 | Alternate data streams, NT security | hidden; POSIX mode, owner, group and link target shown instead |

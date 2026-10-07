@@ -444,10 +444,31 @@ enum UpdateCheck {
         }
     }
 
+    /// The page Download opens: the release's `html_url` only when it is a page of this
+    /// repository's releases on GitHub (https, host `github.com`, no credentials or port, path
+    /// `/yrambler2001/7zip-macos/releases/...` without `.` or `..` components); anything else in the
+    /// response opens the releases page instead (sec113).
+    static func downloadURL(for release: ReleaseInfo) -> URL {
+        isTrustedReleasePage(release.htmlURL) ? release.htmlURL : releasesPageURL
+    }
+
+    static func isTrustedReleasePage(_ url: URL) -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme?.lowercased() == "https",
+              components.host?.lowercased() == "github.com",
+              components.user == nil, components.password == nil, components.port == nil
+        else { return false }
+        let prefix = releasesPageURL.path + "/"            // /yrambler2001/7zip-macos/releases/
+        let path = components.percentEncodedPath
+        guard path.hasPrefix(prefix), !path.contains("%") else { return false }
+        let rest = path.dropFirst(prefix.count).split(separator: "/", omittingEmptySubsequences: false)
+        return !rest.isEmpty && rest.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
+
     /// Download opens the release page; Skip remembers the version; Later does nothing.
     static func handle(_ answer: WinMessageBox.Result, release: ReleaseInfo, version: SemVer) {
         switch answer {
-        case .button1: opener(release.htmlURL)
+        case .button1: opener(downloadURL(for: release))
         case .button3: Settings.updateSkippedVersion = version.description
         default: break
         }

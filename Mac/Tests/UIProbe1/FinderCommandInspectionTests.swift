@@ -26,16 +26,14 @@ final class FinderCommandInspectionTests: SevenZipUITestCase {
 
     // MARK: - Helpers
 
-    /// The URL a Finder Sync menu item sends: `sevenzip:///run?argv=<base64url JSON array>`.
-    /// Built here by hand so the UI-test target needs no product sources.
+    /// The URL a Finder Sync menu item sends: `sevenzip:///run?argv=<base64url JSON array>` with
+    /// the app's secret (sec113, `TestShard.commandURL`).
     private func commandURL(_ argv: [String]) -> URL {
-        let data = try! JSONSerialization.data(withJSONObject: argv)
-        let blob = data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        return URL(string: "sevenzip:///run?argv=" + blob)!
+        TestShard.commandURL(argv)
     }
+
+    /// The first words of the one box a refused command URL shows (`URLCommandPolicy`).
+    private let refusalTitle = "7-Zip did not run a command that another application sent"
 
     /// Send the command to **this shard's** instance, and to nothing else: `SevenZipApp.open` has
     /// no unaimed `NSWorkspace.open` fallback (testreg), which matters here because the app copy
@@ -67,9 +65,10 @@ final class FinderCommandInspectionTests: SevenZipUITestCase {
     /// B2 "Extract Here" runs without a dialog and the files simply appear.
     func testExtractHereCommandRunsSilently() throws {
         launch()
+        // sec113: the menu's own shape, `x -o"<archive's folder>/" -an -ai…`, on a copy.
         let out = try makeOutputDirectory("here")
-        XCTAssertTrue(send(["x", "-o" + out + "/", "-y", "-an",
-                            "-aiw-!" + TestPaths.fixture("test.7z")]))
+        try FileManager.default.copyItem(atPath: TestPaths.fixture("test.7z"), toPath: out + "/test.7z")
+        XCTAssertTrue(send(["x", "-o" + out + "/", "-an", "-aiw-!" + out + "/test.7z"]))
 
         var names: [String] = []
         XCTAssertTrue(waitFor("readme.txt extracted", timeout: 40) {
@@ -103,48 +102,66 @@ final class FinderCommandInspectionTests: SevenZipUITestCase {
         screenshot("09-open-archive-as-7z")
     }
 
-    // MARK: - The refusals (03 section 1.4 "Invoke-side error handling")
+    // MARK: - The refusals (03 section 1.4 "Invoke-side error handling"; sec113)
 
-    /// A folder in an extract selection is IDS_SELECT_FILES 3015, not an extraction.
+    /// A folder in an extract selection is never a command the menu builds (IDS_SELECT_FILES 3015
+    /// on Windows): over the URL route it is refused before anything runs.
     func testExtractCommandRefusesADirectory() throws {
         discardInstanceAfterThisTest()
         launch()
         let out = try makeOutputDirectory("refuse")
         XCTAssertTrue(send(["x", "-o" + out + "/", "-an", "-aiw-!" + TestPaths.fixtures]))
 
-        guard let dialog = sevenZip.waitForDialog(title: "You must select one or more files",
-                                                 timeout: 25) else {
-            return XCTFail("IDS_SELECT_FILES 3015 was not shown")
+        guard let dialog = sevenZip.waitForDialog(title: refusalTitle, timeout: 25) else {
+            return XCTFail("the refusal box was not shown")
         }
         screenshot("04-select-files-refusal")
         assertHasEnabledButton(dialog, "OK")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out), [])
     }
 
-    /// `l` and `i` are the two commands 7zG refuses (GUI.cpp:396-399).
+    /// `l` (which 7zG refuses itself, GUI.cpp:396-399) and a switch-syntax error are not shapes the
+    /// menu builds either: the URL route refuses them with the one box. The command line still
+    /// reports them as 7zG does (`CommandModeUITests`).
     func testUnsupportedCommandIsReported() {
         discardInstanceAfterThisTest()
         launch()
         XCTAssertTrue(send(["l", TestPaths.fixture("test.7z")]))
 
-        guard let dialog = sevenZip.waitForDialog(title: "Unsupported command", timeout: 25) else {
-            return XCTFail("the Unsupported command box did not appear")
+        guard let dialog = sevenZip.waitForDialog(title: refusalTitle, timeout: 25) else {
+            return XCTFail("the refusal box did not appear")
         }
         screenshot("05-unsupported-command")
         assertHasEnabledButton(dialog, "OK")
     }
 
-    /// A switch-syntax error is a user error with the upstream message (CParser::ParseString).
     func testUnknownSwitchIsReported() {
         discardInstanceAfterThisTest()
         launch()
         XCTAssertTrue(send(["x", "-zzz", "-an", "-aiw-!" + TestPaths.fixture("test.7z")]))
 
-        guard let dialog = sevenZip.waitForDialog(title: "Unknown switch:", timeout: 25) else {
-            return XCTFail("the Unknown switch box did not appear")
+        guard let dialog = sevenZip.waitForDialog(title: refusalTitle, timeout: 25) else {
+            return XCTFail("the refusal box did not appear")
         }
         screenshot("06-unknown-switch")
         assertHasEnabledButton(dialog, "OK")
+    }
+
+    /// sec113: a forged URL -- the extract a web page would send, `-y` included, without the
+    /// secret -- extracts nothing and shows the refusal box.
+    func testRunURLWithoutTheSecretIsRefused() throws {
+        discardInstanceAfterThisTest()
+        launch()
+        let out = try makeOutputDirectory("forged")
+        try FileManager.default.copyItem(atPath: TestPaths.fixture("test.7z"), toPath: out + "/test.7z")
+        XCTAssertTrue(sevenZip.open(TestShard.commandURL(["x", "-o" + out + "/", "-y", "-an",
+                                                         "-aiw-!" + out + "/test.7z"], token: nil)))
+        guard let dialog = sevenZip.waitForDialog(title: refusalTitle, timeout: 25) else {
+            return XCTFail("the refusal box did not appear")
+        }
+        screenshot("21-forged-url-refused")
+        assertHasEnabledButton(dialog, "OK")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out), ["test.7z"])
     }
 
     // MARK: - helpers

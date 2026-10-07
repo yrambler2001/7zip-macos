@@ -118,7 +118,9 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(Settings.cascadedMenuValue)                     // default true
         XCTAssertFalse(Settings.menuIconsValue)
         XCTAssertTrue(Settings.elimDupExtractValue)                   // default true
-        XCTAssertEqual(Settings.writeZoneIdExtract, -1)
+        // sec113: unset reads as All (1), a deliberate difference from Windows' "No".
+        XCTAssertEqual(Settings.writeZoneIdExtract, 1)
+        XCTAssertFalse(Settings.writeZoneIdExtractDefined)
         XCTAssertFalse(Settings.contextMenuFlagsDefined)
         XCTAssertEqual(Settings.contextMenuFlags, .all)               // absent = every item
     }
@@ -175,6 +177,15 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(SZSettings.integer(forKey: "Options.WriteZoneIdExtract", defaultValue: 0), 2)
         Settings.writeZoneIdExtract = -1
         XCTAssertFalse(SZSettings.hasKey("Options.WriteZoneIdExtract"))
+        XCTAssertEqual(Settings.writeZoneIdExtract, 1, "unset is All (sec113)")
+        // An explicit No is stored and kept; it is not the default any more.
+        Settings.writeZoneIdExtract = 0
+        XCTAssertTrue(SZSettings.hasKey("Options.WriteZoneIdExtract"))
+        XCTAssertEqual(Settings.writeZoneIdExtract, 0)
+        XCTAssertEqual(IntegrationSettings.loadFromPreferences(domain: SZSettings.applicationID).zoneIDSwitchValue, 0)
+        Settings.writeZoneIdExtract = -1
+        XCTAssertEqual(IntegrationSettings.loadFromPreferences(domain: SZSettings.applicationID).zoneIDSwitchValue, 1,
+                       "the extension's fallback reads unset as All too")
     }
 
     func testFormatOptionsEncoding() {

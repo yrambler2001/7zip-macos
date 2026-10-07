@@ -119,7 +119,9 @@ struct IntegrationSettings: Equatable {
     var menuIcons = false
     /// `ElimDupExtract`, default **true**; `-spe` on the `Extract to "<x>/"` command only.
     var eliminateDuplicateRoot = true
-    /// `WriteZoneIdExtract`: -1 unset (= no), 0 no, 1 yes, 2 Office files only.
+    /// `WriteZoneIdExtract`: 0 no, 1 yes, 2 Office files only; -1 adds no `-snz` switch. The
+    /// app's snapshot and `loadFromPreferences` always carry the effective value, which is 1 (All)
+    /// when the user never chose one (sec113, a deliberate difference from Windows).
     var writeZoneIdExtract = -1
     /// `ContextMenu` bit mask; every item when the value is absent.
     var flags: ContextMenuItemFlags = .all
@@ -193,6 +195,54 @@ struct IntegrationSettings: Equatable {
         return loadFromPreferences()
     }
 
+    // MARK: - The URL secret (sec113)
+
+    /// Where an extension found the app's URL secret, for its log.
+    enum TokenSource: String {
+        case snapshot
+        case preferences
+        case none
+    }
+
+    /// The app's URL secret (`URLCommandToken`) as an extension reads it: the app's own domain
+    /// first, through the read-only shared-preference exception -- the authoritative copy -- then
+    /// the snapshot the app pushed into this extension's container (a differently-named build, or
+    /// a Debug test instance whose secret is not in the domain). Nil when neither has a well-formed
+    /// one: the app has never run, and the extension says so (`ExtensionFailure.notReady`) instead
+    /// of sending a command that would be refused.
+    static func urlToken(extensionBundleID: String?) -> (token: String?, source: TokenSource) {
+        if let token = preferencesURLToken(), URLCommandToken.isWellFormed(token) {
+            return (token, .preferences)
+        }
+        if let bundleID = extensionBundleID {
+            var urls = [snapshotURL(forExtension: bundleID)]
+            if SevenZipBundle.runningAppIdentifier != SevenZipBundle.app {
+                urls.append(snapshotURL(forExtension: bundleID, appIdentifier: SevenZipBundle.app))
+            }
+            for url in urls {
+                if let token = snapshotDictionary(at: url)?[URLCommandToken.settingsKey] as? String,
+                   URLCommandToken.isWellFormed(token) {
+                    return (token, .snapshot)
+                }
+            }
+        }
+        return (nil, .none)
+    }
+
+    /// `CFPreferencesCopyAppValue(Integration.URLToken)` on the app's domain, synchronised first
+    /// so a value the app wrote a moment ago (its first launch) is seen.
+    static func preferencesURLToken(domain: String = SevenZipBundle.preferencesDomain) -> String? {
+        let appID = domain as CFString
+        CFPreferencesAppSynchronize(appID)
+        return CFPreferencesCopyAppValue(URLCommandToken.settingsKey as CFString, appID) as? String
+    }
+
+    static func snapshotDictionary(at url: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) else { return nil }
+        return plist as? [String: Any]
+    }
+
     static func load(fromSnapshotAt url: URL) -> IntegrationSettings? {
         guard let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
@@ -224,7 +274,8 @@ struct IntegrationSettings: Equatable {
         if let v = boolValue(Key.cascadedMenu) { out.cascadedMenu = v }
         if let v = boolValue(Key.menuIcons) { out.menuIcons = v }
         if let v = boolValue(Key.elimDupExtract) { out.eliminateDuplicateRoot = v }
-        out.writeZoneIdExtract = intValue(Key.writeZoneIdExtract) ?? -1
+        // sec113: an unset value means All (1), as `Settings.writeZoneIdExtract` reads it.
+        out.writeZoneIdExtract = intValue(Key.writeZoneIdExtract) ?? 1
         if let v = intValue(Key.contextMenu) {
             out.flags = ContextMenuItemFlags(rawValue: UInt32(truncatingIfNeeded: v))
         }

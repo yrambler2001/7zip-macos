@@ -175,6 +175,16 @@ APP_LOCK="${SEVENZIP_APP_LOCK:-$(
 APP_LOCK_HELD=0
 LOCK_SCOPE="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 PREFS_BACKUP="$MAC/build/prefs-backup.plist"
+# sec113: a random URL secret for this run's UI tests, in a file next to the Debug test apps
+# (`uitest-url-token`). Debug builds read it (URLCommandTokenStore, #if DEBUG), the sandboxed runner
+# reads it through TestShard.urlToken; a Release build has no such code. Nothing is written into
+# any settings domain. Removed when the run ends.
+UITEST_TOKEN_FILE="$DD/Build/Products/Debug/uitest-url-token"
+ui_token_begin() {
+  mkdir -p "$(dirname "$UITEST_TOKEN_FILE")"
+  ( umask 077; od -An -tx1 -N32 /dev/urandom | tr -d ' \n' >"$UITEST_TOKEN_FILE" )
+}
+ui_token_end() { rm -f "$UITEST_TOKEN_FILE"; }
 PREFS_SAVED=0
 
 lock_owner() { cat "$APP_LOCK/owner" 2>/dev/null || echo "unknown"; }
@@ -305,7 +315,7 @@ unregister_test_apps() {
 . "$MAC/scripts/finderext-registration.sh"
 finderext_snapshot
 
-cleanup() { quit_test_processes; restore_prefs; release_app_lock; unregister_test_apps; finderext_restore; }
+cleanup() { ui_token_end; quit_test_processes; restore_prefs; release_app_lock; unregister_test_apps; finderext_restore; }
 trap cleanup EXIT INT TERM
 
 needs_input_shard() { printf '%s\n' $TARGETS | grep -qx "$UI_TARGET"; }
@@ -530,6 +540,7 @@ sharded_run() {
   fi
 }
 
+if printf '%s\n' $TARGETS | grep -q 'UITests'; then ui_token_begin; fi
 RUN_STARTED=$(date +%s)
 if [ "$SHARDED" = 1 ]; then
   sharded_run || FAILED=$?
