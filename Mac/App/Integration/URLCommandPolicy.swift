@@ -124,9 +124,20 @@ struct URLCommandPolicy {
         return ids
     }
 
+    /// Debug builds are the ones the XCUITest suites drive. A URL launch from the sandboxed test
+    /// runner reaches the app without the runner's environment (no `SZ_TEST_SUPPORT`), and the
+    /// runner can only write inside its own container, so a Debug build does not protect the
+    /// `*.xctrunner` containers. A Release build never exempts anything.
+    #if DEBUG
+    static let isDebugBuild = true
+    #else
+    static let isDebugBuild = false
+    #endif
+
     /// The policy the app applies: the real home, the extensions' `tmp` folders and its own
-    /// temporary root; with `SZ_TEST_SUPPORT=1`, the XCUITest runners' containers are not protected.
-    static func standard(testSupport: Bool = CommandURL.testSupportEnabled) -> URLCommandPolicy {
+    /// temporary root; with `SZ_TEST_SUPPORT=1` or in a Debug build, the XCUITest runners'
+    /// containers are not protected.
+    static func standard(testSupport: Bool = CommandURL.testSupportEnabled || isDebugBuild) -> URLCommandPolicy {
         let home = SevenZipBundle.realHomeDirectory
         var lists = extensionBundleIDs().map {
             (home as NSString).appendingPathComponent("Library/Containers/\($0)/Data/tmp")

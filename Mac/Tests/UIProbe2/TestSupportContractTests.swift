@@ -56,8 +56,9 @@ final class TestSupportContractTests: SevenZipUITestCase {
         // A dialog opened without synthesized input: the URL command form of "Add to archive".
         // The menu's own shape, with the secret (sec113); the dialog is closed by the reset, so
         // nothing is written next to the fixture.
+        // "test" collides with test.7z itself, so the menu names it test_2 (CreateArchiveName).
         let argv = ["a", "-iw-!" + TestPaths.fixture("test.7z"), "-ad", "-saa",
-                    "--", TestPaths.fixture("test")]
+                    "--", TestPaths.fixture("test_2")]
         XCTAssertTrue(sevenZip.open(TestShard.commandURL(argv)))
         XCTAssertNotNil(sevenZip.waitForDialog(title: "Archive format:", timeout: 30),
                         "the Compress dialog did not open")

@@ -147,7 +147,9 @@ public enum TestShard {
 
     /// sec113: the app runs a `sevenzip:///run` URL only with its secret. A test instance takes a
     /// fixed one from its launch environment (`SZ_URL_TOKEN`, honoured only with
-    /// `SZ_TEST_SUPPORT=1`), because this sandboxed runner cannot read the app's domain.
+    /// `SZ_TEST_SUPPORT=1`), because this sandboxed runner cannot read the app's domain. A URL
+    /// that launches the app from here arrives without this environment; `test.sh -u` writes the
+    /// same value into the real domain for that case.
     public static let urlTokenVariable = "SZ_URL_TOKEN"
     public static let urlToken = "5ec113" + String(repeating: "0123456789", count: 5) + "abcdefab"
 

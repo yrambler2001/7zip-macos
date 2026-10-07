@@ -175,6 +175,7 @@ APP_LOCK="${SEVENZIP_APP_LOCK:-$(
 APP_LOCK_HELD=0
 LOCK_SCOPE="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 PREFS_BACKUP="$MAC/build/prefs-backup.plist"
+UITEST_URL_TOKEN="5ec11301234567890123456789012345678901234567890123456789abcdefab"   # = TestShard.urlToken
 PREFS_SAVED=0
 
 lock_owner() { cat "$APP_LOCK/owner" 2>/dev/null || echo "unknown"; }
@@ -272,6 +273,10 @@ save_prefs() {
   defaults export "$APP_DOMAIN" "$PREFS_BACKUP" 2>/dev/null && PREFS_SAVED=1 || true
   defaults delete "$APP_DOMAIN" >/dev/null 2>&1 || true
   defaults write "$APP_DOMAIN" Lang -string -      # English resource strings for the assertions
+  # sec113: the URL secret the UI tests put in their command URLs (TestShard.urlToken). A URL that
+  # launches the app from the sandboxed runner arrives without the runner's environment, so that
+  # instance uses this domain; seeded launches get the same value through SZ_URL_TOKEN.
+  defaults write "$APP_DOMAIN" Integration.URLToken -string "$UITEST_URL_TOKEN"
   echo "== preferences of $APP_DOMAIN backed up to $PREFS_BACKUP and cleared"
 }
 
