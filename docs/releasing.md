@@ -4,12 +4,13 @@ Releases are built by GitHub Actions from a tag. Nothing is built or uploaded by
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| [`ci.yml`](../.github/workflows/ci.yml) | every push to `macos`, every pull request into it | hygiene checks, universal Debug and Release builds and the disk image, unit tests on arm64 and on x86_64 under Rosetta 2, app-hosted tests (informational) |
+| [`ci.yml`](../.github/workflows/ci.yml) | every push to `macos`, every pull request into it | hygiene checks, universal Debug and Release builds and the disk image, unit tests on arm64 and on x86_64 under Rosetta 2 |
 | [`release.yml`](../.github/workflows/release.yml) | a pushed tag `v*` | checks the tag against `Mac/VERSION`, runs the unit tests on both slices, builds and packages the universal app, signs and notarizes it if the secrets exist, publishes the GitHub Release, updates the Homebrew cask |
 
-The XCUITest suites (`Mac/scripts/test.sh -u`) do not run on GitHub: they need a GUI session nobody
-else uses and permissions granted by hand ([testing.md](testing.md)). Run them locally before a
-release.
+The app-hosted tests (`Mac/scripts/test.sh -H`) and the XCUITest suites (`Mac/scripts/test.sh -u`)
+do not run on GitHub: the hosted runner's GUI session is not one they can be trusted on, and the UI
+tests need permissions granted by hand ([testing.md](testing.md#why-the-app-hosted-tests-do-not-run-on-github)).
+Run both locally before a release.
 
 ## Cutting a release
 
@@ -67,7 +68,7 @@ created, then tag again. A failure in the **tap** job alone can be re-run from t
 - *Settings ▸ Actions ▸ General*: allow GitHub Actions; workflow permissions *Read repository
   contents* (the default). The release job asks for `contents: write` for itself only.
 - Optionally protect `macos` with the required checks *Hygiene*, *Build* and *Unit tests (arm64)*,
-  *Unit tests (x86_64)*. *App-hosted tests* is informational and must not be required.
+  *Unit tests (x86_64)*.
 - Optionally protect tags `v*` (*Settings ▸ Rules ▸ Rulesets*) so only maintainers can push them.
 
 ### The Homebrew tap
@@ -183,6 +184,6 @@ When upstream publishes, say, 7-Zip 26.04 after port 1.0.0:
   in the port's code in the build logs, `Mac/VERSION` consistent with the engine, a CHANGELOG section
   for the version. Next to it CI runs `check-links.sh` and `make-icons.sh` (the regenerated icons
   must equal the committed ones).
-- **App-hosted tests** run on the hosted runner's GUI session as an informational job
-  (`continue-on-error`): they open real windows on a display whose scale and fonts the project does
-  not control. A red result there is a prompt to run `test.sh -H` locally, not a blocker.
+- **App-hosted tests** are not in CI: on the hosted runner's 1024 x 768 session they failed for
+  reasons of the runner, not the app ([testing.md](testing.md#why-the-app-hosted-tests-do-not-run-on-github)).
+  Run `Mac/scripts/test.sh -H` locally.
