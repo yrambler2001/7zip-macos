@@ -59,6 +59,10 @@ Current version: **7-Zip 26.04 for macOS 1.1.2**.
 
 <p align="center"><img src="docs/images/window-finder-context-menu.avif" width="1125" alt="Finder's right-click menu with the 7-Zip submenu"></p>
 
+**Archive icons in Finder** (the original 7-Zip icons, for every type associated with 7-Zip)
+
+<p align="center"><img src="docs/images/window-finder-archive-icons.avif" width="976" alt="Archive icons in Finder"></p>
+
 ## Install
 
 Requires **macOS 14 (Sonoma) or newer**, on Apple Silicon or Intel (the release is a universal app).
@@ -131,6 +135,18 @@ copy of 7-Zip it belongs to.
 The app itself is not sandboxed (it is a file manager), so macOS asks once for access to Desktop,
 Documents, Downloads, removable and network volumes as you open them. The Finder extensions are
 sandboxed and only see the files you selected.
+
+## File associations
+
+macOS keeps Apple's own apps as the default for many archive types (Archive Utility for `.zip`,
+`.gz`, `.tar`, `.xz`, `.bz2`; DiskImageMounter for `.iso` and `.dmg`), so installing 7-Zip does not
+change what a double-click opens. To open archives with 7-Zip — and to see 7-Zip's archive icons
+in Finder — choose the types in **7-Zip ▸ Options ▸ System**: click a type in the column with your user name to associate it (or `+`
+to associate every type), then press **OK** or **Apply**. macOS asks you to confirm each change of
+default application. A single type can also be switched in Finder with **Get Info ▸ Open with ▸
+7-Zip ▸ Change All…**.
+
+<p align="center"><img src="docs/images/window-options-system.avif" width="597" alt="Options ▸ System: file associations"></p>
 
 ## Updates
 
