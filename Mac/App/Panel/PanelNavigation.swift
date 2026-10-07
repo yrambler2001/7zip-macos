@@ -284,7 +284,10 @@ extension PanelViewController {
         runOnQueue { [self] in
             guard let folder = self.folder else { return }
             do {
-                if row.isDirectory && !(row.isPackage && isFS && !insideOnly) {
+                // Every directory is a folder (IsItem_Folder -> OpenFolder, PanelItems.cpp:1090-1091),
+                // an app bundle or another package included: 7zFM has no packages, and a .app tried as
+                // an archive failed with E_FAIL (fix111). Open Outside (Shift+Enter) launches it.
+                if row.isDirectory {
                     let sub = try folder.bindToFolder(at: engineIndex)
                     self.folder = sub
                     if sub.supportsFlatMode {

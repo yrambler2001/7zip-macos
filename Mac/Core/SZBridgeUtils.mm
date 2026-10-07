@@ -9,9 +9,28 @@ NSString *SZStringFromWChars(const wchar_t *s, unsigned len)
 {
   if (!s || len == 0)
     return @"";
-  NSString *r = [[NSString alloc] initWithBytes:s length:(NSUInteger)len * sizeof(wchar_t)
-                                       encoding:NSUTF32LittleEndianStringEncoding];
-  return r ? r : @"";
+  // The engine keeps UTF-16 code units in its 32-bit wchar_t ("We store 16-bit surrogates even in
+  // 32-bit WCHARs in Linux", UTFConvert.h), so a name with an emoji or any other non-BMP character
+  // holds a surrogate pair, which a UTF-32 decode rejects: the whole name came back empty (fix111).
+  // Each unit below 0x10000 is a UTF-16 unit as it is; a real UTF-32 point above it is split into
+  // its pair; anything past U+10FFFF becomes U+FFFD. A lone surrogate is kept, as NSString keeps it.
+  NSMutableData *units = [NSMutableData dataWithLength:(NSUInteger)len * 2 * sizeof(unichar)];
+  unichar *d = (unichar *)units.mutableBytes;
+  NSUInteger n = 0;
+  for (unsigned i = 0; i < len; i++)
+  {
+    const UInt32 c = (UInt32)s[i];
+    if (c < 0x10000)
+      d[n++] = (unichar)c;
+    else if (c < 0x110000)
+    {
+      d[n++] = (unichar)(0xD800 + ((c - 0x10000) >> 10));
+      d[n++] = (unichar)(0xDC00 + ((c - 0x10000) & 0x3FF));
+    }
+    else
+      d[n++] = 0xFFFD;
+  }
+  return [NSString stringWithCharacters:d length:n];
 }
 
 NSString *SZStringFromUString(const UString &s)

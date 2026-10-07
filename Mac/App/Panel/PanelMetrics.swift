@@ -46,6 +46,21 @@ enum PanelMetrics {
     /// in ListFeelTests; the old layout assumed 2 and so left the name flush with the fill).
     static let textFieldInset: CGFloat = 0
 
+    /// The baseline of a list cell's text, from the row's top: where a one-line field of `font`
+    /// centred in the 19 pt row puts it (2 + 11.8 for SF Pro 12.2). Every row uses it, whatever
+    /// its characters need (fix111).
+    static func textBaseline(for font: NSFont) -> CGFloat {
+        if let cached = baselineCache[font] { return cached }
+        let probe = NSTextField(labelWithString: "Ag")
+        probe.font = font
+        let height = probe.intrinsicContentSize.height
+        probe.frame = NSRect(x: 0, y: 0, width: 100, height: height)
+        let baseline = ((rowHeight - height) / 2).rounded() + probe.firstBaselineOffsetFromTop
+        baselineCache[font] = baseline
+        return baseline
+    }
+    private static var baselineCache: [NSFont: CGFloat] = [:]
+
     /// The list's font: Segoe UI 9 pt metrics with tabular digits (see the header comment).
     /// The hidden `FM.ListFont` setting picks another candidate (PanelListFont.swift, feel3).
     static var listFont: NSFont { ListFontChoice.current }
