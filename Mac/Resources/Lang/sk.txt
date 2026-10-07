@@ -3,7 +3,7 @@
 ;  9.07 : Pavel Devečka
 ;  9.38 beta : 2015-01-11 : Roman Horváth
 ;  24.02 : Milan Šalka
-;  24.04 : Patrik Špaňo (Pa4k)
+;  26.03 : 2026-09-07 : Patrik Špaňo (Pa4k)
 ;
 ;
 ;
@@ -492,17 +492,17 @@ Informácie o kontrolnom súčte
 CRC súčet pre údaje:
 CRC súčet pre údaje a názvy:
 7600
-Skúšobný test
-Použitá pamäť:
+Test výkonu
+Využitie pamäte:
 Komprimovanie
 Rozbaľovanie
-Hodnotenie
+Skóre
 Celkové hodnotenie
 Aktuálne
 Výsledné
 Využitie CPU
-Hodnotenie / Využitie
-Testov bez chýb:
+Skóre / Využitie
+Počet cyklov:
 7700
 Odkaz
 Prepojiť
@@ -525,7 +525,7 @@ Operácia vyžaduje veľké množstvo pamäte (RAM).
 požadovaná veľkosť využitia pamäte
 povolený limit využitia pamäte
 limit využitia pamäte nastavený pomocou 7-Zip
-RAM veľkosť
+veľkosť RAM pamäte
 Maximálne množstvo pamäte RAM povolené na rozbaľovanie archívov:
 7820
 &Povoliť rozbaľovanie archívu

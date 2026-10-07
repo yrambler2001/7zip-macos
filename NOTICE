@@ -31,7 +31,7 @@ Mac/docs/upstream-patches.md (exact diff: Mac/docs/upstream-patches.diff).
 
 Bundled assets from the official 7-Zip release
 ----------------------------------------------
-Taken unmodified from the official 7-Zip 26.03 Windows release (7z2603-x64.exe, verified by
+Taken unmodified from the official 7-Zip 26.04 Windows release (7z2604-x64.exe, verified by
 SHA-256 in Mac/scripts/fetch-assets.sh), Copyright (C) Igor Pavlov and, for the translations, their
 respective translators:
 

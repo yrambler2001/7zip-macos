@@ -21,9 +21,9 @@ export DEVELOPER_DIR=/Applications/Xcode.app
 Mac/scripts/bump-version.sh minor          # or patch, major, X.Y.Z; see "Upstream" below for --upstream
 $EDITOR CHANGELOG.md                       # fill in the new section, replace "unreleased" with the date
 Mac/scripts/verify.sh                      # optional but recommended: every suite, including the UI tests
-git commit -am "Version 1.1.0"
-git tag -a v1.1.0 -m "7-Zip 26.03 for macOS 1.1.0"
-git push origin macos v1.1.0
+git commit -am "Version 1.2.0"
+git tag -a v1.2.0 -m "7-Zip 26.04 for macOS 1.2.0"
+git push origin macos v1.2.0
 ```
 
 The tag must be `v` + `PORT_VERSION` from `Mac/VERSION`; the release workflow fails at once
@@ -88,11 +88,11 @@ Updating the cask by hand (no token, or a failed tap job):
 
 ```sh
 cd homebrew-tap
-/path/to/7zip-macos/Mac/scripts/update-cask.sh Casks/7zip-macos.rb 1.1.0 26.03 <sha256 from the release>
-git commit -am "7zip-macos 1.1.0 (7-Zip 26.03)" && git push
+/path/to/7zip-macos/Mac/scripts/update-cask.sh Casks/7zip-macos.rb 1.1.0 26.04 <sha256 from the release>
+git commit -am "7zip-macos 1.1.0 (7-Zip 26.04)" && git push
 ```
 
-The cask's version is `<port>,<upstream>` (`1.1.0,26.03`), because the image's name carries both.
+The cask's version is `<port>,<upstream>` (`1.1.0,26.04`), because the image's name carries both.
 Homebrew 7 needs a third-party tap to be trusted before it loads it implicitly: users install with
 the full name (`brew install --cask yrambler2001/tap/7zip-macos`) and run `brew trust
 yrambler2001/tap` once so that `brew upgrade` includes it; the tap's README and the cask's caveats

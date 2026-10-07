@@ -707,8 +707,10 @@ Z7_COM7F_IMF(CSZHashStreamCallback::GetStream7(const wchar_t *name, Int32 isDir,
         if (getProp->GetProp(kpidIsAltStream, &prop) == S_OK && prop.vt == VT_BOOL)
             CurIsAltStream = VARIANT_BOOLToBool(prop.boolVal);
     }
-    if (isDir)
-        return S_OK;
+    // 7-Zip 26.04 (ExtractCallback.cpp GetStream7): a folder item no longer returns here, so it
+    // gets the hash stream too and SetOperationResult8 calls Final(isDir) for it -- the folder
+    // count and the folder names in "checksum for data and names". 24.09-26.03 returned early
+    // for folders, and the archive's names sum disagreed with the same tree on disk.
     if (askExtractMode != NArchive::NExtract::NAskMode::kExtract &&
         askExtractMode != NArchive::NExtract::NAskMode::kTest)
         return S_OK;

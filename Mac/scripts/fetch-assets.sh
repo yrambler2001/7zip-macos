@@ -18,13 +18,13 @@
 #                KEEP_WORK=1 (keep the temp dir), JOBS (make -j, default 8).
 set -euo pipefail
 
-VERSION_TAG="2603"                                  # 7-Zip 26.03
+VERSION_TAG="2604"                                  # 7-Zip 26.04
 INSTALLER_NAME="7z${VERSION_TAG}-x64.exe"
 URL="https://7-zip.org/a/${INSTALLER_NAME}"
-INSTALLER_SHA256="0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd"
-SFX_SHA256="9598f3bbca8e95391b8a356aee2e4cab93d9ac26eea47159ec725a55cf3bb32f"
-SFXCON_SHA256="c4402ffcbe8e02ec017f958f0d188fe13ea00193623c95dde546f6621a2e4132"
-CHM_SHA256="e0b70a83b79c938d7a868013ef94a0b1d34ff145f1e67bb7bf9a56aa913622cb"
+INSTALLER_SHA256="d54bf805f9f3704d1e8db2fa3498ae7ef2df0312b40b558e7c71c734430a665d"
+SFX_SHA256="bdf3860863e383f2af8dda02026d81b4949a5a0956c160b5eef4ad2fc5a7560f"
+SFXCON_SHA256="cef0997a4d8497869b211ce3471d9664a9413ed58ed261032627f68627fce5e0"
+CHM_SHA256="162e92f24258f36c24c1907505e7cf8a1f981684d180c9e8d1e35a7bb3c1eb6f"
 EXPECTED_HELP_FILES=78                              # *.htm + *.css inside 7-zip.chm
 EXPECTED_LANG_TXT=92                                # + en.ttt = 93 files
 LANG_SIGNATURE=';!@Lang2@!UTF-8!'

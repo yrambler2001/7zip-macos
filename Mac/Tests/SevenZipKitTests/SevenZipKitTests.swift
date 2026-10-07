@@ -95,7 +95,7 @@ final class SevenZipKitTests: XCTestCase {
         XCTAssertTrue(SZCodecs.allExtensions.contains("xz"))
         XCTAssertNil(SZCodecs.format(forExtension: "definitely-not-an-archive-ext"))
         XCTAssertTrue(SZCodecs.formats.contains { $0.isHashHandler })
-        XCTAssertEqual(SZEngineVersionString(), "26.03")
+        XCTAssertEqual(SZEngineVersionString(), "26.04")
     }
 
     // MARK: - Opening archives

@@ -5,6 +5,34 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
+## [1.1.0] — 2026-10-07
+
+7-Zip 26.04 for macOS 1.1.0: the engine updated to
+[7-Zip 26.04](https://github.com/ip7z/7zip/releases/tag/26.04) (2026-10-05).
+
+### Changed
+
+- Updated the engine to 7-Zip 26.04. Upstream's summary is "some bugs and vulnerabilities were
+  fixed": the NTFS, VHD and WIM handlers were largely rewritten, and the ISO, NSIS, Zip, APM, Cab,
+  DMG, Ext and other readers were hardened against malformed archives. Auxiliary items that a
+  handler marks as such are now left out of extraction and of checksum calculation. No format,
+  extension, command-line switch, menu item or dialog control was added or removed.
+- The bundled assets come from the official 7-Zip 26.04 Windows release (`7z2604-x64.exe`): new
+  `7z.sfx` and `7zCon.sfx` self-extracting modules, an updated Slovak translation, and the 26.04
+  help pages.
+
+### Fixed
+
+- **CRC SHA** on items inside an archive now counts the folders and includes their names in
+  "checksum for data and names", as 7-Zip File Manager 26.04 does, so the sum equals the one for the
+  same tree on disk (earlier versions skipped folders). Extracting with checksums
+  (`-scrc`) gets the matching fix from the 26.04 engine.
+
+### Changed in upstream sources
+
+- The guarded macOS patches carry over to 26.04 unchanged and are all still needed
+  ([Mac/docs/upstream-patches.md](Mac/docs/upstream-patches.md)).
+
 ## [1.0.0] — 2026-10-07
 
 First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip 26.03 engine.
@@ -46,4 +74,5 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
   behaves correctly on macOS; Windows behaviour is unchanged. See
   [Mac/docs/upstream-patches.md](Mac/docs/upstream-patches.md).
 
+[1.1.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.0
 [1.0.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.0.0
