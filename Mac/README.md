@@ -9,6 +9,7 @@ This directory holds the macOS app built on top of the upstream 7-Zip sources in
 | `Core/` | SevenZipKit, the Objective-C++ bridge to the engine |
 | `App/` | the Swift + AppKit app |
 | `FinderSync/`, `QuickAction/` | the Finder extensions |
+| `QuickLook/` | the Quick Look preview extension (archive summary and contents) |
 | `Resources/` | languages, SFX stubs, help pages, icons, Info.plists, entitlements |
 | `scripts/` | build, run, test, verify, package, asset and icon tools |
 | `Tests/` | unit, app-hosted and XCUITest suites, fixtures |

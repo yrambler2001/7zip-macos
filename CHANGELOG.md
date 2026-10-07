@@ -5,6 +5,21 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
+## [Unreleased]
+
+### Added
+
+- **Quick Look preview for archives.** Selecting an archive in Finder (the preview pane, or the
+  space bar) shows its type, method, file and folder counts, sizes and compression ratio, and its
+  contents as a tree with 7-Zip's Name, Size, Packed Size and Modified columns, icons and font,
+  folders first. **Open in 7-Zip** opens it in the app. Every archive type 7-Zip registers is
+  covered, compressed tarballs (`.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, …) included.
+  The preview never asks for a password (an archive with encrypted file names says so), stops
+  after about 2 seconds or 10 000 entries ("…and N more — open in 7-Zip"), and never writes
+  anything. Options ▸ macOS ▸ **Quick Look preview for archives** turns it off and on; it is on
+  by default and Reset All Settings turns it back on. The document icons Finder shows are
+  unchanged.
+
 ## [1.1.3] — 2026-10-07
 
 7-Zip 26.04 for macOS 1.1.3: security hardening of the Finder integration.

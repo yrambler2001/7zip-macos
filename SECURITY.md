@@ -17,6 +17,8 @@ answer as soon as possible; this is a volunteer project, so please allow some da
 - **The Mac-specific code** is in scope: the SevenZipKit bridge (`Mac/Core/`), the app, the Finder
   extensions, the `sevenzip://` URL scheme and command mode, path handling during extraction
   (path traversal, symbolic links), the quarantine attribute, and the update check.
+- **The Quick Look preview extension** (`Mac/QuickLook/`), which lists an archive as soon as it is
+  selected in Finder.
 - **Engine vulnerabilities** that also affect 7-Zip on other platforms (the same archive crashes
   `7zz` or 7-Zip on Windows) belong upstream: report them to Igor Pavlov via
   [7-zip.org](https://www.7-zip.org). Tell us as well, so the fix is picked up here when upstream

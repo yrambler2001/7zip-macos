@@ -82,6 +82,30 @@ documents in `ai/api/`, which each scope keeps current, rather than the sources:
 | Finder / command line | `api/finder.md` | `FinderSync.appex`, the two Quick Action appexes, `ServicesProvider`, `URLCommands` (`sevenzip://`), `SevenZipArguments.parse` → `CommandExecutor` (the 7zG grammar), `DockDropRouter` |
 | Test support | `api/resetcmd.md`, `api/harness.md` | `SZ_TEST_SUPPORT`, `SEVENZIP_DEFAULTS_SUITE`, `sevenzip://test/reset` (frozen contract: `test-support-contract.md`) |
 | Icons | `api/icons.md` | `Mac/scripts/make-icons.sh`, `doc-<name>` assets, `AboutLogo` |
+| Quick Look (quicklook, 2026-10-08) | this section | `QuickLook.appex` (`Mac/QuickLook/`: `PreviewViewController`, `ArchivePreviewBuilder`, `ArchivePreviewView`), `SZStreamTar`, `QuickLookExtensionControl` / `QuickLookSettingsBridge` / `QuickLookPreferences` (`Mac/App/Integration/`) |
+
+### Quick Look preview (quicklook)
+
+- `QuickLook.appex` (`com.yrambler2001.7zip.QuickLook`, `com.apple.quicklook.preview`, view-based,
+  `QLSupportedContentTypes` = the app's 38 archive UTIs) is a macOS addition: 7zFM has no
+  preview handler. It is sandboxed with no other entitlement, links the app's `SevenZipKit`
+  (`@executable_path/../../../../Frameworks`; no second engine), and compiles the panel's own
+  `Formatting`, `PanelArchiveIcons` (+ the 27 `fm-*.ico` in its Resources), `Icons`, `FileTypes`,
+  `ListFontChoice`/`Settings`, `WinChrome` and `Lang`.
+- `ArchivePreviewBuilder.build(path:limits:)` runs on one background thread and owns every engine
+  object it makes: `SZArchiveOpener` with no password delegate and an `OpenWatchdog` progress
+  delegate (2 s, 250 000 items during the open), the root folder in flat mode into an
+  `ArchivePreviewNode` tree (10 000 entries, the rest counted), the summary from `SZArcProps`
+  (01 §3.11). A single-stream compressor holding a `.tar` is listed from its stream by
+  `SZStreamTar` (CStreamBinder pipe + `IArchiveOpenSeq`), never from a temp copy.
+- The app side: `QuickLookExtensionControl` (PlugInKit, like `FinderExtensionControl`; an
+  unelected Quick Look extension counts as on), the Options ▸ macOS checkbox (control 9935, lang
+  9970), `restoreDefault()` from `SettingsReset.resetDomain()`, the once-only election at the first
+  launch from /Applications (`FM.QuickLookFirstLaunch`, preserved by the reset), and
+  `QuickLookSettingsBridge.push()` of `Lang` / `FM.Theme` / `FM.TimestampLevel` /
+  `FM.TimestampShowUTC` into the extension's container.
+- Tests: `ArchivePreviewModelTests` / `ArchivePreviewStreamedTarTests` (unit), `QuickLookPreviewTests`
+  (app-hosted; the test app copies compile `Mac/QuickLook`, and write `quicklook-*.png`).
 
 ### Threading, as enforced
 

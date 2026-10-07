@@ -41,8 +41,9 @@ Everything generated goes to `Mac/build/` (git-ignored), including the Xcode der
 - `SevenZipCore` — the upstream engine from `C/`, `CPP/`, `Asm/`, compiled in place as a static
   library.
 - `SevenZipKit` — the Objective-C++ bridge framework (`Mac/Core/`).
-- `7-Zip` — the AppKit app (`Mac/App/`), with three embedded extensions: `FinderSync` and the two
-  Quick Actions (`Mac/QuickAction/`).
+- `7-Zip` — the AppKit app (`Mac/App/`), with four embedded extensions: `FinderSync`, the two
+  Quick Actions (`Mac/QuickAction/`) and the Quick Look preview (`Mac/QuickLook/`, which links the
+  app's `SevenZipKit` instead of carrying its own).
 - Test targets — see [testing.md](testing.md).
 
 ## Universal build (Apple Silicon + Intel)

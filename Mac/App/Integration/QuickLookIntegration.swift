@@ -134,7 +134,7 @@ enum QuickLookExtensionControl {
     /// What to do at launch, decided like `FirstLaunchIntegration.decide` (pure; tested).
     enum LaunchAction: Equatable {
         case none
-        /// Another copy is registered: take the registration over, keep the election.
+        /// Another copy (or none) is registered: take the registration over, keep the election.
         case claim
         /// First launch of an installed copy: claim and elect use, then set the marker.
         case enable
@@ -166,7 +166,13 @@ enum QuickLookExtensionControl {
             case .enable:
                 setEnabled(true, embeddedPath: embedded)
             case .claim:
-                if case .otherCopy = currentState(embeddedPath: embedded) { claim(embeddedPath: embedded) }
+                // Another copy's registration, or none at all (a copy replaced in place after a
+                // `pluginkit -r` of its path, measured: Launch Services does not bring it back):
+                // register this one. The election is left alone.
+                switch currentState(embeddedPath: embedded) {
+                case .otherCopy, .notRegistered: claim(embeddedPath: embedded)
+                default: break
+                }
             case .none:
                 break
             }
