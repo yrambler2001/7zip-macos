@@ -1,6 +1,6 @@
 # 7-Zip for macOS (unofficial port)
 
-A native macOS version of the **7-Zip File Manager**: the real 7-Zip 26.03 engine with a new
+A native macOS version of the **7-Zip File Manager**: the real 7-Zip 26.04 engine with a new
 AppKit interface that follows the Windows app item for item — the same two panels, menus, dialogs,
 keyboard map, settings and 93 languages — plus Finder integration.
 
@@ -9,7 +9,7 @@ keyboard map, settings and 93 languages — plus Finder integration.
 > fork of [ip7z/7zip](https://github.com/ip7z/7zip) that adds a macOS app. Please report problems
 > with the Mac app here, not to 7-Zip.
 
-Current version: **7-Zip 26.03 for macOS 1.0.0**.
+Current version: **7-Zip 26.04 for macOS 1.1.0**.
 
 ![The main window, light](docs/images/main-light.png)
 
@@ -48,7 +48,7 @@ Requires **macOS 14 (Sonoma) or newer**, on Apple Silicon or Intel (the release 
 
 ### Disk image
 
-Download `7-Zip-26.03-macOS-1.0.0.dmg` (the version in the name changes with each release) from
+Download `7-Zip-26.04-macOS-1.1.0.dmg` (the version in the name changes with each release) from
 [Releases](https://github.com/yrambler2001/7zip-macos/releases), open it and drag **7-Zip** onto
 **Applications**. The app is universal: one download for Apple Silicon and Intel Macs.
 

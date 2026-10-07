@@ -1,6 +1,6 @@
 # 7-Zip for macOS (unofficial port) — rules for AI agents
 
-This repository is upstream 7-Zip 26.03 (`C/`, `CPP/`, `Asm/`, `DOC/`) plus a native macOS port
+This repository is upstream 7-Zip 26.04 (`C/`, `CPP/`, `Asm/`, `DOC/`) plus a native macOS port
 under `Mac/`. The default branch is `macos`; `main` mirrors upstream `ip7z/7zip` and is never
 changed here.
 
