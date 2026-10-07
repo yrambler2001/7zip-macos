@@ -40,7 +40,8 @@ Then:
    (`Mac/project.yml`; the source set is explained in [`ai/02-engine-api.md`](../ai/02-engine-api.md)).
 3. Update the bundled assets for the new release: bump `VERSION_TAG` and the pinned hashes in
    `Mac/scripts/fetch-assets.sh` and run it (Lang files, SFX stubs, help pages).
-4. Update the version strings (`Info.plist` files, `package.sh`) and `CHANGELOG.md`.
+4. Raise the versions with `Mac/scripts/bump-version.sh minor --upstream XX.YY` (it rewrites
+   `Mac/VERSION` and opens the CHANGELOG section; [releasing.md](releasing.md#upstream-merging-a-new-7-zip-release)).
 5. Build and run the unit and app-hosted tests ([testing.md](testing.md)), regenerate
    `Mac/docs/upstream-patches.diff` (`git diff main -- C CPP Asm DOC > Mac/docs/upstream-patches.diff`),
    and open a pull request into `macos`.

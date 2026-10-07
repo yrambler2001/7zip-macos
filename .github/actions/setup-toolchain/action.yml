@@ -1,0 +1,59 @@
+# Shared by ci.yml and release.yml: pin Xcode for this job and install a pinned XcodeGen.
+#
+# Xcode is chosen with DEVELOPER_DIR, which every Mac/scripts/*.sh honours, and is exported to the
+# rest of the job through GITHUB_ENV. Nothing calls `xcode-select -s`: the runner is throw-away, but
+# DEVELOPER_DIR is enough and is what the scripts and docs/building.md use on a developer's Mac too.
+#
+# XcodeGen comes from its GitHub release, pinned by version and SHA-256, rather than from
+# `brew install xcodegen`: a Homebrew install updates Homebrew first (slow), and installs whatever
+# version is current that day. A new XcodeGen is adopted by bumping both inputs here.
+name: Set up the toolchain
+description: Select the pinned Xcode via DEVELOPER_DIR and install the pinned XcodeGen.
+inputs:
+  xcode:
+    description: Xcode version on the runner image (/Applications/Xcode_<version>.app)
+    required: false
+    default: "26.6"
+  xcodegen-version:
+    description: XcodeGen release tag
+    required: false
+    default: "2.46.0"
+  xcodegen-sha256:
+    description: SHA-256 of that release's xcodegen.zip
+    required: false
+    default: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode ${{ inputs.xcode }}
+      shell: bash
+      env:
+        XCODE_VERSION: ${{ inputs.xcode }}
+      run: |
+        set -euo pipefail
+        dir="/Applications/Xcode_${XCODE_VERSION}.app"
+        if [ ! -d "$dir" ]; then
+          echo "::error::Xcode ${XCODE_VERSION} is not on this runner image. Installed:"
+          ls -d /Applications/Xcode*.app
+          exit 1
+        fi
+        echo "DEVELOPER_DIR=$dir" >>"$GITHUB_ENV"
+        DEVELOPER_DIR="$dir" xcodebuild -version
+        sw_vers
+        echo "arch: $(uname -m), $(sysctl -n hw.ncpu) CPUs"
+
+    - name: Install XcodeGen ${{ inputs.xcodegen-version }}
+      shell: bash
+      env:
+        XCODEGEN_VERSION: ${{ inputs.xcodegen-version }}
+        XCODEGEN_SHA256: ${{ inputs.xcodegen-sha256 }}
+      run: |
+        set -euo pipefail
+        dest="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION"
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" \
+          "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+        echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+        rm -rf "$dest" && mkdir -p "$dest"
+        unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$dest"
+        echo "$dest/xcodegen/bin" >>"$GITHUB_PATH"
+        "$dest/xcodegen/bin/xcodegen" --version

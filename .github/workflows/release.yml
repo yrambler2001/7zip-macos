@@ -1,0 +1,287 @@
+# Release: pushing a tag v<PORT_VERSION> builds, tests, packages and publishes the disk image as a
+# GitHub Release, then points the Homebrew cask at it. The whole procedure, and the one-time setup
+# of the optional secrets, is in docs/releasing.md.
+#
+#   build    verify the tag against Mac/VERSION, unit tests on arm64 and x86_64 (Rosetta),
+#            universal Release, package.sh -> 7-Zip-<upstream>-macOS-<port>.dmg + .sha256.
+#            Signs with a Developer ID, notarizes and staples only when those secrets exist;
+#            otherwise the image is ad-hoc signed, as every release is until then.
+#   release  create the GitHub Release (or refresh the assets of an existing one).
+#   tap      rewrite Casks/7zip-macos.rb in yrambler2001/homebrew-tap; only with secret TAP_TOKEN.
+#
+# Run by hand (workflow_dispatch) it is a dry run: build, test and package the selected commit,
+# upload the image as a workflow artifact, publish nothing.
+#
+# Actions are pinned by commit SHA (tag in the comment) for the reason given in ci.yml. The release
+# is created with the GitHub CLI preinstalled on the runner, so no third-party action ever sees the
+# write token. Nothing is cached here: a release is built from a clean checkout.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Never cancel a release half-way; a second tag waits for the first.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test, package
+    runs-on: macos-26
+    timeout-minutes: 120
+    outputs:
+      port: ${{ steps.version.outputs.port }}
+      upstream: ${{ steps.version.outputs.upstream }}
+      name: ${{ steps.version.outputs.name }}
+      dmg: ${{ steps.version.outputs.dmg }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+    env:
+      # Secrets cannot be tested in `if:` directly; these booleans can.
+      HAVE_CERT: ${{ secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' }}
+      HAVE_NOTARY_PASSWORD: ${{ secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_PASSWORD != '' }}
+      HAVE_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0   # the build number is the commit count of the tag (Mac/scripts/version.sh)
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+
+      - name: Version, and the tag must match it
+        id: version
+        run: |
+          set -euo pipefail
+          . Mac/scripts/version.sh
+          echo "$VERSION_NAME, build $BUILD_NUMBER"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if [ "$GITHUB_REF_NAME" != "v$PORT_VERSION" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match Mac/VERSION (PORT_VERSION = $PORT_VERSION): expected v$PORT_VERSION."
+              exit 1
+            fi
+          else
+            echo "::notice::Not a tag push: dry run, nothing will be published."
+          fi
+          if grep -qE "^## \[$PORT_VERSION\] .*unreleased" CHANGELOG.md; then
+            echo "::warning::CHANGELOG.md still says [$PORT_VERSION] is unreleased; date it in the next commit (docs/releasing.md)."
+          fi
+          Mac/scripts/check-hygiene.sh   # UPSTREAM_VERSION = MY_VERSION, a changelog section, etc.
+          {
+            echo "port=$PORT_VERSION"
+            echo "upstream=$UPSTREAM_VERSION"
+            echo "name=$VERSION_NAME"
+            echo "dmg=$DMG_NAME"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Unit tests, arm64
+        run: Mac/scripts/test.sh
+      - name: Unit tests, x86_64 under Rosetta 2
+        run: Mac/scripts/test.sh -A x86_64
+
+      # ---- optional Developer ID signing -------------------------------------------------------
+      - name: Import the Developer ID certificate
+        id: cert
+        if: env.HAVE_CERT == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpass="$(uuidgen)"
+          echo "::add-mask::$kcpass"
+          security create-keychain -p "$kcpass" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpass" "$kc"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode >"$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" "$kc" >/dev/null
+          # The runner is throw-away: put the keychain first in the search list and make it the
+          # default, so codesign, xcodebuild, package.sh's identity check and notarytool's
+          # --keychain-profile all find it.
+          existing=()
+          while IFS= read -r line; do existing+=("$line"); done < <(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//')
+          security list-keychains -d user -s "$kc" "${existing[@]}"
+          security default-keychain -d user -s "$kc"
+          identity="$(security find-identity -v -p codesigning "$kc" | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+          if [ -z "$identity" ]; then
+            echo "::error::MACOS_CERT_P12 holds no 'Developer ID Application' identity."
+            security find-identity -v -p codesigning "$kc"
+            exit 1
+          fi
+          team="${APPLE_TEAM_ID:-$(printf '%s' "$identity" | sed -n 's/.*(\([A-Z0-9]*\))$/\1/p')}"
+          echo "Signing as: $identity (team $team)"
+          {
+            echo "keychain=$kc"
+            echo "identity=$identity"
+            echo "team=$team"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Store the notarization credentials
+        id: notary
+        if: steps.cert.outcome == 'success' && (env.HAVE_NOTARY_KEY == 'true' || env.HAVE_NOTARY_PASSWORD == 'true')
+        env:
+          KEYCHAIN: ${{ steps.cert.outputs.keychain }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          if [ "$HAVE_NOTARY_KEY" = true ]; then
+            # An App Store Connect API key is preferred: it is not tied to a person's Apple ID.
+            key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+            printf '%s' "$APPLE_API_KEY_P8" >"$key"
+            xcrun notarytool store-credentials 7zip-notary --key "$key" --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER_ID" --keychain "$KEYCHAIN"
+            rm -f "$key"
+          else
+            xcrun notarytool store-credentials 7zip-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" --keychain "$KEYCHAIN"
+          fi
+          echo "profile=7zip-notary" >>"$GITHUB_OUTPUT"
+
+      - name: Package (universal Release, disk image)
+        id: package
+        env:
+          SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
+          DEVELOPMENT_TEAM: ${{ steps.cert.outputs.team }}
+          NOTARY_PROFILE: ${{ steps.notary.outputs.profile }}
+          DMG: ${{ steps.version.outputs.dmg }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "$SIGN_IDENTITY" ]; then
+            args+=(--identity "$SIGN_IDENTITY" --team "$DEVELOPMENT_TEAM")
+            if [ -n "$NOTARY_PROFILE" ]; then
+              args+=(--notary-profile "$NOTARY_PROFILE")
+            else
+              echo "::warning::Developer ID certificate present but no notarization secrets: signed, not notarized."
+            fi
+          else
+            echo "::notice::No Developer ID secrets: the image is ad-hoc signed (users need Open Anyway)."
+            unset SIGN_IDENTITY DEVELOPMENT_TEAM
+          fi
+          Mac/scripts/package.sh ${args[@]+"${args[@]}"}
+          cd Mac/build
+          shasum -a 256 "$DMG" >"$DMG.sha256"
+          shasum -a 256 -c "$DMG.sha256"
+          echo "sha256=$(cut -d' ' -f1 "$DMG.sha256")" >>"$GITHUB_OUTPUT"
+          notes=(--sha256 "$(cut -d' ' -f1 "$DMG.sha256")")
+          case " ${args[*]:-} " in *" --notary-profile "*) notes+=(--notarized) ;; esac
+          # The release body, written here (macOS, the scripts' platform) and shipped with the image.
+          "$GITHUB_WORKSPACE/Mac/scripts/release-notes.sh" "${notes[@]}" >release-notes.md
+          cat release-notes.md
+
+      - name: Remove the signing keychain
+        if: always() && steps.cert.outputs.keychain != ''
+        env:
+          KEYCHAIN: ${{ steps.cert.outputs.keychain }}
+        run: security delete-keychain "$KEYCHAIN" || true
+
+      - name: Upload the disk image
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-dmg
+          path: |
+            Mac/build/${{ steps.version.outputs.dmg }}
+            Mac/build/${{ steps.version.outputs.dmg }}.sha256
+            Mac/build/release-notes.md
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload the logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-logs
+          path: |
+            Mac/build/*.log
+            Mac/build/*.xcresult
+          retention-days: 14
+
+  release:
+    name: GitHub Release
+    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write   # create the release and upload its assets; nothing else
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      TITLE: ${{ needs.build.outputs.name }}
+      DMG: ${{ needs.build.outputs.dmg }}
+      SHA256: ${{ needs.build.outputs.sha256 }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: release-dmg
+          path: dist
+      - name: Check the image against its checksum
+        working-directory: dist
+        run: shasum -a 256 -c "$DMG.sha256" && [ "$(cut -d' ' -f1 "$DMG.sha256")" = "$SHA256" ]
+      - name: Create the release, or refresh its assets on a re-run
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "dist/$DMG" "dist/$DMG.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --title "$TITLE" --notes-file dist/release-notes.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "dist/$DMG" "dist/$DMG.sha256" --verify-tag --latest \
+              --title "$TITLE" --notes-file dist/release-notes.md --repo "$GITHUB_REPOSITORY"
+          fi
+          echo "### Released [$TITLE]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG)" >>"$GITHUB_STEP_SUMMARY"
+
+  tap:
+    name: Homebrew tap
+    needs: [build, release]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HAVE_TAP_TOKEN: ${{ secrets.TAP_TOKEN != '' }}
+      PORT: ${{ needs.build.outputs.port }}
+      UPSTREAM: ${{ needs.build.outputs.upstream }}
+      SHA256: ${{ needs.build.outputs.sha256 }}
+    steps:
+      - name: No TAP_TOKEN
+        if: env.HAVE_TAP_TOKEN != 'true'
+        run: echo "::notice::Secret TAP_TOKEN is not set; the Homebrew cask was not updated (docs/releasing.md)."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: env.HAVE_TAP_TOKEN == 'true'
+        with:
+          sparse-checkout: Mac/scripts/update-cask.sh
+          sparse-checkout-cone-mode: false
+          path: src
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: env.HAVE_TAP_TOKEN == 'true'
+        with:
+          repository: yrambler2001/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+      - name: Point the cask at ${{ needs.build.outputs.port }}
+        if: env.HAVE_TAP_TOKEN == 'true'
+        working-directory: tap
+        run: |
+          set -euo pipefail
+          ../src/Mac/scripts/update-cask.sh Casks/7zip-macos.rb "$PORT" "$UPSTREAM" "$SHA256"
+          if git diff --quiet; then
+            echo "::notice::The cask already points at $PORT."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "7zip-macos $PORT (7-Zip $UPSTREAM)"
+          git push
+          echo "### Homebrew cask 7zip-macos -> $PORT" >>"$GITHUB_STEP_SUMMARY"
