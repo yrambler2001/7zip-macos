@@ -26,6 +26,9 @@ Current version: **7-Zip 26.04 for macOS 1.1.2**.
 - **Extract** with every path and overwrite mode; **Add to archive** with the full set of
   compression options, AES-256 encryption (including file names), multi-volume and
   self-extracting archives.
+- **Exclude Mac resource forks** — a checkbox in Add to archive (off by default) that leaves
+  `._*` AppleDouble files, `.DS_Store` and `__MACOSX` folders out of the archive, so archives
+  shared with Windows and Linux users contain only your files.
 - **Test**, **checksums** (CRC32, CRC64, SHA-1, SHA-256, SHA-512, BLAKE2sp, XXH64 and more),
   **Benchmark**, **Split**, **Combine**, **Link**, Properties and comments.
 - **Finder integration** — a 7-Zip submenu on Finder's right-click menu, Quick Actions, Services,
