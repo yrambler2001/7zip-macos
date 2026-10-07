@@ -174,9 +174,10 @@ ARCH_REPORT=""
 while IFS= read -r -d '' f; do
   file -b "$f" | grep -q 'Mach-O' || continue
   archs="$(lipo -archs "$f" 2>/dev/null || true)"
-  case " $archs " in
-    *" arm64 "*" x86_64 "*|*" x86_64 "*" arm64 "*) ;;
-    *) die "${f#$APP/} is not universal (lipo: '$archs'); build with Mac/scripts/build.sh --release" ;;
+  case " $archs " in *" arm64 "*) ;; *) archs="$archs (no arm64)" ;; esac
+  case " $archs " in *" x86_64 "*) ;; *) archs="$archs (no x86_64)" ;; esac
+  case "$archs" in
+    *"(no "*) die "${f#$APP/} is not universal (lipo: '$archs'); build with Mac/scripts/build.sh --release" ;;
   esac
   ARCH_REPORT+="   ${f#$APP/}: $archs"$'\n'
 done < <(find "$APP" -type f -perm +111 -print0)
