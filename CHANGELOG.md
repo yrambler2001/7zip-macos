@@ -5,6 +5,28 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
+## [1.1.1] — 2026-10-07
+
+7-Zip 26.04 for macOS 1.1.1: fixes for problems reported against 1.0.0.
+
+### Fixed
+
+- Opening an application bundle or another package as a folder (for example a Chrome web-app
+  shim in `~/Applications/Chrome Apps.localized/`) showed "E_FAIL Unspecified error". Enter on any
+  folder now opens it, as 7-Zip File Manager does; Open Outside (Shift+Return) still launches an
+  app. A directory tried as an archive is reported as "not an archive" instead of failing.
+- File names with an emoji or any other character outside the Basic Multilingual Plane showed
+  as empty rows, both in folders and inside archives.
+- A name with a control character, such as the Finder's `Icon\r` file, was drawn higher than
+  the other rows. Every row now draws its text on the same baseline whatever characters the name
+  holds (emoji, Arabic, Thai, Tibetan, combining marks), and the name column draws nothing for a
+  control character, as the Windows list does. Other columns show line breaks as spaces.
+- The status bar's first text no longer runs into the window's rounded bottom-left corner: it
+  moves in by the corner's reach (8 pt on macOS 26, 4 pt on earlier versions), so it clears the
+  frame as 7-Zip File Manager's does. The other parts keep the Windows inset of 2 px.
+- View > Arrange By checks Name when the list is sorted by a column that has no item of its own
+  (Created, Packed Size, ...), as 7-Zip File Manager does; it used to check nothing.
+
 ## [1.1.0] — 2026-10-07
 
 7-Zip 26.04 for macOS 1.1.0: the engine updated to
@@ -74,5 +96,6 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
   behaves correctly on macOS; Windows behaviour is unchanged. See
   [Mac/docs/upstream-patches.md](Mac/docs/upstream-patches.md).
 
+[1.1.1]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.1
 [1.1.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.0
 [1.0.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.0.0
