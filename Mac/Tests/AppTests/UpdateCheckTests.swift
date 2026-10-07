@@ -236,7 +236,7 @@ final class UpdateCheckTests: AppHostTestCase {
 
     func testPortVersion() {
         XCTAssertNotNil(SemVer(PortVersion.port), "CFBundleShortVersionString is the port's semver, not '\(PortVersion.port)'")
-        XCTAssertEqual(PortVersion.upstream, "26.03")
+        XCTAssertEqual(PortVersion.upstream, "26.04")
         XCTAssertEqual(PortVersion.displayName(upstream: "26.03", port: "1.0.0"), "7-Zip 26.03 for macOS 1.0.0")
         XCTAssertTrue(AboutDialog.versionText.hasPrefix(PortVersion.displayName + " ("), AboutDialog.versionText)
     }
