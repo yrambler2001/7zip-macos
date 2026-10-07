@@ -229,6 +229,75 @@ final class Fix111Tests: AppHostTestCase {
         XCTAssertEqual(Formatting.oneLine("plain"), "plain")
     }
 
+    // MARK: - 4. status bar insets
+
+    /// Windows (fresh 7zFM 26.03, 96 dpi): each part's text ink starts 2 px into the part, the
+    /// first one 2 px from the client's left edge, which is 1 px inside the window's border. On the
+    /// Mac the panel at the window's left edge moves its first part's text in by the rounded corner's
+    /// reach (`statusCornerInset`), so it no longer runs into the frame; the other parts, and the
+    /// first part of the right-hand panel, keep Windows' 2 px.
+    func testStatusBarTextInsets() throws {
+        let dir = makeScratch("status")
+        touch(dir + "/a.txt", String(repeating: "x", count: 1234))
+        Settings.numPanels = 2
+        Settings.setListMode(3, 0)
+        Settings.setListMode(3, 1)
+        let controller = MainWindowController()
+        controllers.append(controller)
+        controller.window?.setContentSize(NSSize(width: 1200, height: 500))
+        controller.showWindow(nil)
+        let panels = controller.panels
+        XCTAssertEqual(panels.count, 2)
+        for panel in panels {
+            navigate(panel, to: dir)
+            let row = rowIndex(panel, "a.txt")
+            panel.tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            panel.focusedIndex = row
+            panel.refreshStatusBar()
+        }
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertTrue(wait(for: "split laid out") { panels[1].view.frame.minX > 300 })
+        if let window = controller.window { attach(window, "04-status") }
+        for (index, panel) in panels.enumerated() {
+            panel.view.layoutSubtreeIfNeeded()
+            let starts = [0] + PanelMetrics.statusSectionEdges
+            let ink = statusInk(panel)
+            XCTAssertEqual(ink.count, 4, "panel \(index): ink runs \(ink)")
+            guard ink.count == 4 else { continue }
+            let first = index == 0 ? 2 + PanelMetrics.statusCornerInset : 2
+            XCTAssertEqual(ink[0], first, accuracy: 1, "panel \(index) part 0 ink at \(ink[0])")
+            for part in 1...3 {
+                XCTAssertEqual(ink[part] - starts[part], 2, accuracy: 1, "panel \(index) part \(part) ink at \(ink[part])")
+            }
+        }
+        if #available(macOS 26, *) { XCTAssertEqual(PanelMetrics.statusCornerInset, 8) }
+    }
+
+    /// The first ink column of each status part's text, in points from the panel's left edge.
+    private func statusInk(_ panel: PanelViewController) -> [CGFloat] {
+        let view = panel.view
+        let rect = NSRect(x: 0, y: 0, width: view.bounds.width, height: 22)
+        let area = view.isFlipped ? NSRect(x: 0, y: view.bounds.height - 22, width: rect.width, height: 22) : rect
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: area) else { return [] }
+        view.cacheDisplay(in: area, to: rep)
+        let scale = CGFloat(rep.pixelsWide) / area.width
+        let starts = [0] + PanelMetrics.statusSectionEdges
+        var result: [CGFloat] = []
+        for (i, start) in starts.enumerated() {
+            let end = i + 1 < starts.count ? starts[i + 1] - 2 : min(start + 200, area.width)
+            var found: CGFloat?
+            columns: for x in Int(start * scale)..<Int(end * scale) {
+                for y in 0..<rep.pixelsHigh {
+                    guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                    let lum = (c.redComponent + c.greenComponent + c.blueComponent) / 3 * c.alphaComponent + (1 - c.alphaComponent)
+                    if lum < 0.45 { found = CGFloat(x) / scale; break columns }
+                }
+            }
+            if let found { result.append(found) }
+        }
+        return result
+    }
+
     // MARK: - rendering helpers
 
     /// The bounding box (row coordinates, from the row's top) of the dark pixels of a cell.

@@ -127,6 +127,32 @@ enum PanelMetrics {
         return [220, 220 + part, 220 + 2 * part]
     }
 
+    /// Where a status-bar part's text field starts, from the part's left edge: its ink 2 px in, as
+    /// msctls_statusbar32 draws it (recheck §2; fresh 7zFM 26.03: "0" ink at client x 2).
+    static let statusTextOrigin: CGFloat = 1
+
+    /// macOS's window corner radius: 16 pt on macOS 26, 10 pt before (measured, fix111).
+    static var windowCornerRadius: CGFloat {
+        if #available(macOS 26, *) { return 16 }
+        return 10
+    }
+
+    /// How much further in the first status part's text goes when the status bar starts at the
+    /// window's left edge (fix111): the 1 px window border Windows draws outside its client area,
+    /// plus how far the rounded bottom corner reaches in at the text's lowest ink (the descender,
+    /// `statusTextBottom` above the window's bottom), so the text clears the frame by Windows' 2 px.
+    /// 8 pt on macOS 26, 4 pt before.
+    static var statusCornerInset: CGFloat {
+        let r = windowCornerRadius
+        let lift = min(r, statusTextBottom)
+        let reach = r - (r * r - (r - lift) * (r - lift)).squareRoot()
+        return 1 + ceil(reach)
+    }
+
+    /// The status text's lowest ink above the window's bottom: the bar is 22 pt under its line,
+    /// the baseline 16 pt down, the list font's descender below it.
+    static var statusTextBottom: CGFloat { 22 - 16 - ceil(-listFont.descender) }
+
     /// The width the list font gives `text`.
     static func textWidth(_ text: String) -> CGFloat {
         ceil((text as NSString).size(withAttributes: [.font: listFont]).width)
