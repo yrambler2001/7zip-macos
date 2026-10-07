@@ -220,6 +220,12 @@ final class HasherTests: XCTestCase {
         }
         XCTAssertEqual(byPath, Self.treeSHA256)
         XCTAssertEqual(r.dataDigests["SHA256"], Self.treeDataSum)
+        // 7-Zip 26.04 (ExtractCallback.cpp GetStream7): folders inside the archive are hashed by
+        // name too, so the folder count and the "data and names" sum equal the same tree on disk.
+        XCTAssertEqual(r.numFolders, 2)
+        XCTAssertEqual(Set(r.fileResults.filter { $0.isDirectory }.map { $0.path }), ["sub", "sub/deep"])
+        XCTAssertEqual(r.dataAndNamesDigests["SHA256"], Self.treeDataAndNamesSum)
+        XCTAssertTrue(r.rows.map { $0.name }.contains("Folders"))
     }
 
     func testHashSingleItemInsideArchive() throws {
