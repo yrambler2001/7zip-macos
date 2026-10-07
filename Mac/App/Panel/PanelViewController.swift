@@ -764,11 +764,20 @@ final class PanelViewController: NSViewController, NSMenuItemValidation {
             let unsorted = rows                       // a value copy: the queue never sees `rows`
             let generation = loadGeneration
             runOnQueue { [self] in
-                guard let folder = self.folder, folder.itemCount >= unsorted.count else { return }
+                // fix112: the ".." row (FM.ShowDots = 1) is not an engine item. The old guard
+                // `folder.itemCount >= unsorted.count` counted it, so with Show ".." on every
+                // folder that implements IFolderCompare (CFSFolder and every archive folder) failed
+                // it by one and the click was dropped: the sort was saved, the rows never moved.
+                // Only the engine rows are checked now, and a folder that no longer holds them
+                // (reloaded meanwhile) is still sorted, from the snapshot's values.
+                guard let folder = self.folder else { return }
+                let compare: ((Int, Int, SZPropID) -> Int)? =
+                    PanelSorting.engineIndicesAreValid(unsorted, itemCount: folder.itemCount)
+                    ? { i, j, pid in folder.compareItem(at: i, with: j, propID: pid) }
+                    : nil
                 let sorted = PanelSorting.sorted(rows: unsorted, sortID: params.sortID,
-                                                 ascending: params.ascending, flatMode: params.flatMode) { i, j, pid in
-                    folder.compareItem(at: i, with: j, propID: pid)
-                }
+                                                 ascending: params.ascending, flatMode: params.flatMode,
+                                                 folderCompare: compare)
                 DispatchQueue.main.async {
                     guard generation == self.loadGeneration else { return }   // the folder moved on
                     self.rows = sorted

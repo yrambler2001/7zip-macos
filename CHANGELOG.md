@@ -5,6 +5,36 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
+## [1.1.2] — 2026-10-07
+
+7-Zip 26.04 for macOS 1.1.2.
+
+### Fixed
+
+- Clicking a column header did not sort when **Show ".." item** (Options ▸ Settings) was on. The
+  click was saved as the new sort, but the list kept its order, in every folder and inside every
+  archive: the ".." row was counted as an item of the folder, so the sort looked stale and was
+  dropped. Sorting from the header, View ▸ Arrange By and Ctrl+F3…F7 work with ".." shown.
+- A column layout saved by another version, or damaged, is cleaned up when it is read: unknown,
+  duplicate or missing columns, a sort on a column the folder does not have, out-of-range widths
+  and values of the wrong type no longer lose the layout or affect sorting.
+
+### Added
+
+- **Options ▸ macOS ▸ Reset All Settings…** asks for confirmation, then puts every 7-Zip setting
+  back to its default — options, window and panel layout, column layouts and sorts, histories,
+  favorites — and restarts the app. Your files, archives and the Finder extension's on/off state
+  are not touched.
+
+### Changed
+
+- The theme is **Light** by default, on a fresh install and after Reset All Settings. A theme you
+  chose (Light or Dark) is kept. Before 1.1.2 *System* was the default and was not stored, so
+  *System* chosen explicitly cannot be told apart from never chosen: pick *System* again in
+  Options ▸ macOS if you want it; it is stored from now on.
+- The Homebrew cask removes the quarantine flag after installing or upgrading, so a Homebrew
+  install opens without *Open Anyway*. The disk image still needs it.
+
 ## [1.1.1] — 2026-10-07
 
 7-Zip 26.04 for macOS 1.1.1: fixes for problems reported against 1.0.0.
@@ -96,6 +126,7 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
   behaves correctly on macOS; Windows behaviour is unchanged. See
   [Mac/docs/upstream-patches.md](Mac/docs/upstream-patches.md).
 
+[1.1.2]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.2
 [1.1.1]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.1
 [1.1.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.0
 [1.0.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.0.0

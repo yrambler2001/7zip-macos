@@ -52,6 +52,11 @@ void Remove(const char *key);
 void ListKeys(const char *prefix, AStringVector &keys);
 void Sync();
 
+// fix112: while suspended, every Set*, Remove and Sync is a no-op (Reset All Settings: the quitting
+// instance must not save its state into the emptied domain). Reads still work.
+void SetWritesSuspended(bool suspended);
+bool WritesSuspended();
+
 }
 
 #endif

@@ -30,7 +30,7 @@ Current version: **7-Zip 26.04 for macOS 1.1.0**.
 - **Finder integration** — a 7-Zip submenu on Finder's right-click menu, Quick Actions, Services,
   and document icons for 40 archive types.
 - **93 languages** — the official 7-Zip translations, switchable while the app runs.
-- **Light and Dark** themes that follow the system or are set in Options ▸ macOS.
+- **Light and Dark** themes: Light by default, Dark or following the system in Options ▸ macOS.
 - **Native**: Swift and AppKit on top of the unchanged C/C++ engine. No emulation, no
   third-party code, no network access except the optional update check.
 
@@ -61,9 +61,10 @@ brew trust yrambler2001/tap          # once, so that a plain `brew upgrade` incl
 
 Update with `brew upgrade --cask 7zip-macos`. The tap is a personal one
 ([yrambler2001/homebrew-tap](https://github.com/yrambler2001/homebrew-tap)), updated automatically
-with each release. Homebrew keeps macOS's quarantine on the download, so, as with the DMG, the
-*Open Anyway* step below is needed after **every** install and every update until the app is
-notarized; the cask does not remove the quarantine for you.
+with each release. **The cask removes the quarantine flag** from `/Applications/7-Zip.app` after
+every install and upgrade (`xattr -dr com.apple.quarantine`), because the app is not notarized:
+a Homebrew install opens directly, with no *Open Anyway* step. Installing the cask is the consent
+to that; the disk image below still needs *Open Anyway*.
 
 ### From source
 
@@ -76,7 +77,7 @@ Mac/scripts/build.sh --release      # or Mac/scripts/run.sh to build and launch 
 ## First launch: Gatekeeper
 
 The app is **ad-hoc signed, not notarized** — there is no paid Apple Developer ID behind this
-project. A downloaded copy is therefore blocked the first time ("Apple could not verify "7-Zip"
+project. A copy installed from the disk image is therefore blocked the first time ("Apple could not verify "7-Zip"
 is free of malware"). To allow it:
 
 1. Open 7-Zip once and dismiss the warning.
@@ -91,7 +92,8 @@ above. If you prefer the terminal, removing the quarantine attribute does the sa
 xattr -dr com.apple.quarantine /Applications/7-Zip.app
 ```
 
-Builds you make yourself are not quarantined and open directly.
+Builds you make yourself are not quarantined and open directly, and the Homebrew cask removes the
+quarantine for you (above).
 
 ## Finder integration
 

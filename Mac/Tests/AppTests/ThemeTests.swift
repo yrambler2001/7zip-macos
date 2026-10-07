@@ -151,19 +151,22 @@ final class ThemeTests: AppHostTestCase {
 
     // MARK: - the setting
 
-    func testThemeSettingDefaultsToSystemAndAppliesAtOnce() {
+    /// fix112: Light is the default (absent or unknown); every choice, System included, is stored.
+    func testThemeSettingDefaultsToLightAndAppliesAtOnce() {
         Settings.removeKey(Settings.Key.theme)
-        XCTAssertEqual(Settings.theme, .system, "absent = System")
+        XCTAssertEqual(Settings.theme, .light, "absent = Light")
         AppTheme.applyStored()
-        XCTAssertNil(NSApp.appearance, "System leaves the appearance to macOS")
+        XCTAssertEqual(NSApp.appearance?.name, .aqua, "the default forces Light")
         force(.dark)
         XCTAssertEqual(Settings.string(Settings.Key.theme), "dark")
         force(.light)
         XCTAssertEqual(Settings.string(Settings.Key.theme), "light")
         force(.system)
-        XCTAssertFalse(Settings.hasKey(Settings.Key.theme), "System is stored as no key")
+        XCTAssertEqual(Settings.string(Settings.Key.theme), "system", "System is stored, so it survives the default")
+        XCTAssertNil(NSApp.appearance, "System leaves the appearance to macOS")
+        XCTAssertEqual(Settings.theme, .system)
         Settings.setString("bogus", Settings.Key.theme)
-        XCTAssertEqual(Settings.theme, .system, "an unknown value reads as System")
+        XCTAssertEqual(Settings.theme, .light, "an unknown value reads as the default")
         // A test reset replaces the domain and posts keyless notifications: the theme follows.
         Settings.setString("dark", Settings.Key.theme)
         NSApp.appearance = nil
@@ -174,7 +177,7 @@ final class ThemeTests: AppHostTestCase {
     // MARK: - Options > macOS
 
     func testMacTabIsLastAndAppliesTheThemeOnApply() throws {
-        Settings.removeKey(Settings.Key.theme)
+        Settings.theme = .system
         AppTheme.applyStored()
         let (controller, window, tabs) = try openOptions()
         XCTAssertEqual(tabs.tabViewItems.last?.label, "macOS")

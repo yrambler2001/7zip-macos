@@ -404,19 +404,85 @@ enum Settings {
     /// CListViewInfo. Windows stores a version-1 REG_BINARY blob per folder type ID; this port
     /// keeps the same fields in one JSON string under `FM.Columns.<FolderTypeID>` because
     /// CFPreferences has no binary-blob idiom (shape documented in ai/api/options.md).
+    ///
+    /// fix112: decoding is lenient, so a layout written by another build (a missing field, a
+    /// number stored as a string, a column entry that is not an object) still loads; the
+    /// column model then drops what it cannot use (unknown, duplicate or absent columns, a sort
+    /// on a column the folder does not have). Nothing stored can stop a header click from
+    /// sorting (`PanelColumnsModel.init`).
     struct ColumnLayout: Codable, Equatable {
         struct Column: Codable, Equatable {
             var propID: Int
             var visible: Bool
             var width: Int
+
+            init(propID: Int, visible: Bool, width: Int) {
+                self.propID = propID
+                self.visible = visible
+                self.width = width
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                guard let pid = ColumnLayout.lenientInt(c, .propID) else {
+                    throw DecodingError.keyNotFound(CodingKeys.propID, .init(codingPath: c.codingPath, debugDescription: "no propID"))
+                }
+                propID = pid
+                visible = ColumnLayout.lenientBool(c, .visible) ?? true
+                width = ColumnLayout.lenientInt(c, .width) ?? 100
+            }
         }
         var sortID: Int
         var ascending: Bool
         var columns: [Column]
+
+        init(sortID: Int, ascending: Bool, columns: [Column]) {
+            self.sortID = sortID
+            self.ascending = ascending
+            self.columns = columns
+        }
+
+        private enum CodingKeys: String, CodingKey { case sortID, ascending, columns }
+
+        /// One entry that fails to decode is skipped, not the whole layout.
+        private struct SkippableColumn: Decodable {
+            let column: Column?
+            init(from decoder: Decoder) throws { column = try? Column(from: decoder) }
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sortID = Self.lenientInt(c, .sortID) ?? Int(SZPropID.name.rawValue)
+            ascending = Self.lenientBool(c, .ascending) ?? true
+            columns = ((try? c.decode([SkippableColumn].self, forKey: .columns)) ?? []).compactMap(\.column)
+        }
+
+        static func lenientInt<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Int? {
+            if let v = try? c.decode(Int.self, forKey: key) { return v }
+            if let v = try? c.decode(Double.self, forKey: key), v.isFinite, abs(v) < 1e9 { return Int(v) }
+            if let v = try? c.decode(String.self, forKey: key) { return Int(v.trimmingCharacters(in: .whitespaces)) }
+            if let v = try? c.decode(Bool.self, forKey: key) { return v ? 1 : 0 }
+            return nil
+        }
+
+        static func lenientBool<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Bool? {
+            if let v = try? c.decode(Bool.self, forKey: key) { return v }
+            if let v = lenientInt(c, key) { return v != 0 }
+            if let v = try? c.decode(String.self, forKey: key) { return ["true", "yes"].contains(v.lowercased()) }
+            return nil
+        }
     }
 
     static func columnLayout(forFolderType typeID: String) -> ColumnLayout? {
-        guard let json = string(Key.columnsPrefix + typeID), let data = json.data(using: .utf8) else { return nil }
+        let key = Key.columnsPrefix + typeID
+        // A layout stored as raw JSON data rather than a string loads too.
+        let data: Data?
+        if let json = string(key) {
+            data = json.data(using: .utf8)
+        } else {
+            data = SZSettings.propertyListValue(forKey: key) as? Data
+        }
+        guard let data else { return nil }
         return try? JSONDecoder().decode(ColumnLayout.self, from: data)
     }
 

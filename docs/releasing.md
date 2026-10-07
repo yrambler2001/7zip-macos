@@ -48,7 +48,8 @@ What the release workflow then does:
    steps (with the *Open Anyway* steps while the build is not notarized) and the SHA-256. The app's
    update check shows the release's first lines, so the changelog comes first. Re-running the job
    replaces the assets and the notes of the existing release.
-3. **tap**: if the secret `TAP_TOKEN` exists, rewrites `version` and `sha256` in
+3. **tap**: if the secret `TAP_TOKEN` exists, rewrites `version` and `sha256` (and nothing else, so
+   the cask's quarantine step is kept) in
    `Casks/7zip-macos.rb` of [yrambler2001/homebrew-tap](https://github.com/yrambler2001/homebrew-tap)
    (`Mac/scripts/update-cask.sh`) and pushes the commit. Without the secret the job only prints a
    notice; update the cask by hand then (below).
@@ -100,10 +101,13 @@ say so.
 
 ### Signing and notarization (later, with an Apple Developer ID)
 
-Until these secrets exist every release is ad-hoc signed, and users need *Open Anyway* after each
-install and update. Once they exist, the next tag is signed with the hardened runtime, notarized
-and stapled automatically; the release notes then leave out the *Open Anyway* steps. Remember to
-update the README's "First launch: Gatekeeper" section and the cask's caveats at the same time.
+Until these secrets exist every release is ad-hoc signed, and users of the disk image need *Open
+Anyway* after each install and update; the Homebrew cask removes the quarantine flag itself (its
+`postflight_steps`, the user's decision for 1.1.2), so Homebrew installs open directly. Once the
+secrets exist, the next tag is signed with the hardened runtime, notarized and stapled
+automatically; the release notes then leave out the *Open Anyway* steps. Remember to update the
+README's "First launch: Gatekeeper" section and the cask's caveats at the same time, and drop the
+cask's quarantine step, which a notarized app does not need.
 
 | Secret | Value |
 |---|---|

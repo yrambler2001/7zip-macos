@@ -93,7 +93,7 @@ public; every write posts the notifications of section 4.
 | `FM.TimestampShowUTC` | Bool | false | `timestampShowUTC` (not a Windows value) |
 | `FM.TimestampLevel` | Int | `SZTimestampLevel.min` (-1) | `timestampLevel` (not a Windows value) |
 | `FM.OptionsPage` | Int | 0 | `optionsLastPage` (not a Windows value: which Options tab to reopen) |
-| `FM.Theme` | String | absent = `system` | `Settings.theme: AppTheme` (`system` / `light` / `dark`; macOS only, Options > macOS, `Support/AppTheme.swift`; written -> `NSApp.appearance` at once) |
+| `FM.Theme` | String | absent = `light` (fix112; `system` before 1.1.2, stored as no key) | `Settings.theme: AppTheme` (`system` / `light` / `dark`, every choice stored; macOS only, Options > macOS, `Support/AppTheme.swift`; written -> `NSApp.appearance` at once) |
 | `FM.FirstLaunchIntegration` | Bool | absent | marker of `FirstLaunchIntegration` (macOS only: the first launch of an installed copy turned the Finder integration on) |
 | `FM.CheckUpdates` | Bool | absent = true | `Settings.checkUpdates` (macOS only, Options > macOS "Check for updates at startup", `Support/UpdateCheck.swift`, pub3) |
 | `FM.UpdateLastCheck` | Int | absent | `Settings.updateLastCheck: Date?` (seconds since 1970 of the last startup check; at most one per 24 h) |
@@ -280,4 +280,7 @@ falls back to 2200) and a "Show grid lines" checkbox bound to `FM.ShowGrid`, the
 Settings page's IDX_SETTINGS_SHOW_GRID 2505; the two checkboxes mirror each other through
 `OptionsGridLines.toggled` while the sheet is open. See `reports/theme.md`. Since pub3 it also has
 "Check for updates at startup" (control 9930, lang 9950, `FM.CheckUpdates`, default on; see
-`reports/pub3.md`).
+`reports/pub3.md`). Since fix112 it has the "Reset All Settings..." push button (control 9940, lang
+9960; the question is lang 9961), `Support/SettingsReset.swift`: Yes empties the active domain except
+`FM.FirstLaunchIntegration` and `FM.LaunchServicesStamp*`, suspends every later write
+(`SZSettings.writesSuspended`), and relaunches the bundle; see `reports/fix112.md`.
