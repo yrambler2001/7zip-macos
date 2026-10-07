@@ -5,7 +5,7 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
-## [1.0.0] — unreleased
+## [1.0.0] — 2026-10-07
 
 First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip 26.03 engine.
 
