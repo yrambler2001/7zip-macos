@@ -26,15 +26,10 @@ final class FinderIntegrationTests: SevenZipUITestCase {
 
     // MARK: - Helpers
 
-    /// The URL a Finder Sync menu item sends: `sevenzip:///run?argv=<base64url JSON array>`.
-    /// Built here by hand so the UI-test target needs no product sources.
+    /// The URL a Finder Sync menu item sends: `sevenzip:///run?argv=<base64url JSON array>` with
+    /// the app's secret (sec113, `TestShard.commandURL`).
     private func commandURL(_ argv: [String]) -> URL {
-        let data = try! JSONSerialization.data(withJSONObject: argv)
-        let blob = data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        return URL(string: "sevenzip:///run?argv=" + blob)!
+        TestShard.commandURL(argv)
     }
 
     /// Send the command to **this shard's** instance rather than to whichever registered copy
@@ -58,9 +53,10 @@ final class FinderIntegrationTests: SevenZipUITestCase {
     /// is E_ABORT: nothing is extracted and the app stays alive.
     func testExtractFilesCommandOpensTheExtractDialog() throws {
         launch()
+        // sec113: the menu's own shape on a copy, `-o` = "<archive's folder>/test/".
         let out = try makeOutputDirectory("extract")
-        XCTAssertTrue(send(["x", "-o" + out + "/", "-ad", "-an",
-                            "-aiw-!" + TestPaths.fixture("test.7z")]))
+        try FileManager.default.copyItem(atPath: TestPaths.fixture("test.7z"), toPath: out + "/test.7z")
+        XCTAssertTrue(send(["x", "-o" + out + "/test/", "-ad", "-an", "-aiw-!" + out + "/test.7z"]))
 
         guard let dialog = sevenZip.waitForDialog(title: "Extract", timeout: 25) else {
             return XCTFail("the Extract dialog did not appear")
@@ -68,16 +64,18 @@ final class FinderIntegrationTests: SevenZipUITestCase {
         screenshot("01-extract-dialog-from-finder-command")
         XCTAssertTrue(sevenZip.dismissDialog(dialog, button: "Cancel"))
         XCTAssertTrue(sevenZip.isRunning)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out), [])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: out), ["test.7z"])
     }
 
     /// B5 "Add to archive..." -> `a -i… -ad -saa -- "<dir><name>"` -> the Compress dialog.
     func testAddToArchiveCommandOpensTheCompressDialog() throws {
         launch()
-        let out = try makeOutputDirectory("compress")
+        // sec113: the menu's own shape -- several items are named after their folder, next to them.
+        // Cancelled below, so nothing is written there.
+        let folderName = (TestPaths.fixtures as NSString).lastPathComponent
         XCTAssertTrue(send(["a", "-iw-!" + TestPaths.fixture("test.zip"),
                             "-iw-!" + TestPaths.fixture("test.7z"),
-                            "-ad", "-saa", "--", out + "/Archive"]))
+                            "-ad", "-saa", "--", TestPaths.fixtures + "/" + folderName]))
 
         // The Compress window draws no visible title bar, so it is matched by one of its own
         // labels rather than by the window title (IDD_COMPRESS 4000 "Add to Archive").

@@ -141,7 +141,30 @@ public enum TestShard {
     public static func environment(for owner: String) -> [String: String] {
         ["SZ_TEST_SUPPORT": "1",
          "SZ_DISABLE_ANIMATIONS": "1",
-         "SZ_STATE_DIR": stateDirectory(for: owner)]
+         "SZ_STATE_DIR": stateDirectory(for: owner),
+         urlTokenVariable: urlToken]
+    }
+
+    /// sec113: the app runs a `sevenzip:///run` URL only with its secret. A test instance takes a
+    /// fixed one from its launch environment (`SZ_URL_TOKEN`, honoured only with
+    /// `SZ_TEST_SUPPORT=1`), because this sandboxed runner cannot read the app's domain.
+    public static let urlTokenVariable = "SZ_URL_TOKEN"
+    public static let urlToken = "5ec113" + String(repeating: "0123456789", count: 5) + "abcdefab"
+
+    /// `sevenzip:///run?argv=<base64url JSON>&token=<urlToken>` -- what the extensions send.
+    public static func commandURL(_ argv: [String], token: String? = urlToken) -> URL {
+        let data = try! JSONSerialization.data(withJSONObject: argv)
+        let blob = data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        var components = URLComponents()
+        components.scheme = "sevenzip"
+        components.host = ""
+        components.path = "/run"
+        components.queryItems = [URLQueryItem(name: "argv", value: blob)]
+            + (token.map { [URLQueryItem(name: "token", value: $0)] } ?? [])
+        return components.url!
     }
 
     // MARK: helpers

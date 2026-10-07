@@ -66,8 +66,8 @@ final class GModeTests: AppHostTestCase {
 
     /// Finder's "Add to archive..." command line for `one.txt` (FinderMenuModel, 03 §1.4 B5).
     private func addToArchiveURL() throws -> URL {
-        let argv = ["a", "-ad", "-saa", "-i!" + scratch + "/one.txt", "--", scratch + "/one"]
-        return try XCTUnwrap(CommandURL.url(argv: argv))
+        let argv = ["a", "-iw-!" + scratch + "/one.txt", "-ad", "-saa", "--", scratch + "/one"]
+        return try XCTUnwrap(CommandURL.url(argv: argv, token: URLCommandTokenStore.ensure()))
     }
 
     private func assertCentredOnWorkArea(_ window: NSWindow, file: StaticString = #filePath, line: UInt = #line) {
@@ -164,7 +164,8 @@ final class GModeTests: AppHostTestCase {
         GMode.resetForTesting(launchedForCommand: true)
         GMode.changesActivation = false
         GMode.terminate = { [weak self] in self?.quitRequests += 1 }
-        let url = try XCTUnwrap(CommandURL.url(argv: [TestPaths.fixture("test.7z")]))
+        let url = try XCTUnwrap(CommandURL.url(argv: [TestPaths.fixture("test.7z")],
+                                               token: URLCommandTokenStore.ensure()))
         delegate.application(NSApp, open: [url])
         XCTAssertEqual(MainWindows.controllers.count, before.count + 1, "Open archive must open one window")
         let window = try XCTUnwrap(MainWindows.controllers.last)
@@ -190,11 +191,12 @@ final class GModeTests: AppHostTestCase {
         panel.navigate(to: scratch)
         XCTAssertTrue(waitUntil("the panel lists one.txt") { panel.rows.contains { $0.name == "one.txt" } })
         // No dialog (no -ad): the progress window comes and goes by itself.
-        let url = try XCTUnwrap(CommandURL.url(argv: ["a", "-t7z", "-i!" + scratch + "/one.txt", "--",
-                                                      scratch + "/made.7z"]))
+        // B7 "Add to one.7z" (sec113: a URL must have the shape the menu builds, and the secret).
+        let url = try XCTUnwrap(CommandURL.url(argv: ["a", "-iw-!" + scratch + "/one.txt", "-t7z", "-sae", "--",
+                                                      scratch + "/one.7z"], token: URLCommandTokenStore.ensure()))
         delegate.application(NSApp, open: [url])
-        XCTAssertTrue(FileManager.default.fileExists(atPath: scratch + "/made.7z"))
-        XCTAssertTrue(waitUntil("the panel lists made.7z") { panel.rows.contains { $0.name == "made.7z" } })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: scratch + "/one.7z"))
+        XCTAssertTrue(waitUntil("the panel lists one.7z") { panel.rows.contains { $0.name == "one.7z" } })
         XCTAssertEqual(MainWindows.controllers.count, before.count)
     }
 

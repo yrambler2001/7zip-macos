@@ -24,8 +24,18 @@ import SevenZipKit
 
 enum URLCommandTokenStore {
 
-    /// The stored secret, nil when there is none or it is malformed.
+    /// `SZ_URL_TOKEN`: with `SZ_TEST_SUPPORT=1` only, a fixed secret the XCUITest harness sets
+    /// at launch, because the sandboxed test runner cannot read the app's domain. Whoever sets a
+    /// launch environment already runs code locally, so this opens nothing to a URL sender.
+    static let testEnvironmentVariable = "SZ_URL_TOKEN"
+
+    /// The secret, nil when there is none or it is malformed.
     static var current: String? {
+        if CommandURL.testSupportEnabled,
+           let fixed = CommandURL.environmentValue(testEnvironmentVariable),
+           URLCommandToken.isWellFormed(fixed) {
+            return fixed
+        }
         let value = Settings.string(URLCommandToken.settingsKey)
         return URLCommandToken.isWellFormed(value) ? value : nil
     }

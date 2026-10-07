@@ -175,7 +175,7 @@ decided up front (`00-orchestration.md`, `01 §9`, `03 §6`).
 | `#7zMap` shared-memory selection transport (`03 §1.5`) | `-aiw-!<path>` / `-aiw-@<listfile>` and a `sevenzip://` URL | no shared sections between a sandboxed appex and the app |
 | Recycle Bin (`01 §9 #9`) | `NSFileManager.trashItem`; Shift+Cmd+Backspace deletes permanently | — |
 | Registry `HKCU\Software\7-Zip` (`01b §5`) | `UserDefaults` with the same value names; the column layout as JSON | — |
-| `Zone.Identifier` alternate stream, `-snz` (`01 §9 #23`) | `com.apple.quarantine` with the same none/all/office policy | — |
+| `Zone.Identifier` alternate stream, `-snz` (`01 §9 #23`) | `com.apple.quarantine` with the same none/all/office policy; `Options.WriteZoneIdExtract` unset reads as **All** (sec113, 1.1.3), Windows reads it as No; Options ▸ 7-Zip marks Yes with the `*` | — |
 | OLE `IDataObject` / `CF_HDROP` (`01 §3.15`) | `NSDraggingSource` plus `NSFilePromiseProvider` and a private pasteboard type | — |
 | `SetPriorityClass(IDLE)` for Background (`01 §9 #16`) | `setpriority(PRIO_DARWIN_BG)` on the worker thread | — |
 | Shell "System" submenu and property sheet (`01 §2.8, §9 #10`) | Open With ▸, Show in Finder, Quick Look, Get Info — and the port's own Properties dialog | — |

@@ -54,14 +54,11 @@ final class TestSupportContractTests: SevenZipUITestCase {
             return XCTFail("the app does not implement the contract yet")
         }
         // A dialog opened without synthesized input: the URL command form of "Add to archive".
-        let argv = ["a", "-ad", "-saa", "-iw-!" + TestPaths.fixture("test.7z"),
-                    "--", TestPaths.artifacts + "/contract-archive"]
-        let data = try! JSONSerialization.data(withJSONObject: argv)
-        let blob = data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        XCTAssertTrue(sevenZip.open(URL(string: "sevenzip:///run?argv=" + blob)!))
+        // The menu's own shape, with the secret (sec113); the dialog is closed by the reset, so
+        // nothing is written next to the fixture.
+        let argv = ["a", "-iw-!" + TestPaths.fixture("test.7z"), "-ad", "-saa",
+                    "--", TestPaths.fixture("test")]
+        XCTAssertTrue(sevenZip.open(TestShard.commandURL(argv)))
         XCTAssertNotNil(sevenZip.waitForDialog(title: "Archive format:", timeout: 30),
                         "the Compress dialog did not open")
 

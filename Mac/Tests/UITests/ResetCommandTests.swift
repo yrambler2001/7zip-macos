@@ -51,7 +51,8 @@ final class ResetCommandTests: XCTestCase {
     /// exactly what the contract asks the app to honour.
     private func launchApp(testSupport: Bool = true, seed: [String: Any]? = nil) -> XCUIApplication {
         let application = XCUIApplication()
-        var environment = ["SZ_DISABLE_ANIMATIONS": "1", "SZ_STATE_DIR": stateDirectory.path]
+        var environment = ["SZ_DISABLE_ANIMATIONS": "1", "SZ_STATE_DIR": stateDirectory.path,
+                           TestShard.urlTokenVariable: TestShard.urlToken]
         if testSupport { environment["SZ_TEST_SUPPORT"] = "1" }
         if let seed {
             let path = scratch.appendingPathComponent("seed-launch.plist")
@@ -145,17 +146,7 @@ final class ResetCommandTests: XCTestCase {
     /// `sevenzip:///run?argv=<base64url JSON array>` -- the ordinary command route
     /// (`ai/api/finder.md` section 5), used here to start a long real operation.
     private func runURL(argv: [String]) -> URL {
-        let json = try! JSONSerialization.data(withJSONObject: argv)
-        let blob = json.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        var components = URLComponents()
-        components.scheme = "sevenzip"
-        components.host = ""
-        components.path = "/run"
-        components.queryItems = [URLQueryItem(name: "argv", value: blob)]
-        return components.url!
+        TestShard.commandURL(argv)      // with the secret the launch environment gave the app (sec113)
     }
 
     /// Polls `condition` on the main thread; XCUITest has no generic wait for a computed predicate.
@@ -292,7 +283,7 @@ final class ResetCommandTests: XCTestCase {
         }
         let generationBefore = publishedGeneration ?? -1
 
-        send(url: runURL(argv: ["h", "-scrcSHA256", "/Applications"]))
+        send(url: runURL(argv: ["h", "-scrcSHA256", "-iw-!/Applications"]))
         // IDD_PROGRESS 97 appears after the 500 ms creation delay. **It is an
         // `XCUIElement.ElementType.dialog`, not a `.window`**: measured, `app.windows.count` stays 1
         // while `app.dialogs.count` becomes 1, so a test that watches `app.windows` never sees the
@@ -385,7 +376,8 @@ final class ResetCommandTests: XCTestCase {
         func cycle(animationsDisabled: Bool, rounds: Int) -> [TimeInterval] {
             app?.terminate()
             let application = XCUIApplication()
-            var environment = ["SZ_TEST_SUPPORT": "1", "SZ_STATE_DIR": stateDirectory.path]
+            var environment = ["SZ_TEST_SUPPORT": "1", "SZ_STATE_DIR": stateDirectory.path,
+                               TestShard.urlTokenVariable: TestShard.urlToken]
             if animationsDisabled { environment["SZ_DISABLE_ANIMATIONS"] = "1" }
             application.launchEnvironment = environment
             if application.state != .notRunning {
@@ -399,7 +391,7 @@ final class ResetCommandTests: XCTestCase {
             var samples: [TimeInterval] = []
             for _ in 0..<rounds {
                 let started = Date()
-                send(url: runURL(argv: ["h", "-scrcCRC32", target]))
+                send(url: runURL(argv: ["h", "-scrcCRC32", "-iw-!" + target]))
                 guard waitFor(timeout: 20, { self.app.dialogs.count > 0 }) else {
                     XCTFail("no results dialog (animations disabled: \(animationsDisabled))")
                     return samples

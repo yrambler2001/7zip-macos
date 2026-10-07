@@ -199,18 +199,21 @@ enum FinderSettingsBridge {
         return out
     }
 
+    /// The file `push` writes: the settings plus, sec113, the URL secret, so an extension uses the
+    /// secret of the copy that last ran (`IntegrationSettings.urlToken`).
+    static func snapshotDictionary() -> [String: Any] {
+        var dictionary = snapshot().dictionary
+        if let token = URLCommandTokenStore.current { dictionary[URLCommandToken.settingsKey] = token }
+        return dictionary
+    }
+
     /// Writes the snapshot into every extension container that exists. Containers are created by
     /// the system the first time an extension runs, so a missing one is not an error -- the
     /// extension then falls back to reading the app's preferences domain directly.
     @discardableResult
     static func push() -> [String] {
-        let settings = snapshot()
-        // sec113: the URL secret travels with the snapshot, so an extension uses the secret of the
-        // copy that last ran (`IntegrationSettings.urlToken`).
-        var dictionary = settings.dictionary
-        if let token = URLCommandTokenStore.current { dictionary[URLCommandToken.settingsKey] = token }
         guard let data = try? PropertyListSerialization.data(
-            fromPropertyList: dictionary, format: .xml, options: 0) else { return [] }
+            fromPropertyList: snapshotDictionary(), format: .xml, options: 0) else { return [] }
         var written: [String] = []
         for bundleID in extensionBundleIDs {
             let url = IntegrationSettings.snapshotURL(forExtension: bundleID)
