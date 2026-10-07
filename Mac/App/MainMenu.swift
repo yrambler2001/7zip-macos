@@ -58,6 +58,7 @@ enum MainMenu {
         ExtractVerificationContext.installIfRequested()   // SZ_EXTRACT_CONTEXT: extract scope verification hook
         CompressDemo.installIfRequested()   // SZ_COMPRESS_DEMO: compress scope verification hook
         FinderIntegration.install()         // finder scope: Services provider, sevenzip:// URLs, 7zG argv
+        QuickLookIntegration.install()      // quicklook scope: the preview extension's election and settings
         PanelDragOutVerification.installIfRequested()   // SZ_POLISH_DRAGOUT: polish scope drag-out hook
         let bar = NSMenu(title: "MainMenu")
         bar.addItem(appMenu())

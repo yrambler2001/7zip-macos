@@ -22,6 +22,9 @@
 // Not touched: the user's files and archives, the temporary 7zO*/7zE* folders (the next launch's
 // `TempOpenJanitor` sweeps them as after any quit), and the Finder integration's PlugInKit state --
 // the Finder extension and the Quick Actions stay enabled or disabled exactly as they are.
+// quicklook: the Quick Look preview extension is the exception: its checkbox (Options > macOS) is a
+// setting with a default (on), so the reset elects it "use" again (`QuickLookExtensionControl`).
+// Its first-launch marker `FM.QuickLookFirstLaunch` is kept, like FM.FirstLaunchIntegration.
 //
 // Decision on the first-launch marker: `FM.FirstLaunchIntegration` is **kept**. Removing it would
 // make the next launch of an installed copy run `FirstLaunchIntegration` again, which re-elects the
@@ -38,7 +41,8 @@ enum SettingsReset {
     // MARK: - the decision (pure; SettingsResetTests and Fix112Tests drive it)
 
     /// Keys that survive a reset (see the file comment for why).
-    static let preservedKeys: Set<String> = [FirstLaunchIntegration.markerKey]
+    static let preservedKeys: Set<String> = [FirstLaunchIntegration.markerKey,
+                                             QuickLookExtensionControl.firstLaunchMarkerKey]
     static let preservedPrefixes = ["FM.LaunchServicesStamp"]
 
     static func isPreserved(_ key: String) -> Bool {
@@ -137,5 +141,9 @@ enum SettingsReset {
             try? FileManager.default.removeItem(atPath: path)
         }
         SZSettings.writesSuspended = true
+        // quicklook: "Quick Look preview for archives" is on by default, so a reset turns it back
+        // on (PlugInKit holds that state, not the domain). A no-op in test instances and in copies
+        // without the extension.
+        QuickLookExtensionControl.restoreDefault()
     }
 }

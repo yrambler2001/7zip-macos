@@ -14,6 +14,11 @@
 //                               (`OptionsGridLines.toggled`), and either page's Apply writes it.
 //   [x] Check for updates at startup  pub3: FM.CheckUpdates (default on), UpdateCheck.swift; lang
 //                               9950. Help > Check for Updates... checks whatever it says.
+//   [x] Quick Look preview for archives  quicklook: the preview extension's PlugInKit election
+//                               (`QuickLookExtensionControl`, default on), lang 9970. Read from
+//                               `pluginkit` when the page opens, written on Apply, exactly like
+//                               Options > 7-Zip's "Integrate 7-Zip to shell context menu"
+//                               (OptionsMenuPage). Disabled in a copy without the extension.
 //   [Reset All Settings...]     fix112: PUSHBUTTON, lang 9960. Asks (WinMessageBox, Yes / No, lang
 //                               9961), then empties the settings domain and restarts the app
 //                               (`SettingsReset`). Acts at once, not on Apply: the sheet's pending
@@ -54,6 +59,7 @@ final class OptionsMacPage: OptionsPageBase {
         static let showGrid = 9920          // checkbox, lang 2505 "Show &grid lines"
         static let checkUpdates = 9930      // checkbox, lang 9950 "Check for updates at startup" (pub3)
         static let resetAll = 9940          // PUSHBUTTON, lang 9960 "Reset All Settings..." (fix112)
+        static let quickLook = 9935         // checkbox, lang 9970 "Quick Look preview for archives" (quicklook)
     }
 
     /// The page template in DLUs, in the IDD_SETTINGS style (m = 8, rows from y 8).
@@ -62,7 +68,8 @@ final class OptionsMacPage: OptionsPageBase {
         RcControl(id: ID.themeCombo, kind: .comboList, x: 88, y: 8, width: 120, height: 64, text: ""),
         RcControl(id: ID.showGrid, kind: .check, x: 8, y: 30, width: 300, height: 10, text: "Show &grid lines"),
         RcControl(id: ID.checkUpdates, kind: .check, x: 8, y: 46, width: 300, height: 10, text: "Check for updates at startup"),
-        RcControl(id: ID.resetAll, kind: .push, x: 8, y: 66, width: 100, height: 14, text: "Reset All Settings..."),
+        RcControl(id: ID.quickLook, kind: .check, x: 8, y: 62, width: 300, height: 10, text: "Quick Look preview for archives"),
+        RcControl(id: ID.resetAll, kind: .push, x: 8, y: 82, width: 100, height: 14, text: "Reset All Settings..."),
     ])
 
     override var rc: RcDialog { RcDialog(template: Self.template) }
@@ -72,6 +79,12 @@ final class OptionsMacPage: OptionsPageBase {
     private(set) var gridBox: NSButton!
     private(set) var updatesBox: NSButton!
     private(set) var resetButton: NSButton!
+    private(set) var quickLookBox: NSButton!
+    /// The preview extension's state as `pluginkit` last reported it (nil while checking).
+    private(set) var quickLookState: QuickLookExtensionControl.State?
+    /// The appex this copy carries; nil disables the box. Tests inject a path.
+    var quickLookAppexPath: String? = QuickLookExtensionControl.embeddedAppexPath
+    private var quickLookChanged = false
     private var themeChanged = false
     private var gridChanged = false
     private var updatesChanged = false
@@ -102,6 +115,10 @@ final class OptionsMacPage: OptionsPageBase {
                                         self, #selector(updatesClicked(_:)))
         updatesBox.setAccessibilityIdentifier("optionsMacCheckUpdates")
         form.add(updatesBox, rc, ID.checkUpdates)
+        quickLookBox = OptionsUI.checkbox(PreviewLangID.checkbox, "Quick Look preview for archives",
+                                          self, #selector(quickLookClicked(_:)))
+        quickLookBox.setAccessibilityIdentifier("optionsMacQuickLook")
+        form.add(quickLookBox, rc, ID.quickLook)
         resetButton = NSButton(title: SettingsReset.buttonTitle, target: self, action: #selector(resetAllClicked(_:)))
         resetButton.bezelStyle = .rounded
         resetButton.setAccessibilityIdentifier("optionsMacResetAll")
@@ -122,7 +139,64 @@ final class OptionsMacPage: OptionsPageBase {
         themeChanged = false
         gridChanged = false
         updatesChanged = false
+        quickLookChanged = false
+        refreshQuickLookState()
         relabelPage()
+    }
+
+    // MARK: Quick Look (quicklook scope)
+
+    /// The box shows PlugInKit's state for this copy's extension (on unless elected ignore);
+    /// checked while unknown, which is the default.
+    func refreshQuickLookState(completion: (() -> Void)? = nil) {
+        let embedded = quickLookAppexPath
+        quickLookBox.isEnabled = embedded != nil
+        if !quickLookChanged { quickLookBox.state = embedded == nil ? .off : .on }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let state = QuickLookExtensionControl.currentState(embeddedPath: embedded)
+            DispatchQueue.main.async {
+                self?.showQuickLook(state)
+                completion?()
+            }
+        }
+    }
+
+    private func showQuickLook(_ state: QuickLookExtensionControl.State) {
+        quickLookState = state
+        quickLookBox.isEnabled = state != .notEmbedded
+        // A click that has not been applied yet wins over a late answer from pluginkit. A copy
+        // that is not registered yet (never launched from where it is) counts as on: its first
+        // launch registers it, and nothing has elected it off.
+        if !quickLookChanged {
+            let on: Bool
+            switch state {
+            case .enabled, .notRegistered: on = true
+            case .otherCopy(_, let enabled): on = enabled
+            case .disabled, .notEmbedded: on = false
+            }
+            quickLookBox.state = on ? .on : .off
+        }
+        quickLookBox.toolTip = QuickLookExtensionControl.describe(state)
+    }
+
+    @objc func quickLookClicked(_ sender: Any?) {
+        guard quickLookAppexPath != nil else { return }
+        quickLookChanged = true
+        changed()
+    }
+
+    /// Apply's PlugInKit half: elect use (claiming the registration) or ignore, off the main thread.
+    func applyQuickLook(completion: (() -> Void)? = nil) {
+        guard quickLookChanged, let embedded = quickLookAppexPath else { completion?(); return }
+        quickLookChanged = false
+        let wanted = quickLookBox.state == .on
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let state = QuickLookExtensionControl.setEnabled(wanted, embeddedPath: embedded)
+            DispatchQueue.main.async {
+                self?.showQuickLook(state)
+                completion?()
+            }
+        }
     }
 
     override func relabelPage() {
@@ -131,6 +205,7 @@ final class OptionsMacPage: OptionsPageBase {
         themePopup.needsDisplay = true
         gridBox.title = Lang.text(2505, "Show grid lines")
         updatesBox.title = UpdateCheck.checkAtStartupText
+        quickLookBox.title = Lang.text(PreviewLangID.checkbox, "Quick Look preview for archives")
         resetButton.title = SettingsReset.buttonTitle
     }
 
@@ -179,6 +254,13 @@ final class OptionsMacPage: OptionsPageBase {
             Settings.checkUpdates = updatesBox.state == .on
             updatesChanged = false
         }
+        applyQuickLook()
         return true
     }
+}
+
+/// quicklook: the checkbox's lang ID (macOS addition, the preview's block 9970-9979; the preview's
+/// own texts are `PreviewText.LangID` in Mac/QuickLook).
+enum PreviewLangID {
+    static let checkbox: UInt32 = 9970
 }

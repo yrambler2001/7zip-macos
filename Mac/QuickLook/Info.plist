@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>7-Zip Quick Look</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>QLIsDataBasedPreview</key>
+			<false/>
+			<key>QLSupportedContentTypes</key>
+			<array>
+				<string>org.7-zip.7-zip-archive</string>
+				<string>public.zip-archive</string>
+				<string>org.7-zip.rar-archive</string>
+				<string>org.7-zip.001-archive</string>
+				<string>com.microsoft.cab</string>
+				<string>public.iso-image</string>
+				<string>org.tukaani.xz-archive</string>
+				<string>org.tukaani.tar-xz-archive</string>
+				<string>org.7-zip.lzma-archive</string>
+				<string>public.tar-archive</string>
+				<string>public.cpio-archive</string>
+				<string>public.bzip2-archive</string>
+				<string>org.7-zip.bzip2-archive</string>
+				<string>public.tar-bzip2-archive</string>
+				<string>org.gnu.gnu-zip-archive</string>
+				<string>org.gnu.gnu-zip-tar-archive</string>
+				<string>org.7-zip.tpz-archive</string>
+				<string>org.7-zip.zst-archive</string>
+				<string>org.7-zip.tzst-archive</string>
+				<string>public.z-archive</string>
+				<string>org.7-zip.taz-archive</string>
+				<string>org.7-zip.lzh-archive</string>
+				<string>org.7-zip.lha-archive</string>
+				<string>org.7-zip.rpm-archive</string>
+				<string>org.7-zip.deb-archive</string>
+				<string>org.7-zip.arj-archive</string>
+				<string>org.7-zip.vhd-archive</string>
+				<string>org.7-zip.vhdx-archive</string>
+				<string>org.7-zip.wim-archive</string>
+				<string>org.7-zip.swm-archive</string>
+				<string>org.7-zip.esd-archive</string>
+				<string>org.7-zip.fat-archive</string>
+				<string>org.7-zip.ntfs-archive</string>
+				<string>com.apple.disk-image-udif</string>
+				<string>org.7-zip.hfs-archive</string>
+				<string>com.apple.xar-archive</string>
+				<string>org.7-zip.squashfs-archive</string>
+				<string>org.7-zip.apfs-archive</string>
+			</array>
+			<key>QLSupportsSearchableItems</key>
+			<false/>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.quicklook.preview</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).PreviewViewController</string>
+	</dict>
+	<key>NSHumanReadableCopyright</key>
+	<string>7-Zip Copyright (c) 1999-2026 Igor Pavlov. macOS port © 2026 Yurii Synyshyn (yrambler2001).</string>
+</dict>
+</plist>
