@@ -1,0 +1,184 @@
+# CI for the macOS port: hygiene, a universal build and disk image, the unit tests on both slices
+# (natively on arm64 and under Rosetta 2 on x86_64), and the app-hosted tests. The XCUITest suites
+# are local only (docs/testing.md): they need a GUI session nobody else uses and granted permissions.
+# How CI relates to releases: docs/releasing.md.
+#
+# Actions are pinned by full commit SHA, with the release tag in a comment. A tag can be moved by
+# whoever controls the action's repository; a SHA cannot, so a compromised or re-tagged action
+# cannot run new code here unseen. Only first-party actions (actions/*) are used. Dependabot or a
+# manual bump updates SHA and comment together.
+name: CI
+
+on:
+  push:
+    branches: [macos]
+  pull_request:
+    branches: [macos]
+  workflow_dispatch:
+
+# A newer push to the same branch or pull request makes the running CI pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Not a distributed build: the run number is enough for CFBundleVersion and needs no git history
+  # (version.sh would otherwise count the commits of a shallow clone).
+  BUILD_NUMBER: ${{ github.run_number }}
+  # Xcode 26 compilation caching: compiler outputs are stored by the hash of their exact inputs
+  # (sources, headers, flags, compiler), so a restored cache can only ever return an output for an
+  # identical compilation. That is what makes caching safe here, unlike caching DerivedData's build
+  # products, which Xcode re-validates by file mtime and which a fresh checkout makes stale anyway.
+  # Measured locally: universal Release from scratch 110 s, with the cache restored 18 s.
+  XCODEBUILD_EXTRA: COMPILATION_CACHE_ENABLE_CACHING=YES
+  CACHE_VERSION: v1   # bump to drop every compilation cache at once
+
+jobs:
+  hygiene:
+    name: Hygiene (links, paths, icons, versions)
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+      - name: Repository hygiene (screenshots, personal paths, warnings-as-errors, version, changelog)
+        run: Mac/scripts/check-hygiene.sh
+      - name: Relative Markdown links
+        run: Mac/scripts/check-links.sh
+      - name: Icons are regenerated from the upstream .ico files and match what is committed
+        run: |
+          Mac/scripts/make-icons.sh
+          if ! git diff --quiet -- Mac/Resources || [ -n "$(git status --porcelain --untracked-files=all -- Mac/Resources)" ]; then
+            echo "::error::Mac/scripts/make-icons.sh changed the committed icons; run it and commit the result."
+            git status --short -- Mac/Resources
+            exit 1
+          fi
+
+  build:
+    name: Build (universal Debug + Release, disk image)
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+      - name: Restore the compilation cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: Mac/build/DerivedData/CompilationCache.noindex
+          key: cc-${{ env.CACHE_VERSION }}-build-${{ runner.arch }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('C/**', 'CPP/**', 'Asm/**', 'Mac/**') }}
+          restore-keys: |
+            cc-${{ env.CACHE_VERSION }}-build-${{ runner.arch }}-${{ env.DEVELOPER_DIR }}-
+      - name: Debug, both slices
+        run: |
+          XCODEBUILD_EXTRA="$XCODEBUILD_EXTRA ONLY_ACTIVE_ARCH=NO" Mac/scripts/build.sh Debug
+          bin=Mac/build/Debug/7-Zip.app/Contents/MacOS/7-Zip
+          lipo -info "$bin"
+          lipo "$bin" -verify_arch arm64 x86_64
+      - name: Release, universal, packaged (package.sh checks every Mach-O for both slices)
+        run: Mac/scripts/package.sh
+      - name: No warnings in the port's code
+        run: Mac/scripts/check-hygiene.sh --build-log Mac/build/build-Debug.log --build-log Mac/build/build-Release.log
+      - name: Keep the compilation cache bounded
+        if: always()
+        run: Mac/scripts/ci-trim-cache.sh Mac/build/DerivedData/CompilationCache.noindex
+      - name: Upload the disk image
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: dmg-${{ github.run_number }}
+          path: Mac/build/*.dmg
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload the build logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: build-logs-${{ github.run_number }}
+          path: Mac/build/*.log
+          retention-days: 7
+
+  unit:
+    name: Unit tests (${{ matrix.arch }})
+    runs-on: macos-26   # Apple silicon; x86_64 runs the Intel slice under Rosetta 2, which the image has
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            derived: Mac/build/DerivedData
+          - arch: x86_64
+            derived: Mac/build/DerivedData-x86_64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+      - name: Restore the compilation cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ matrix.derived }}/CompilationCache.noindex
+          key: cc-${{ env.CACHE_VERSION }}-unit-${{ matrix.arch }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('C/**', 'CPP/**', 'Asm/**', 'Mac/**') }}
+          restore-keys: |
+            cc-${{ env.CACHE_VERSION }}-unit-${{ matrix.arch }}-${{ env.DEVELOPER_DIR }}-
+      - name: SevenZipKitTests on ${{ matrix.arch }}
+        run: Mac/scripts/test.sh -A "${{ matrix.arch }}"
+      - name: No warnings in the port's code
+        run: Mac/scripts/check-hygiene.sh --build-log Mac/build/test-SevenZipKitTests.log
+      - name: Keep the compilation cache bounded
+        if: always()
+        run: Mac/scripts/ci-trim-cache.sh "${{ matrix.derived }}/CompilationCache.noindex"
+      - name: Upload the test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: unit-${{ matrix.arch }}-${{ github.run_number }}
+          path: |
+            Mac/build/*.log
+            Mac/build/*.xcresult
+          retention-days: 7
+
+  # The app-hosted tests (SevenZipAppTests) run XCTest inside the real app, with windows, menus and
+  # dialogs, but no synthesized input. Hosted macOS runners do have a logged-in GUI session, so they
+  # run; but they render real windows on a shared virtual display whose scale and fonts we do not
+  # control, and a few compare pixels. Until they have proven stable there, a failure here is
+  # reported (the job shows red with a warning) without failing the workflow. Local runs remain
+  # the reference: Mac/scripts/test.sh -H.
+  app-hosted:
+    name: App-hosted tests (informational)
+    runs-on: macos-26
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+      - name: Restore the compilation cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: Mac/build/DerivedData/CompilationCache.noindex
+          key: cc-${{ env.CACHE_VERSION }}-hosted-${{ runner.arch }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('C/**', 'CPP/**', 'Asm/**', 'Mac/**') }}
+          restore-keys: |
+            cc-${{ env.CACHE_VERSION }}-hosted-${{ runner.arch }}-${{ env.DEVELOPER_DIR }}-
+      - name: SevenZipAppTests
+        run: Mac/scripts/test.sh -H
+      - name: Keep the compilation cache bounded
+        if: always()
+        run: Mac/scripts/ci-trim-cache.sh Mac/build/DerivedData/CompilationCache.noindex
+      - name: Upload the test results
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: app-hosted-${{ github.run_number }}
+          path: |
+            Mac/build/*.log
+            Mac/build/*.xcresult
+            Mac/build/screenshots/
+          retention-days: 7

@@ -1,0 +1,11 @@
+# Keeps the SHA-pinned actions in .github/workflows current: Dependabot opens a pull request that
+# updates the SHA and its "# vX.Y.Z" comment together (docs/releasing.md, "Pinned actions").
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
