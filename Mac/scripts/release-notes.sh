@@ -68,9 +68,10 @@ MD
 else
   cat <<'MD'
 
-**Gatekeeper:** this build is ad-hoc signed, not notarized, so macOS blocks its first launch — after
-every install and every update. Open 7-Zip once and dismiss the warning, then click **Open Anyway**
-in **System Settings ▸ Privacy & Security** and confirm. Details:
+**Gatekeeper:** this build is ad-hoc signed, not notarized. The Homebrew cask removes the quarantine
+flag after installing, so a Homebrew install opens directly. From the disk image macOS blocks the
+first launch after every install and every update: open 7-Zip once and dismiss the warning, then
+click **Open Anyway** in **System Settings ▸ Privacy & Security** and confirm. Details:
 [First launch: Gatekeeper](https://github.com/yrambler2001/7zip-macos#first-launch-gatekeeper).
 MD
 fi
