@@ -25,6 +25,13 @@ enum PanelSorting {
         return (tapped, !startsDescending(tapped))
     }
 
+    /// Whether every engine row of `rows` names an item of a folder holding `itemCount` items, so
+    /// `IFolderCompare::CompareItems` may be asked about them. The ".." row (Show "..") is not an
+    /// engine item and never reaches the comparator (fix112).
+    static func engineIndicesAreValid(_ rows: [PanelRow], itemCount: Int) -> Bool {
+        rows.allSatisfy { $0.isParentRow || $0.engineIndex < itemCount }
+    }
+
     /// CompareItems2 (PanelSort.cpp:98-177). `folderCompare` is `IFolderCompare::CompareItems`
     /// when the folder implements it (archive folders do), else nil.
     ///
@@ -275,7 +282,8 @@ struct PanelColumnsModel {
                       let index = built.firstIndex(where: { $0.propID == pid }) else { continue }
                 var column = built.remove(at: index)
                 column.visible = column.isName ? true : stored.visible
-                column.width = max(24, stored.width)
+                // fix112: a width outside what a header can show (0, negative, absurd) is clamped
+                column.width = min(max(24, stored.width), Self.maxWidth)
                 // A time column still at the old 100 px default (saved before sffont) would cut
                 // the date in SF Pro: it gets the new default; so does one at another level's
                 // default (datecols). A size column at the old 100 px gets the size default.
@@ -327,9 +335,12 @@ struct PanelColumnsModel {
         columns[index].visible = visible
     }
 
+    /// The widest a stored column may come back (fix112: sanitised on load).
+    static let maxWidth = 4000
+
     mutating func setWidth(_ width: Int, propID: SZPropID) {
         guard let index = columns.firstIndex(where: { $0.propID == propID }) else { return }
-        columns[index].width = max(24, width)
+        columns[index].width = min(max(24, width), Self.maxWidth)
     }
 
     /// Reorders to `order` (the PROPIDs left to right after a header drag).
