@@ -20,6 +20,13 @@ is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
   by default and Reset All Settings turns it back on. The document icons Finder shows are
   unchanged.
 
+### Fixed
+
+- After an update that replaces 7-Zip in place (`brew upgrade`, dragging a new copy over the old
+  one), the Finder menu, the two Quick Actions and the Quick Look preview could disappear until
+  they were switched on again. 7-Zip now registers its missing extensions at launch. It never
+  switches one on that you turned off.
+
 ## [1.1.3] — 2026-10-07
 
 7-Zip 26.04 for macOS 1.1.3: security hardening of the Finder integration.

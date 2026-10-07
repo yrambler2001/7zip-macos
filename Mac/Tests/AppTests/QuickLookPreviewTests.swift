@@ -359,6 +359,44 @@ final class QuickLookPreviewTests: AppHostTestCase {
         XCTAssertEqual(action(embedded: false), .none)
     }
 
+    // MARK: - re-registration at launch (Finder Sync, both Quick Actions, Quick Look)
+
+    func testLaunchRegistrationDecision() {
+        typealias F = FinderExtensionControl
+        let mine = "/Applications/7-Zip.app/Contents/PlugIns/FinderSync.appex"
+        XCTAssertEqual(F.launchRegistration(active: nil, embeddedPath: mine), .register, "missing: register")
+        for election: Character in ["+", " ", "-", "!"] {
+            XCTAssertEqual(F.launchRegistration(active: .init(election: election, version: "1", path: mine), embeddedPath: mine),
+                           .leave, "present (\(election)): nothing")
+        }
+        XCTAssertEqual(F.launchRegistration(active: .init(election: "+", version: "1", path: "/Volumes/7-Zip/7-Zip.app/Contents/PlugIns/FinderSync.appex"),
+                                            embeddedPath: mine), .takeOver)
+    }
+
+    /// Missing: `-a` only, never an election. Present -- elected use, or ignored by the user: no
+    /// call besides the query, so an "ignore" is never flipped.
+    func testRegisterAtLaunchNeverElects() {
+        let ids = FinderExtensionControl.finderExtensions.map(\.identifier) + [QuickLookExtensionControl.identifier]
+        XCTAssertEqual(ids, ["com.yrambler2001.7zip.FinderSync", "com.yrambler2001.7zip.QuickActionExtract",
+                             "com.yrambler2001.7zip.QuickActionCompress", "com.yrambler2001.7zip.QuickLook"])
+        for id in ids {
+            let name = id.components(separatedBy: ".").last! + ".appex"
+            let path = "/Applications/7-Zip.app/Contents/PlugIns/" + name
+            var line: String? = nil
+            let calls = stubPluginKit { line }
+            XCTAssertEqual(FinderExtensionControl.registerAtLaunch(identifier: id, embeddedPath: path), .register)
+            XCTAssertTrue(calls().contains(["-a", path]), "\(id): \(calls())")
+            XCTAssertFalse(calls().contains { $0.first == "-e" }, "\(id): no election")
+
+            for election: Character in ["-", "+"] {
+                line = "\(election)    \(id)(1.2.0)\tX\t2026\t\(path)"
+                let before = calls().count
+                XCTAssertEqual(FinderExtensionControl.registerAtLaunch(identifier: id, embeddedPath: path), .leave)
+                XCTAssertEqual(Array(calls()[before...]), [["-m", "-v", "-i", id]], "\(id) \(election): only the query")
+            }
+        }
+    }
+
     /// The snapshot the app pushes carries the four display settings, from the app's own values.
     func testSnapshotCarriesTheDisplaySettings() {
         let saved = Settings.theme

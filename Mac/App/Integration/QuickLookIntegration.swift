@@ -161,7 +161,7 @@ enum QuickLookExtensionControl {
             Settings.setBool(true, firstLaunchMarkerKey)
             Settings.synchronize()
         }
-        DispatchQueue.global(qos: .utility).async {
+        FinderExtensionControl.launchQueue.async {
             switch action {
             case .enable:
                 setEnabled(true, embeddedPath: embedded)
@@ -169,10 +169,7 @@ enum QuickLookExtensionControl {
                 // Another copy's registration, or none at all (a copy replaced in place after a
                 // `pluginkit -r` of its path, measured: Launch Services does not bring it back):
                 // register this one. The election is left alone.
-                switch currentState(embeddedPath: embedded) {
-                case .otherCopy, .notRegistered: claim(embeddedPath: embedded)
-                default: break
-                }
+                FinderExtensionControl.registerAtLaunch(identifier: identifier, embeddedPath: embedded)
             case .none:
                 break
             }
