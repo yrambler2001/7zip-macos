@@ -174,6 +174,10 @@ enum QuickLookExtensionControl {
                 break
             }
         }
+        // The second look after an in-place replacement (FinderExtensionControl.claimAtLaunchIfNeeded).
+        FinderExtensionControl.launchQueue.asyncAfter(deadline: .now() + FinderExtensionControl.secondLookDelay) {
+            FinderExtensionControl.registerAtLaunch(identifier: identifier, embeddedPath: embedded)
+        }
     }
 }
 

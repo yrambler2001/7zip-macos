@@ -68,8 +68,11 @@ pipe that the tar handler reads sequentially), so nothing is ever extracted. `Ar
 draws it with the panel's own code (`Formatting`, `PanelArchiveIcons`, `ListFontChoice`,
 `WinChrome`). The extension's only entitlement is the sandbox; the app pushes the language, theme
 and time format into its container (`QuickLookPreferences`). Options ▸ macOS switches it through
-PlugInKit (`QuickLookExtensionControl`), like the Finder extension. "Open in 7-Zip" opens the file
-with the containing app through Launch Services, not through `sevenzip://`.
+PlugInKit (`QuickLookExtensionControl`), like the Finder extension. The preview has no title or
+button of its own: Quick Look's title bar names the file and opens it with 7-Zip. Every custom
+`draw(_:)` fills its bounds, never the dirty rect — with the macOS 14 SDK views do not clip to their
+bounds, and in the Quick Look host a 1 pt line asked to draw 820 x 560 painted over the 1.2.0
+summary. Debug builds can snapshot the preview inside the real host (`PreviewDebugSnapshot`).
 
 ### Command URLs
 

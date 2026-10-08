@@ -1,16 +1,16 @@
 // ArchivePreviewView.swift -- the Quick Look preview of an archive, drawn like 7zFM (quicklook
 // scope, a macOS addition: 7zFM has no shell preview handler).
 //
-//   +--------------------------------------------------------------+
-//   | [32px icon] test.7z                          [Open in 7-Zip] |  band, COLOR_BTNFACE
-//   | Type: 7z          Method: LZMA2:12      Solid: +             |  the Properties block
-//   | Folders: 2        Files: 4              Size: 3 045 ...      |  (01 §3.11)
-//   | (!) ... and 12 345 more -- open in 7-Zip                     |  a notice, when there is one
-//   +--------------------------------------------------------------+
-//   | Name                    |      Size | Packed Size | Modified |  SysHeader32, 24 px
-//   | > [] sub                |     3 010 |             | 2024-... |  rows 19 px, 16 px icons
-//   |   [] readme.txt         |        12 |         150 | 2024-... |
-//   +--------------------------------------------------------------+
+//   7z · LZMA2:12 · Solid · Folders: 2 · Files: 4 · 3 043 -> 296 bytes (10%)   the summary line
+//   (!) ...and 12 345 more -- open in 7-Zip                                  a note, when needed
+//   ---------------------------------------------------------------------- hairline
+//   | Name                    |      Size | Packed Size | Modified |          SysHeader32, 24 px
+//   | > [] sub                |     3 010 |             | 2024-... |          rows 19 px, 16 px icons
+//
+// Quick Look's own title bar already names the file and offers "Open with 7-Zip", so the preview
+// has no title, icon or button of its own (qlfix): one summary line in the terms of 7zFM's
+// Properties (01 §3.11) on the list's own background, a note line when there is something to say,
+// a hairline, then the list.
 //
 // The list is the panel's Details view in miniature (01 §3.2 / §3.12, reports/listfeel.md): the
 // same 19 pt rows and 24 pt header, the same font (SF Pro 12.2, `ListFontChoice`; tabular digits
@@ -22,8 +22,15 @@
 // panel does differently (it enters a folder instead), because a preview cannot navigate.
 //
 // Light and dark: the view follows the app's theme when the app has pushed it
-// (`QuickLookPreferences`), else the system's appearance, which is also what Quick Look's own
-// window follows. Every colour is dynamic, so either way works.
+// (`QuickLookPreferences`), else the system's appearance. Every colour is dynamic.
+//
+// Drawing rule (qlfix): every custom `draw(_:)` here fills its *bounds*, never `dirtyRect`. With the
+// macOS 14 SDK a view does not clip to its bounds (`clipsToBounds` is false) and AppKit may hand it
+// a dirty rect far larger than itself, backing the overflow with an extra layer: in the real Quick
+// Look host the 1 pt hairline under the 1.2.0 summary band was asked to draw an 820 x 560 rect and
+// painted its grey over the whole band (its overflow layer sat above the band's labels and below
+// the list), which is the empty grey block users saw. App-hosted cacheDisplay renders never showed
+// it.
 
 import AppKit
 import SevenZipKit
@@ -71,10 +78,10 @@ enum PreviewMetrics {
 
 /// The texts (lang IDs: the panel's column names 1000 + kpid, 01 §7.2; macOS additions from 9970,
 /// next to the theme's 9900s and Reset's 9960s, so a translator can add them to a Lang/*.txt).
+/// 9971 ("Open in 7-Zip", 1.2.0) is retired with the button: Quick Look's title bar has its own.
 enum PreviewText {
     enum LangID {
         static let checkbox: UInt32 = 9970        // Options > macOS: "Quick Look preview for archives"
-        static let openInApp: UInt32 = 9971       // the button
         static let encrypted: UInt32 = 9972
         static let more: UInt32 = 9973
         static let stopped: UInt32 = 9974
@@ -83,7 +90,6 @@ enum PreviewText {
         static let volumeFailed: UInt32 = 9977
     }
 
-    static var openInApp: String { Lang.text(LangID.openInApp, "Open in 7-Zip") }
     static var encrypted: String {
         Lang.text(LangID.encrypted, "Encrypted archive \u{2014} open in 7-Zip to enter the password")
     }
@@ -106,72 +112,68 @@ enum PreviewText {
     static func cannotOpen(_ name: String) -> String {
         Lang.format(Lang.text(3005, "Cannot open file '{0}' as archive"), name)
     }
+    /// IDS_FILE_SIZE 3504, "{0} bytes".
+    static func bytes(_ text: String) -> String { Lang.format(Lang.get(3504, "{0} bytes"), text) }
 
     /// A Properties label: the property's name (1000 + kpid).
     static func property(_ id: SZPropID, _ fallback: String) -> String { Lang.text(1000 + id.rawValue, fallback) }
-    /// "Compression ratio:" (IDT_PROGRESS_RATIO, 3905) without its colon.
-    static var ratio: String {
-        var text = Lang.text(3905, "Compression ratio:")
-        while text.hasSuffix(":") || text.hasSuffix("\u{FF1A}") || text.hasSuffix(" ") { text.removeLast() }
-        return text
-    }
-    /// VT_BOOL as ConvertPropertyToString shows it.
-    static func flag(_ value: Bool) -> String { value ? "+" : "-" }
 }
 
-/// The summary's label / value pairs, in the Properties dialog's order (01 §3.11): the item sums
-/// first, then the archive level's Type, Method, Solid, Blocks, Encrypted, Volumes, Physical Size.
-enum PreviewSummaryRows {
-    static func rows(for summary: ArchivePreviewSummary, status: ArchivePreviewStatus) -> [(String, String)] {
-        var rows: [(String, String)] = []
-        if !summary.types.isEmpty { rows.append((PreviewText.property(.type, "Type"), summary.typeText)) }
-        if let method = summary.method { rows.append((PreviewText.property(.method, "Method"), method)) }
-        if let solid = summary.solid { rows.append((PreviewText.property(.solid, "Solid"), PreviewText.flag(solid))) }
+/// The summary line and the note under it.
+enum PreviewSummaryLine {
+
+    static let separator = " \u{00B7} "
+
+    /// "7z · LZMA2:12 · Solid · Folders: 2 · Files: 4 · 3 043 → 296 bytes (10%)": the archive
+    /// level's Type, Method, Solid, Encrypted, Volumes, then the item sums Folders, Files, Size and
+    /// Packed Size (01 §3.11's Properties terms, the app's number grouping).
+    static func text(for summary: ArchivePreviewSummary, status: ArchivePreviewStatus) -> String {
+        var parts: [String] = []
+        if !summary.types.isEmpty { parts.append(summary.typeText) }
+        if let method = summary.method { parts.append(method) }
+        if summary.solid == true { parts.append(PreviewText.property(.solid, "Solid")) }
         if let blocks = summary.blocks, blocks > 1 {
-            rows.append((PreviewText.property(.numBlocks, "Blocks"), Formatting.size(blocks)))
+            parts.append(PreviewText.property(.numBlocks, "Blocks") + ": " + Formatting.size(blocks))
         }
-        if summary.encrypted || summary.headersEncrypted {
-            rows.append((PreviewText.property(.encrypted, "Encrypted"), PreviewText.flag(true)))
-        }
+        if summary.encrypted || summary.headersEncrypted { parts.append(PreviewText.property(.encrypted, "Encrypted")) }
         if summary.multiVolume {
             if let n = summary.numVolumes {
-                rows.append((PreviewText.property(.numVolumes, "Volumes"), Formatting.size(n)))
+                parts.append(PreviewText.property(.numVolumes, "Volumes") + ": " + Formatting.size(n))
             } else {
-                rows.append((PreviewText.property(.isVolume, "Multivolume"), PreviewText.flag(true)))
+                parts.append(PreviewText.property(.isVolume, "Multivolume"))
             }
         }
-        let listed: Bool
         switch status {
-        case .encrypted, .failed, .cancelled: listed = false
-        default: listed = true
-        }
-        if listed {
-            rows.append((PreviewText.property(.numSubDirs, "Folders"), Formatting.size(UInt64(summary.folders))))
-            rows.append((PreviewText.property(.numSubFiles, "Files"), Formatting.size(UInt64(summary.files))))
-            if let size = summary.size { rows.append((PreviewText.property(.size, "Size"), Formatting.size(size))) }
-            if let packed = summary.packedSize {
-                rows.append((PreviewText.property(.packSize, "Packed Size"), Formatting.size(packed)))
+        case .encrypted, .failed, .cancelled:
+            if let phy = summary.physicalSize { parts.append(PreviewText.bytes(Formatting.size(phy))) }
+        default:
+            if summary.folders > 0 {
+                parts.append(PreviewText.property(.numSubDirs, "Folders") + ": " + Formatting.size(UInt64(summary.folders)))
+            }
+            parts.append(PreviewText.property(.numSubFiles, "Files") + ": " + Formatting.size(UInt64(summary.files)))
+            if let size = summary.size {
+                var sizes = Formatting.size(size)
+                if let packed = summary.packedSize ?? summary.physicalSize { sizes += " \u{2192} " + Formatting.size(packed) }
+                var text = PreviewText.bytes(sizes)
+                if let ratio = summary.ratioPercent { text += " (\(ratio)%)" }
+                parts.append(text)
+            } else if let phy = summary.physicalSize {
+                parts.append(PreviewText.bytes(Formatting.size(phy)))
             }
         }
-        if let phy = summary.physicalSize {
-            rows.append((PreviewText.property(.phySize, "Physical Size"), Formatting.size(phy)))
-        }
-        if listed, let ratio = summary.ratioPercent { rows.append((PreviewText.ratio, "\(ratio)%")) }
-        if let comment = summary.comment {
-            rows.append((PreviewText.property(.comment, "Comment"), ArchivePreviewBuilder.oneLine(comment)))
-        }
-        return rows
+        if let comment = summary.comment { parts.append(ArchivePreviewBuilder.oneLine(comment)) }
+        return parts.joined(separator: separator)
     }
 
-    /// The notice under the summary (nil: none); `prominent` = there is no list to show.
-    static func notice(for preview: ArchivePreview) -> (text: String, prominent: Bool)? {
+    /// The note (nil: none); `listless` = there is no list to show under it.
+    static func notice(for preview: ArchivePreview) -> (text: String, listless: Bool)? {
         switch preview.status {
         case .encrypted:
             return (PreviewText.encrypted, true)
         case .failed(let message):
+            if preview.summary.multiVolume { return (PreviewText.volumeFailed, true) }
             var text = PreviewText.cannotOpen(preview.summary.fileName)
-            if preview.summary.multiVolume { text = PreviewText.volumeFailed }
-            else if !message.isEmpty { text += "\n" + message }
+            if !message.isEmpty { text += " \u{2014} " + ArchivePreviewBuilder.oneLine(message) }
             return (text, true)
         case .cancelled:
             return nil
@@ -191,26 +193,20 @@ enum PreviewSummaryRows {
 
 final class ArchivePreviewView: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate {
 
-    /// Opens the archive in the containing app (the button). Replaced by the tests.
-    static var openInApp: (URL) -> Void = ArchivePreviewView.openInContainingApp
-
     private(set) var preview: ArchivePreview?
     private(set) var fileURL: URL?
 
-    let band = PreviewFillView(color: WinChrome.face)
-    let iconView = NSImageView()
-    let titleField = NSTextField(labelWithString: "")
-    let openButton = NSButton(title: "", target: nil, action: nil)
-    let summaryGrid = NSGridView()
+    /// The summary line, on the list's background.
+    let summaryField = NSTextField(labelWithString: "")
     let noticeIcon = NSImageView()
     let noticeField = NSTextField(wrappingLabelWithString: "")
-    let bandLine = PreviewFillView(color: WinChrome.listBorder)
+    /// The hairline between the summary and the header (the header's own divider grey).
+    let hairline = PreviewFillView(color: PreviewHeaderCell.divider)
     let outlineView = PreviewOutlineView()
     let scrollView = NSScrollView()
-    let centerMessage = NSTextField(wrappingLabelWithString: "")
-    let centerIcon = NSImageView()
 
     override var isFlipped: Bool { true }
+    override var isOpaque: Bool { true }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -219,46 +215,30 @@ final class ArchivePreviewView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    override func draw(_ dirtyRect: NSRect) {
+        WinChrome.window.setFill()
+        bounds.fill()
+    }
+
     private func build() {
-        addSubview(band)
-        addSubview(bandLine)
+        addSubview(summaryField)
+        addSubview(noticeIcon)
+        addSubview(noticeField)
+        addSubview(hairline)
         addSubview(scrollView)
-        addSubview(centerIcon)
-        addSubview(centerMessage)
-        band.addSubview(iconView)
-        band.addSubview(titleField)
-        band.addSubview(openButton)
-        band.addSubview(summaryGrid)
-        band.addSubview(noticeIcon)
-        band.addSubview(noticeField)
 
-        iconView.imageScaling = .scaleNone
-        titleField.font = PreviewMetrics.boldFont
-        titleField.textColor = WinChrome.text
-        titleField.lineBreakMode = .byTruncatingMiddle
-        titleField.setAccessibilityIdentifier("quickLookTitle")
-
-        openButton.bezelStyle = .rounded
-        openButton.font = PreviewMetrics.font
-        openButton.title = PreviewText.openInApp
-        openButton.target = self
-        openButton.action = #selector(openClicked(_:))
-        openButton.setAccessibilityIdentifier("quickLookOpenInApp")
-
-        summaryGrid.rowSpacing = 0
-        summaryGrid.columnSpacing = 6
-        summaryGrid.yPlacement = .center
+        summaryField.font = PreviewMetrics.digitsFont
+        summaryField.textColor = WinChrome.text
+        summaryField.lineBreakMode = .byTruncatingTail
+        summaryField.cell?.truncatesLastVisibleLine = true
+        summaryField.setAccessibilityIdentifier("quickLookSummary")
 
         noticeIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
         noticeIcon.contentTintColor = .systemOrange
+        noticeIcon.imageScaling = .scaleProportionallyDown
         noticeField.font = PreviewMetrics.font
         noticeField.textColor = WinChrome.text
         noticeField.setAccessibilityIdentifier("quickLookNotice")
-        centerMessage.font = PreviewMetrics.font
-        centerMessage.textColor = WinChrome.text
-        centerMessage.alignment = .center
-        centerMessage.setAccessibilityIdentifier("quickLookMessage")
-        centerIcon.imageScaling = .scaleProportionallyUpOrDown
 
         configureOutline()
     }
@@ -333,44 +313,17 @@ final class ArchivePreviewView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
     func show(_ preview: ArchivePreview, fileURL: URL, timestampLevel: SZTimestampLevel = .min, utc: Bool = false) {
         self.preview = preview
         self.fileURL = fileURL
-        let name = preview.summary.fileName
-        titleField.stringValue = Formatting.displayName(name)
-        iconView.image = PanelArchiveIcons.icon(forName: name, large: true)
-            ?? Self.resized(Icons.icon(forName: name, isDirectory: false), 32)
-
-        summaryGrid.subviews.forEach { $0.removeFromSuperview() }
-        while summaryGrid.numberOfRows > 0 { summaryGrid.removeRow(at: 0) }
-        let rows = PreviewSummaryRows.rows(for: preview.summary, status: preview.status)
-        let perRow = 3
-        var index = 0
-        while index < rows.count {
-            var views: [NSView] = []
-            for pair in rows[index..<min(index + perRow, rows.count)] {
-                views.append(Self.label(pair.0 + ":", secondary: true))
-                views.append(Self.label(pair.1, secondary: false))
-            }
-            while views.count < perRow * 2 { views.append(NSGridCell.emptyContentView) }
-            summaryGrid.addRow(with: views)
-            index += perRow
-        }
-        for row in 0..<summaryGrid.numberOfRows { summaryGrid.row(at: row).height = PreviewMetrics.summaryRowHeight }
-        for column in 0..<summaryGrid.numberOfColumns where column % 2 == 1 {
-            summaryGrid.column(at: column).trailingPadding = 18
-        }
-
-        let notice = PreviewSummaryRows.notice(for: preview)
-        let hasList = preview.listedEntries > 0 || !(notice?.prominent ?? false)
-        noticeField.stringValue = (notice != nil && !(notice!.prominent && !hasList)) ? notice!.text : ""
-        noticeField.isHidden = noticeField.stringValue.isEmpty
-        noticeIcon.isHidden = noticeField.isHidden
-        centerMessage.stringValue = hasList ? "" : (notice?.text ?? "")
-        centerMessage.isHidden = hasList
-        centerIcon.isHidden = hasList
-        centerIcon.image = preview.status == .encrypted
-            ? NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)
-            : NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
-        centerIcon.contentTintColor = .secondaryLabelColor
-        scrollView.isHidden = !hasList
+        summaryField.stringValue = PreviewSummaryLine.text(for: preview.summary, status: preview.status)
+        summaryField.toolTip = summaryField.stringValue
+        let notice = PreviewSummaryLine.notice(for: preview)
+        noticeField.stringValue = notice?.text ?? ""
+        noticeField.isHidden = notice == nil
+        noticeIcon.isHidden = notice == nil
+        noticeIcon.image = NSImage(systemSymbolName: preview.status == .encrypted ? "lock.fill" : "exclamationmark.triangle.fill",
+                                   accessibilityDescription: nil)
+        noticeIcon.contentTintColor = preview.status == .encrypted ? .secondaryLabelColor : .systemOrange
+        // A file that could not be listed has no list, only its line and note.
+        scrollView.isHidden = (notice?.listless ?? false) && preview.listedEntries == 0
 
         if let column = outlineView.tableColumn(withIdentifier: Column.size.identifier) {
             column.width = PreviewMetrics.sizeColumnWidth
@@ -386,92 +339,40 @@ final class ArchivePreviewView: NSView, NSOutlineViewDataSource, NSOutlineViewDe
         let top = preview.root.children
         if top.count == 1, top[0].isDirectory { outlineView.expandItem(top[0]) }
         needsLayout = true
+        needsDisplay = true
         layoutSubtreeIfNeeded()
-    }
-
-    private static func label(_ text: String, secondary: Bool) -> NSTextField {
-        let field = NSTextField(labelWithString: text)
-        field.font = secondary ? PreviewMetrics.font : PreviewMetrics.digitsFont
-        field.textColor = secondary ? .secondaryLabelColor : WinChrome.text
-        field.lineBreakMode = .byTruncatingTail
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return field
-    }
-
-    static func resized(_ image: NSImage, _ points: CGFloat) -> NSImage {
-        let copy = image.copy() as? NSImage ?? image
-        copy.size = NSSize(width: points, height: points)
-        return copy
     }
 
     // MARK: layout
 
+    /// The line's text starts where the list's names do: 6 pt in, as the header's titles.
+    static let inset: CGFloat = PreviewMetrics.subitemPadding
+    static let lineTop: CGFloat = 6
+
     override func layout() {
         super.layout()
         let width = bounds.width
-        let pad = PreviewMetrics.bandPadding
-        let buttonSize = openButton.intrinsicContentSize
-        iconView.frame = NSRect(x: pad, y: pad, width: 32, height: 32)
-        openButton.frame = NSRect(x: width - pad - buttonSize.width, y: pad + (32 - buttonSize.height) / 2,
-                                  width: buttonSize.width, height: buttonSize.height)
-        let titleHeight = ceil(titleField.intrinsicContentSize.height)
-        titleField.frame = NSRect(x: pad + 32 + 8, y: pad + (32 - titleHeight) / 2,
-                                  width: max(0, openButton.frame.minX - 8 - (pad + 40)), height: titleHeight)
-        var y = pad + 32 + 8
-        let gridSize = summaryGrid.fittingSize
-        summaryGrid.frame = NSRect(x: pad, y: y, width: min(gridSize.width, width - 2 * pad), height: gridSize.height)
-        if summaryGrid.numberOfRows > 0 { y += gridSize.height + 4 }
+        let inset = Self.inset
+        var y = Self.lineTop
+        let lineHeight = ceil(summaryField.intrinsicContentSize.height)
+        summaryField.frame = NSRect(x: inset, y: y, width: max(0, width - 2 * inset), height: lineHeight)
+        y += lineHeight + 2
         if !noticeField.isHidden {
-            let textWidth = max(50, width - 2 * pad - 22)
+            let textX = inset + 16 + 4
+            let textWidth = max(50, width - textX - inset)
             noticeField.preferredMaxLayoutWidth = textWidth
             let height = ceil(noticeField.fittingSize.height)
-            noticeIcon.frame = NSRect(x: pad, y: y + 1, width: 16, height: 16)
-            noticeField.frame = NSRect(x: pad + 22, y: y, width: textWidth, height: height)
-            y += max(height, 17) + 4
+            noticeIcon.frame = NSRect(x: inset, y: y + floor((lineHeight - 14) / 2), width: 16, height: 14)
+            noticeField.frame = NSRect(x: textX, y: y, width: textWidth, height: height)
+            y += max(height, lineHeight) + 2
         }
-        y += pad - 4
-        band.frame = NSRect(x: 0, y: 0, width: width, height: y)
-        bandLine.frame = NSRect(x: 0, y: y, width: width, height: 1)
+        y += 3
+        hairline.frame = NSRect(x: 0, y: y, width: width, height: 1)
         let listTop = y + 1
         scrollView.frame = NSRect(x: 0, y: listTop, width: width, height: max(0, bounds.height - listTop))
-        let messageWidth = min(width - 4 * pad, 460)
-        centerMessage.preferredMaxLayoutWidth = messageWidth
-        let messageHeight = ceil(centerMessage.fittingSize.height)
-        let middle = listTop + (bounds.height - listTop) / 2
-        centerIcon.frame = NSRect(x: (width - 40) / 2, y: middle - 40 - 8, width: 40, height: 40)
-        centerMessage.frame = NSRect(x: (width - messageWidth) / 2, y: middle, width: messageWidth, height: messageHeight)
         if let name = outlineView.tableColumn(withIdentifier: Column.name.identifier) {
             let others = outlineView.tableColumns.filter { $0 !== name }.reduce(CGFloat(0)) { $0 + $1.width }
-            let scroller = scrollView.verticalScroller.map { $0.isHidden ? 0 : $0.frame.width } ?? 0
-            name.width = max(160, scrollView.contentSize.width - others - (scrollView.hasVerticalScroller ? 0 : scroller))
-        }
-    }
-
-    // MARK: the button
-
-    @objc func openClicked(_ sender: Any?) {
-        guard let fileURL else { return }
-        Self.openInApp(fileURL)
-    }
-
-    /// `7-Zip.app`, seen from `7-Zip.app/Contents/PlugIns/QuickLook.appex`.
-    static func containingAppURL(of bundleURL: URL = Bundle.main.bundleURL) -> URL {
-        var url = bundleURL
-        while url.pathExtension == "appex" || url.lastPathComponent == "PlugIns" || url.lastPathComponent == "Contents" {
-            url = url.deletingLastPathComponent()
-        }
-        return url
-    }
-
-    /// Opens the archive with the app that carries this extension, through Launch Services --
-    /// the plain "open this document with that application" route, never the sevenzip:// command
-    /// channel (whose secret this extension neither has nor needs).
-    static func openInContainingApp(_ fileURL: URL) {
-        let app = containingAppURL()
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        NSWorkspace.shared.open([fileURL], withApplicationAt: app, configuration: configuration) { _, error in
-            if let error { NSLog("7-Zip Quick Look: cannot open %@ in %@: %@", fileURL.path, app.path, error.localizedDescription) }
+            name.width = max(160, scrollView.contentSize.width - others)
         }
     }
 
@@ -542,8 +443,9 @@ final class PreviewFillView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
+        // Bounds, not dirtyRect: the view does not clip to its bounds (see the file comment).
         color.setFill()
-        dirtyRect.fill()
+        bounds.fill()
     }
 }
 
@@ -555,11 +457,12 @@ final class PreviewOutlineView: NSOutlineView {
 /// The header (SysHeader32 with the list's font, 24 pt), as PanelHeaderCell draws it.
 final class PreviewHeaderView: NSTableHeaderView {
     override func draw(_ dirtyRect: NSRect) {
+        // Bounds, not dirtyRect: the view does not clip to its bounds (see the file comment).
         WinChrome.window.setFill()
-        dirtyRect.fill()
+        bounds.fill()
         super.draw(dirtyRect)
         PreviewHeaderCell.bottomLine.setFill()
-        NSRect(x: dirtyRect.minX, y: bounds.maxY - 1, width: dirtyRect.width, height: 1).fill()
+        NSRect(x: bounds.minX, y: bounds.maxY - 1, width: bounds.width, height: 1).fill()
     }
 }
 

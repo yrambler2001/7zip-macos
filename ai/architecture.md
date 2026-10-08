@@ -104,6 +104,13 @@ documents in `ai/api/`, which each scope keeps current, rather than the sources:
   launch from /Applications (`FM.QuickLookFirstLaunch`, preserved by the reset), and
   `QuickLookSettingsBridge.push()` of `Lang` / `FM.Theme` / `FM.TimestampLevel` /
   `FM.TimestampShowUTC` into the extension's container.
+- qlfix (1.2.1): one summary line + a note line + a hairline over the list (no title, icon or
+  button: Quick Look's title bar has them); every custom `draw(_:)` fills `bounds`, never
+  `dirtyRect` (macOS 14 SDK: `clipsToBounds` is false, and the Quick Look host passed a 1 pt view
+  an 820 x 560 dirty rect, backed by an overflow layer that covered the summary). Debug only:
+  `PreviewDebugSnapshot` writes `snapshot-<file>-<theme>-screen.png` into the extension's tmp when
+  `<container>/Data/tmp/ql-snapshot-request` exists. Launch-time registration looks twice
+  (`FinderExtensionControl.secondLookDelay`).
 - Tests: `ArchivePreviewModelTests` / `ArchivePreviewStreamedTarTests` (unit), `QuickLookPreviewTests`
   (app-hosted; the test app copies compile `Mac/QuickLook`, and write `quicklook-*.png`).
 

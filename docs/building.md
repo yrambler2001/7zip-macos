@@ -25,8 +25,8 @@ Mac/scripts/run.sh                 # build, then open the app
 Mac/scripts/test.sh                # unit tests (see testing.md for the other suites)
 Mac/scripts/test.sh -A x86_64      # the same tests on the Intel slice, under Rosetta 2
 Mac/scripts/verify.sh              # clean build + every suite, summary in Mac/build/verify-latest.md
-Mac/scripts/package.sh             # the universal disk image, Mac/build/7-Zip-26.04-macOS-1.2.0.dmg
-Mac/scripts/version.sh             # the version: 7-Zip 26.04 for macOS 1.2.0, build number, DMG name
+Mac/scripts/package.sh             # the universal disk image, Mac/build/7-Zip-26.04-macOS-1.2.1.dmg
+Mac/scripts/version.sh             # the version: 7-Zip 26.04 for macOS 1.2.1, build number, DMG name
 Mac/scripts/bump-version.sh minor  # raise the port version (major|minor|patch|X.Y.Z)
 Mac/scripts/parity-check.sh        # progress of the parity checklist (ai/PROGRESS.md)
 ```
@@ -89,7 +89,7 @@ Mac/scripts/test.sh -A x86_64 -H     # the app-hosted tests too
 One file holds the version: `Mac/VERSION`.
 
 ```
-PORT_VERSION = 1.2.0         the port's own semantic version
+PORT_VERSION = 1.2.1         the port's own semantic version
 UPSTREAM_VERSION = 26.04     the 7-Zip engine (must equal MY_VERSION in C/7zVersion.h)
 ```
 
@@ -99,20 +99,20 @@ UPSTREAM_VERSION = 26.04     the 7-Zip engine (must equal MY_VERSION in C/7zVers
 - `CFBundleVersion` is the **build number**: `$BUILD_NUMBER` when set (CI), else the commit count of
   `HEAD`. `build.sh` and `test.sh` write it to `Mac/build/BuildNumber.xcconfig`, which the xcconfig
   includes optionally; a build straight from Xcode gets `1`.
-- The user-visible name is **7-Zip 26.04 for macOS 1.2.0**: the About box, the update check, the
-  disk image `7-Zip-26.04-macOS-1.2.0.dmg` and its volume name. `Mac/scripts/version.sh` prints
+- The user-visible name is **7-Zip 26.04 for macOS 1.2.1**: the About box, the update check, the
+  disk image `7-Zip-26.04-macOS-1.2.1.dmg` and its volume name. `Mac/scripts/version.sh` prints
   each form.
-- Releases are tagged `v<PORT_VERSION>` (`v1.2.0`) at
+- Releases are tagged `v<PORT_VERSION>` (`v1.2.1`) at
   <https://github.com/yrambler2001/7zip-macos/releases>; the app's update check compares that tag
   with its own version.
 
 To release a new version:
 
 ```sh
-Mac/scripts/bump-version.sh patch          # or minor, major, 1.2.0; --upstream 26.05 after an upstream merge
+Mac/scripts/bump-version.sh patch          # or minor, major, 1.2.1; --upstream 26.05 after an upstream merge
 $EDITOR CHANGELOG.md                       # fill in the new section and date it
-git commit -am "Version 1.2.0" && git tag -a v1.2.0 -m "7-Zip 26.04 for macOS 1.2.0"
-git push origin macos v1.2.0               # the release workflow builds, tests and publishes it
+git commit -am "Version 1.2.1" && git tag -a v1.2.1 -m "7-Zip 26.04 for macOS 1.2.1"
+git push origin macos v1.2.1               # the release workflow builds, tests and publishes it
 ```
 
 [releasing.md](releasing.md) describes the workflow, the Homebrew tap and the signing secrets.
@@ -146,8 +146,8 @@ security find-identity -v -p codesigning
 xcrun notarytool store-credentials 7zip-notary --apple-id you@example.com --team-id TEAMID
 # every release:
 Mac/scripts/package.sh -i "Developer ID Application: Your Name (TEAMID)" -T TEAMID -p 7zip-notary
-spctl --assess --type open --context context:primary-signature -v Mac/build/7-Zip-26.04-macOS-1.2.0.dmg
-xcrun stapler validate Mac/build/7-Zip-26.04-macOS-1.2.0.dmg
+spctl --assess --type open --context context:primary-signature -v Mac/build/7-Zip-26.04-macOS-1.2.1.dmg
+xcrun stapler validate Mac/build/7-Zip-26.04-macOS-1.2.1.dmg
 ```
 
 The app needs one hardened-runtime entitlement, `com.apple.security.automation.apple-events`

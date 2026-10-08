@@ -204,6 +204,8 @@ enum FinderExtensionControl {
     /// runs on this one serial queue, in the order the launch asks for them, so a registration and
     /// an election never interleave.
     static let launchQueue = DispatchQueue(label: "com.yrambler2001.7zip.pluginkit", qos: .utility)
+    /// When the launch looks at the registrations a second time.
+    static let secondLookDelay: TimeInterval = 15
 
     /// This copy's extensions besides Quick Look: identifier and appex file name.
     static let finderExtensions: [(identifier: String, appex: String)] = [
@@ -235,6 +237,12 @@ enum FinderExtensionControl {
             return FileManager.default.fileExists(atPath: path) ? (ext.identifier, canonical(path)) : nil
         }
         launchQueue.async {
+            for (identifier, path) in present { registerAtLaunch(identifier: identifier, embeddedPath: path) }
+        }
+        // A copy launched right after it replaced the old one in place can still see the old
+        // registration (PlugInKit drops it a moment later -- measured: all four gone a few seconds
+        // after a launch that found them present). One more look, later, catches that.
+        launchQueue.asyncAfter(deadline: .now() + secondLookDelay) {
             for (identifier, path) in present { registerAtLaunch(identifier: identifier, embeddedPath: path) }
         }
     }

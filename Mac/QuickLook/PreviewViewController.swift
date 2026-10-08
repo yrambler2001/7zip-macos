@@ -57,6 +57,11 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
                 self?.previewView.show(preview, fileURL: url, timestampLevel: settings.timestampLevel,
                                        utc: settings.utc)
                 handler(nil)
+                #if DEBUG
+                if let view = self?.view {
+                    PreviewDebugSnapshot.scheduleIfRequested(view, fileName: url.lastPathComponent, log: Self.log)
+                }
+                #endif
             }
         }
     }

@@ -58,7 +58,7 @@ What the release workflow then does:
 and uploads the disk image as a workflow artifact, and publishes nothing.
 
 **If a release fails** after the tag is pushed: fix the cause on `macos`, delete the tag
-(`git push origin :v1.2.0 && git tag -d v1.2.0`) and the draft or partial release if one was
+(`git push origin :v1.2.1 && git tag -d v1.2.1`) and the draft or partial release if one was
 created, then tag again. A failure in the **tap** job alone can be re-run from the Actions page.
 
 ## One-time setup on GitHub
@@ -89,11 +89,11 @@ Updating the cask by hand (no token, or a failed tap job):
 
 ```sh
 cd homebrew-tap
-/path/to/7zip-macos/Mac/scripts/update-cask.sh Casks/7zip-macos.rb 1.2.0 26.04 <sha256 from the release>
-git commit -am "7zip-macos 1.2.0 (7-Zip 26.04)" && git push
+/path/to/7zip-macos/Mac/scripts/update-cask.sh Casks/7zip-macos.rb 1.2.1 26.04 <sha256 from the release>
+git commit -am "7zip-macos 1.2.1 (7-Zip 26.04)" && git push
 ```
 
-The cask's version is `<port>,<upstream>` (`1.2.0,26.04`), because the image's name carries both.
+The cask's version is `<port>,<upstream>` (`1.2.1,26.04`), because the image's name carries both.
 Homebrew 7 needs a third-party tap to be trusted before it loads it implicitly: users install with
 the full name (`brew install --cask yrambler2001/tap/7zip-macos`) and run `brew trust
 yrambler2001/tap` once so that `brew upgrade` includes it; the tap's README and the cask's caveats
