@@ -32,7 +32,6 @@ final class QuickLookPreviewTests: AppHostTestCase {
         windows.forEach { $0.orderOut(nil) }
         windows = []
         FinderExtensionControl.runner = savedRunner
-        ArchivePreviewView.openInApp = ArchivePreviewView.openInContainingApp
         try? FileManager.default.removeItem(atPath: work)
         super.tearDown()
     }
@@ -63,10 +62,10 @@ final class QuickLookPreviewTests: AppHostTestCase {
         return view
     }
 
-    /// The view drawn part by part at 2x: the band, its line, the list's header and rows, the
-    /// centred message. Drawing the whole window in one `cacheDisplay` is not reliable on macOS 26
+    /// The view drawn part by part at 2x: the summary line, the note, the hairline, the list's
+    /// header and rows. Drawing the whole window in one `cacheDisplay` is not reliable on macOS 26
     /// (the scroll view skips its rows' clip view, Feel3FontTests.drawList), and here it skipped
-    /// the band as well; each part drawn on its own is complete.
+    /// the 1.2.0 band as well; each part drawn on its own is complete.
     private func capture(_ view: ArchivePreviewView, scale: CGFloat = 2) -> Data? {
         let size = view.bounds.size
         guard let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale),
@@ -77,12 +76,10 @@ final class QuickLookPreviewTests: AppHostTestCase {
             ctx.setFillColor(WinChrome.window.cgColor)
         }
         ctx.fill(CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale))
-        var parts: [NSView] = [view.band, view.bandLine]
+        var parts: [NSView] = [view.summaryField, view.noticeIcon, view.noticeField, view.hairline]
         if !view.scrollView.isHidden {
             parts.append(view.scrollView.contentView)
             if let header = view.outlineView.headerView { parts.append(header) }
-        } else {
-            parts += [view.centerIcon, view.centerMessage]
         }
         for part in parts where !part.isHidden && part.bounds.width > 0 && part.bounds.height > 0 {
             let inRoot = view.convert(part.bounds, from: part).intersection(view.bounds)
@@ -133,9 +130,7 @@ final class QuickLookPreviewTests: AppHostTestCase {
         return cell.textField?.stringValue
     }
 
-    private func summaryTexts(_ view: ArchivePreviewView) -> [String] {
-        view.summaryGrid.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
-    }
+    private func summary(_ view: ArchivePreviewView) -> String { view.summaryField.stringValue }
 
     func testRendersTheFourCasesLightAndDark() throws {
         for dark in [false, true] {
@@ -155,13 +150,13 @@ final class QuickLookPreviewTests: AppHostTestCase {
 
         let corrupt = render(TestPaths.fixture("corrupt.7z"), dark: false, shot: "corrupt")
         XCTAssertTrue(corrupt.scrollView.isHidden, "no list for a file that does not open")
-        XCTAssertTrue(corrupt.centerMessage.stringValue.hasPrefix("Cannot open file 'corrupt.7z' as archive"),
-                      corrupt.centerMessage.stringValue)
+        XCTAssertTrue(corrupt.noticeField.stringValue.hasPrefix("Cannot open file 'corrupt.7z' as archive"),
+                      corrupt.noticeField.stringValue)
 
         let lone = (work as NSString).appendingPathComponent("multi.7z.001")
         try FileManager.default.copyItem(atPath: TestPaths.fixture("multi.7z.001"), toPath: lone)
         let volume = render(lone, dark: true, shot: "first-volume-alone")
-        let text = volume.centerMessage.isHidden ? volume.noticeField.stringValue : volume.centerMessage.stringValue
+        let text = volume.noticeField.stringValue
         XCTAssertTrue(text.contains("multi-volume"), text)
     }
 
@@ -199,13 +194,16 @@ final class QuickLookPreviewTests: AppHostTestCase {
         XCTAssertEqual(cellText(view, row: 2, column: .size), "3 000")
 
         // The summary in the Properties terms (01 §3.11).
-        let summary = summaryTexts(view)
-        for label in ["Type:", "Method:", "Solid:", "Folders:", "Files:", "Size:", "Physical Size:", "Compression ratio:"] {
-            XCTAssertTrue(summary.contains(label), "\(label) in \(summary)")
-        }
-        XCTAssertTrue(summary.contains("3 043"), "\(summary)")
-        XCTAssertEqual(view.titleField.stringValue, "test.7z")
-        XCTAssertEqual(view.openButton.title, "Open in 7-Zip")
+        // One summary line in the Properties terms (01 §3.11), the app's number grouping.
+        XCTAssertTrue(summary(view).hasPrefix("7z \u{00B7} LZMA2:12 \u{00B7} Solid \u{00B7} Folders: 2 \u{00B7} Files: 4 \u{00B7} 3 043 \u{2192} 65 bytes ("),
+                      summary(view))
+        XCTAssertTrue(view.noticeField.isHidden, "nothing to note")
+        XCTAssertEqual(view.summaryField.font, PreviewMetrics.digitsFont)
+        // Quick Look's title bar names the file and has "Open with 7-Zip": the preview repeats neither.
+        let texts = Self.allTexts(view)
+        XCTAssertFalse(texts.contains("test.7z"), "\(texts)")
+        XCTAssertFalse(texts.contains { $0.contains("Open in 7-Zip") }, "\(texts)")
+        XCTAssertFalse(Self.allViews(view).contains { ($0 as? NSButton)?.title.isEmpty == false }, "no button of its own")
     }
 
     /// An archive inside an archive gets 7-Zip's own pixel-sharp 16 px frame, as in the panel.
@@ -222,22 +220,32 @@ final class QuickLookPreviewTests: AppHostTestCase {
     func testEncryptedHeadersSayWhatToDo() {
         let view = render(TestPaths.fixture("secret.7z"), dark: false)
         XCTAssertTrue(view.scrollView.isHidden)
-        XCTAssertEqual(view.centerMessage.stringValue,
+        XCTAssertEqual(view.noticeField.stringValue,
                        "Encrypted archive \u{2014} open in 7-Zip to enter the password")
-        XCTAssertTrue(summaryTexts(view).contains("Encrypted:"))
+        XCTAssertEqual(summary(view), "7z \u{00B7} Encrypted \u{00B7} 382 bytes")
     }
 
-    /// The button opens the archive in the containing app through Launch Services, never through
-    /// the sevenzip:// command URL.
-    func testOpenInAppUsesTheContainingApp() {
-        var opened: [URL] = []
-        ArchivePreviewView.openInApp = { opened.append($0) }
-        let view = render(TestPaths.fixture("test.zip"), dark: false)
-        view.openClicked(nil)
-        XCTAssertEqual(opened, [URL(fileURLWithPath: TestPaths.fixture("test.zip"))])
-        XCTAssertEqual(ArchivePreviewView.containingAppURL(
-            of: URL(fileURLWithPath: "/Applications/7-Zip.app/Contents/PlugIns/QuickLook.appex")).path,
-            "/Applications/7-Zip.app")
+    static func allViews(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(allViews) }
+    static func allTexts(_ view: NSView) -> [String] {
+        allViews(view).compactMap { ($0 as? NSTextField)?.stringValue }.filter { !$0.isEmpty }
+    }
+
+    /// qlfix regression: a fill view paints its bounds only, whatever dirty rect AppKit passes. The
+    /// real Quick Look host asked the 1 pt hairline to draw 820 x 560 and, with clipsToBounds off,
+    /// its grey covered the whole 1.2.0 summary band.
+    func testFillViewsPaintOnlyTheirBounds() throws {
+        let line = PreviewFillView(color: .black)
+        line.frame = NSRect(x: 0, y: 0, width: 40, height: 1)
+        let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 40, bitsPerSample: 8,
+                                                 samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        line.draw(NSRect(x: 0, y: -20, width: 40, height: 60))      // a dirty rect far larger than the view
+        NSGraphicsContext.restoreGraphicsState()
+        XCTAssertFalse(line.clipsToBounds, "the SDK default this guards against")
+        XCTAssertEqual(rep.colorAt(x: 20, y: 20)?.alphaComponent ?? 1, 0, "nothing painted outside the 1 pt line")
+        XCTAssertEqual(rep.colorAt(x: 20, y: 39)?.alphaComponent ?? 0, 1, accuracy: 0.01, "the line itself")
     }
 
     func testPreviewSettingsFollowTheAppTheme() {

@@ -5,6 +5,24 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
+## [Unreleased]
+
+### Fixed
+
+- **Quick Look preview:** the summary at the top showed as an empty grey block in Finder's Quick
+  Look window (the list below was fine). A one-point divider line drew its colour over the area
+  macOS asked it to repaint, which in Quick Look was the whole summary.
+- After replacing 7-Zip in place and launching it right away, its Finder menu, Quick Actions and
+  Quick Look preview could stay unregistered until the next launch; 7-Zip now checks again a few
+  seconds after launch.
+
+### Changed
+
+- **Quick Look preview:** the file name, icon and *Open in 7-Zip* button are gone — Quick Look's
+  own title bar already shows the name and *Open with 7-Zip*. The summary is one line on the
+  list's background ("7z · LZMA2:12 · Solid · Files: 2 · 209 829 → 172 759 bytes (82%)"), with
+  any note (encrypted, too many items, part of a multi-volume set) on the line below.
+
 ## [1.2.0] — 2026-10-08
 
 7-Zip 26.04 for macOS 1.2.0: Quick Look preview for archives.

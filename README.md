@@ -34,7 +34,8 @@ Current version: **7-Zip 26.04 for macOS 1.2.0**.
 - **Finder integration** — a 7-Zip submenu on Finder's right-click menu, Quick Actions, Services,
   and document icons for 40 archive types.
 - **Quick Look preview** — select an archive in Finder (or press Space) to see its summary and
-  its contents as 7-Zip lists them, without opening the app; **Open in 7-Zip** is one click away.
+  its contents as 7-Zip lists them, without opening the app; Quick Look's **Open with 7-Zip** is one
+  click away.
   Options ▸ macOS turns it off.
 - **93 languages** — the official 7-Zip translations, switchable while the app runs.
 - **Light and Dark** themes: Light by default, Dark or following the system in Options ▸ macOS.
