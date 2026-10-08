@@ -5,7 +5,9 @@ All notable changes to 7-Zip for macOS are recorded here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for its own version; the engine version
 is upstream 7-Zip's (for example *7-Zip 26.03 for macOS 1.0.0*).
 
-## [Unreleased]
+## [1.2.1] — 2026-10-08
+
+7-Zip 26.04 for macOS 1.2.1: Quick Look preview fix.
 
 ### Fixed
 
@@ -194,6 +196,7 @@ First public release: a native macOS port of the 7-Zip File Manager on the 7-Zip
   behaves correctly on macOS; Windows behaviour is unchanged. See
   [Mac/docs/upstream-patches.md](Mac/docs/upstream-patches.md).
 
+[1.2.1]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.2.1
 [1.2.0]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.2.0
 [1.1.3]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.3
 [1.1.2]: https://github.com/yrambler2001/7zip-macos/releases/tag/v1.1.2
